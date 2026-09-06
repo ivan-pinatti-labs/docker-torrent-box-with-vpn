@@ -841,7 +841,42 @@ ensure_qbittorrent_client() {
   existing=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "$base_url" |
     jq 'map(select(.implementation == "QBittorrent")) | first')
   if [[ -n "$existing" && "$existing" != "null" ]]; then
-    echo "[$app_name] qBittorrent download client already exists, skipping."
+    # Found is not the same as correct: the host, and the port since it is
+    # set from config at creation the same way, can drift out from under an
+    # already wired client whenever GLUETUN_SERVICES_IP changes, for example
+    # a subnet change or a second checkout whose gateway differs (issue
+    # #112). Reconciling only when a stored value differs, rather than
+    # unconditionally, keeps a rerun quiet when nothing changed. The update
+    # payload is built from $existing itself, not the schema used for
+    # creation, so username and password stay exactly what the client
+    # already has instead of being read from files and resupplied here.
+    local existing_host existing_port
+    existing_host=$(jq -r '.fields[] | select(.name == "host") | .value' <<<"$existing")
+    existing_port=$(jq -r '.fields[] | select(.name == "port") | .value' <<<"$existing")
+    if [[ "$existing_host" == "$GLUETUN_SERVICES_IP" && "$existing_port" == "$QBITTORRENT_HTTPS_PORT" ]]; then
+      echo "[$app_name] qBittorrent download client already exists, skipping."
+      return 0
+    fi
+
+    echo "[$app_name] qBittorrent download client host/port stale (${existing_host}:${existing_port}), correcting to ${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}..."
+    local id payload
+    id=$(jq -r '.id' <<<"$existing")
+    payload=$(jq \
+      --arg host "$GLUETUN_SERVICES_IP" \
+      --arg port "$QBITTORRENT_HTTPS_PORT" \
+      '.fields |= map(
+        if .name == "host" then .value = $host
+        elif .name == "port" then .value = ($port | tonumber)
+        else . end)' <<<"$existing")
+
+    local response
+    if ! response=$(container_curl "$container" -sk --fail -X PUT \
+      -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" \
+      -d "$payload" "${base_url}/${id}" 2>&1); then
+      echo "[$app_name] WARNING: failed to update qBittorrent download client host: ${response:0:300}"
+      return 1
+    fi
+    echo "[$app_name] Updated."
     return 0
   fi
 
@@ -897,7 +932,37 @@ ensure_sabnzbd_client() {
   existing=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "$base_url" |
     jq 'map(select(.implementation == "Sabnzbd")) | first')
   if [[ -n "$existing" && "$existing" != "null" ]]; then
-    echo "[$app_name] SABnzbd download client already exists, skipping."
+    # See ensure_qbittorrent_client's matching comment: same drift, same
+    # reasoning for reconciling conditionally and for basing the update
+    # payload on $existing so its apiKey is preserved rather than reread and
+    # resupplied.
+    local existing_host existing_port
+    existing_host=$(jq -r '.fields[] | select(.name == "host") | .value' <<<"$existing")
+    existing_port=$(jq -r '.fields[] | select(.name == "port") | .value' <<<"$existing")
+    if [[ "$existing_host" == "$GLUETUN_SERVICES_IP" && "$existing_port" == "$SABNZBD_HTTP_PORT" ]]; then
+      echo "[$app_name] SABnzbd download client already exists, skipping."
+      return 0
+    fi
+
+    echo "[$app_name] SABnzbd download client host/port stale (${existing_host}:${existing_port}), correcting to ${GLUETUN_SERVICES_IP}:${SABNZBD_HTTP_PORT}..."
+    local id payload
+    id=$(jq -r '.id' <<<"$existing")
+    payload=$(jq \
+      --arg host "$GLUETUN_SERVICES_IP" \
+      --arg port "$SABNZBD_HTTP_PORT" \
+      '.fields |= map(
+        if .name == "host" then .value = $host
+        elif .name == "port" then .value = ($port | tonumber)
+        else . end)' <<<"$existing")
+
+    local response
+    if ! response=$(container_curl "$container" -sk --fail -X PUT \
+      -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" \
+      -d "$payload" "${base_url}/${id}" 2>&1); then # pragma: allowlist secret
+      echo "[$app_name] WARNING: failed to update SABnzbd download client host: ${response:0:300}"
+      return 1
+    fi
+    echo "[$app_name] Updated."
     return 0
   fi
 
