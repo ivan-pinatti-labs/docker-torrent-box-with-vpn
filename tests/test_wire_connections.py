@@ -27,7 +27,14 @@ from datetime import UTC
 
 import pytest
 
-from conftest import ENV, REPO_ROOT, container_http, is_enabled, skip_if_not_running
+from conftest import (
+    ENV,
+    REPO_ROOT,
+    container_http,
+    container_name,
+    is_enabled,
+    skip_if_not_running,
+)
 
 pytestmark = pytest.mark.wiring
 
@@ -75,7 +82,7 @@ def _download_clients(app: str, running_containers: dict) -> list[dict]:
     scheme, port_var, api_ver, _ = ARR_APPS[app]
     port = _env(port_var)
     status, body = container_http(
-        app,
+        container_name(app),
         f"{scheme}://127.0.0.1:{port}/{app}/api/{api_ver}/downloadclient",
         headers={"X-Api-Key": _api_key(app)},
         timeout=TIMEOUT,
@@ -172,7 +179,7 @@ def _prowlarr_download_clients(running_containers) -> list[dict]:
     skip_if_not_running("prowlarr", running_containers)
     port = _env("PROWLARR_HTTPS_PORT")
     status, body = container_http(
-        "prowlarr",
+        container_name("prowlarr"),
         f"https://127.0.0.1:{port}/prowlarr/api/v1/downloadclient",
         headers={"X-Api-Key": _api_key("prowlarr")},
         timeout=TIMEOUT,
@@ -231,7 +238,7 @@ def test_prowlarr_flaresolverr_indexer_proxy_wired(running_containers):
     skip_if_not_running("prowlarr", running_containers)
     port = _env("PROWLARR_HTTPS_PORT")
     status, body = container_http(
-        "prowlarr",
+        container_name("prowlarr"),
         f"https://127.0.0.1:{port}/prowlarr/api/v1/indexerproxy",
         headers={"X-Api-Key": _api_key("prowlarr")},
         timeout=TIMEOUT,
@@ -250,7 +257,7 @@ def test_prowlarr_flaresolverr_indexer_proxy_wired(running_containers):
     )
 
     status, body = container_http(
-        "prowlarr",
+        container_name("prowlarr"),
         f"https://127.0.0.1:{port}/prowlarr/api/v1/tag",
         headers={"X-Api-Key": _api_key("prowlarr")},
         timeout=TIMEOUT,
@@ -273,7 +280,7 @@ def test_arr_host_prereqs_wired(app, running_containers):
     scheme, port_var, api_ver, _ = ARR_APPS[app]
     port = _env(port_var)
     status, body = container_http(
-        app,
+        container_name(app),
         f"{scheme}://127.0.0.1:{port}/{app}/api/{api_ver}/config/host",
         headers={"X-Api-Key": _api_key(app)},
         timeout=TIMEOUT,
@@ -292,7 +299,7 @@ def test_prowlarr_applications_wired(running_containers):
     skip_if_not_running("prowlarr", running_containers)
     port = _env("PROWLARR_HTTPS_PORT")
     status, body = container_http(
-        "prowlarr",
+        container_name("prowlarr"),
         f"https://127.0.0.1:{port}/prowlarr/api/v1/applications",
         headers={"X-Api-Key": _api_key("prowlarr")},
         timeout=TIMEOUT,
@@ -325,7 +332,7 @@ def test_prowlarr_indexer_wired(running_containers):
     skip_if_not_running("prowlarr", running_containers)
     port = _env("PROWLARR_HTTPS_PORT")
     status, body = container_http(
-        "prowlarr",
+        container_name("prowlarr"),
         f"https://127.0.0.1:{port}/prowlarr/api/v1/indexer",
         headers={"X-Api-Key": _api_key("prowlarr")},
         timeout=TIMEOUT,
@@ -382,7 +389,7 @@ def test_prowlarr_indexers_propagated_to_arr_app(app, running_containers):
     backoff_status = ""
     for attempt in range(4):
         status, body = container_http(
-            app,
+            container_name(app),
             f"{scheme}://127.0.0.1:{port}/{app}/api/{api_ver}/indexer",
             headers={"X-Api-Key": _api_key(app)},
             timeout=TIMEOUT,
@@ -393,7 +400,7 @@ def test_prowlarr_indexers_propagated_to_arr_app(app, running_containers):
             break
 
         status, body = container_http(
-            "prowlarr",
+            container_name("prowlarr"),
             f"https://127.0.0.1:{prowlarr_port}/prowlarr/api/v1/indexerstatus",
             headers={"X-Api-Key": _api_key("prowlarr")},
             timeout=TIMEOUT,
@@ -479,7 +486,7 @@ def _notifications(app: str, running_containers: dict) -> list[dict]:
     skip_if_not_running(app, running_containers)
     scheme, port_var, api_ver, _ = ARR_APPS[app]
     status, body = container_http(
-        app,
+        container_name(app),
         f"{scheme}://127.0.0.1:{_env(port_var)}/{app}/api/{api_ver}/notification",
         headers={"X-Api-Key": _api_key(app)},
         timeout=TIMEOUT,
@@ -493,7 +500,7 @@ def _supports_jellyfin(app: str, running_containers: dict) -> bool:
     skip_if_not_running(app, running_containers)
     scheme, port_var, api_ver, _ = ARR_APPS[app]
     status, body = container_http(
-        app,
+        container_name(app),
         f"{scheme}://127.0.0.1:{_env(port_var)}/{app}/api/{api_ver}/notification/schema",
         headers={"X-Api-Key": _api_key(app)},
         timeout=TIMEOUT,
@@ -556,7 +563,7 @@ def test_jellyfin_connection_points_at_a_reachable_jellyfin(app, running_contain
     )
 
     status, _ = container_http(
-        app,
+        container_name(app),
         f"http://{host}:{port}{_env('JELLYFIN_BASE_URL')}/System/Info/Public",
         timeout=TIMEOUT,
     )
@@ -606,7 +613,7 @@ def test_jellyfin_connection_passes_the_apps_own_test(app, running_containers):
 
     scheme, port_var, api_ver, _ = ARR_APPS[app]
     status, body = container_http(
-        app,
+        container_name(app),
         f"{scheme}://127.0.0.1:{_env(port_var)}/{app}/api/{api_ver}/notification/test",
         headers={"X-Api-Key": _api_key(app), "Content-Type": "application/json"},
         method="POST",
