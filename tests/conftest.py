@@ -284,16 +284,35 @@ DOWNLOAD_CLIENT_UNREACHABLE_SUBSTRINGS = (
 )
 
 
-def is_download_client_unreachable(message: str) -> bool:
+def is_download_client_unreachable(message) -> bool:
     """True when a servarr health message means a download client cannot be reached.
 
     Everything else these endpoints report keeps warning rather than failing,
-    see test_arr_health_response_empty in test_services.py.
+    see test_arr_health_response_empty in test_services.py. A message that is
+    not a string, or missing entirely, is not a match rather than an error:
+    a malformed health payload should warn like any other unrecognized shape,
+    not blow up the whole tier.
     """
+    if not isinstance(message, str):
+        return False
     lowered = message.lower()
     return any(
         substring in lowered for substring in DOWNLOAD_CLIENT_UNREACHABLE_SUBSTRINGS
     )
+
+
+def classify_arr_health_response(data: list) -> tuple[list, list]:
+    """Split a servarr health endpoint's response into (failures, warn_only).
+
+    `data` is the JSON list a health endpoint returns, each item a dict with
+    at least a `message` key. This is the actual classification behind
+    test_arr_health_response_empty, pulled out so it can be exercised directly
+    against a fabricated response instead of only through is_download_client_unreachable.
+    """
+    messages = [item.get("message", str(item)) for item in data]
+    failures = [m for m in messages if is_download_client_unreachable(m)]
+    warn_only = [m for m in messages if m not in failures]
+    return failures, warn_only
 
 
 def env(key: str, default: str = "") -> str:
