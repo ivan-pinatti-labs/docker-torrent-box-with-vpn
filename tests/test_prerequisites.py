@@ -62,7 +62,19 @@ def test_docker_version():
 
 
 def test_compose_available():
-    has_docker_compose_plugin = run(["docker", "compose", "version"]).returncode == 0
+    # A slow `docker compose version` counts as "this flavour did not
+    # answer", not as a hard failure of the whole test, otherwise it aborts
+    # the test before the other two flavours are ever checked, even when one
+    # of them is perfectly usable. Fixed at this call site rather than in
+    # run() itself: run() is shared by every other probe in this file, and
+    # broadening it there would change what a timeout means for all of them,
+    # not just this one.
+    try:
+        has_docker_compose_plugin = (
+            run(["docker", "compose", "version"]).returncode == 0
+        )
+    except subprocess.TimeoutExpired:
+        has_docker_compose_plugin = False
     has_docker_compose_standalone = shutil.which("docker-compose") is not None
     has_podman_compose = shutil.which("podman-compose") is not None
     assert (
