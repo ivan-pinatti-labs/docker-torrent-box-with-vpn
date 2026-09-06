@@ -129,6 +129,19 @@ def test_classify_arr_health_response_warns_only_on_environmental_messages():
     ]
 
 
+def test_classify_arr_health_response_treats_malformed_items_as_warnings():
+    """A malformed item is not a fail signal, it is just unrecognized.
+
+    None in the list, and a dict with no message key, must not be stringified
+    and matched against the fail list (that could false positive on an
+    unrelated message) or raise trying to call .lower() on it.
+    """
+    fabricated_response = [None, {"source": "SomeCheck", "type": "warning"}]
+    failures, warn_only = classify_arr_health_response(fabricated_response)
+    assert failures == []
+    assert warn_only == ["None", "{'source': 'SomeCheck', 'type': 'warning'}"]
+
+
 @pytest.mark.parametrize(
     "service_name",
     [

@@ -304,14 +304,26 @@ def is_download_client_unreachable(message) -> bool:
 def classify_arr_health_response(data: list) -> tuple[list, list]:
     """Split a servarr health endpoint's response into (failures, warn_only).
 
-    `data` is the JSON list a health endpoint returns, each item a dict with
-    at least a `message` key. This is the actual classification behind
-    test_arr_health_response_empty, pulled out so it can be exercised directly
-    against a fabricated response instead of only through is_download_client_unreachable.
+    `data` is the JSON list a health endpoint returns, each item normally a
+    dict with at least a `message` key. This is the actual classification
+    behind test_arr_health_response_empty, pulled out so it can be exercised
+    directly against a fabricated response instead of only through
+    is_download_client_unreachable. An item that is not a dict, or a dict with
+    no `message`, is malformed rather than a failure signal, so it goes to
+    warn_only unclassified instead of being stringified and matched against
+    the fail list, which could false positive on an unrelated message.
     """
-    messages = [item.get("message", str(item)) for item in data]
-    failures = [m for m in messages if is_download_client_unreachable(m)]
-    warn_only = [m for m in messages if m not in failures]
+    failures = []
+    warn_only = []
+    for item in data:
+        if not isinstance(item, dict) or "message" not in item:
+            warn_only.append(str(item))
+            continue
+        message = item["message"]
+        if is_download_client_unreachable(message):
+            failures.append(message)
+        else:
+            warn_only.append(message)
     return failures, warn_only
 
 
