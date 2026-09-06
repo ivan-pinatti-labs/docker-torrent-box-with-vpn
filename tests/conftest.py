@@ -269,6 +269,33 @@ VPN_NETWORKED = {
 }
 
 
+# Health messages that mean a download client is unreachable, which is a core
+# function of this stack, as opposed to everything else these endpoints report,
+# which is largely environmental (no indexers, no usenet provider, no real
+# trackers configured) and stays a warning instead. Keep this list short:
+# turning every health message into a failure would make the health tier
+# useless in a test environment shaped like that.
+DOWNLOAD_CLIENT_UNREACHABLE_SUBSTRINGS = (
+    # The exact failure #124 was filed over: a stale GLUETUN_SERVICES_IP left
+    # every arr unable to reach qBittorrent, and the test only warned about it.
+    "unable to communicate with qbittorrent",
+    # SABnzbd has the identical failure shape as qBittorrent, see #112.
+    "unable to communicate with sabnzbd",
+)
+
+
+def is_download_client_unreachable(message: str) -> bool:
+    """True when a servarr health message means a download client cannot be reached.
+
+    Everything else these endpoints report keeps warning rather than failing,
+    see test_arr_health_response_empty in test_services.py.
+    """
+    lowered = message.lower()
+    return any(
+        substring in lowered for substring in DOWNLOAD_CLIENT_UNREACHABLE_SUBSTRINGS
+    )
+
+
 def env(key: str, default: str = "") -> str:
     return ENV.get(key, default) or default
 

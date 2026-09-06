@@ -6,6 +6,7 @@ import urllib3
 
 from conftest import (
     SERVICES,
+    is_download_client_unreachable,
     is_enabled,
     read_api_key,
     service_base_url,
@@ -48,6 +49,48 @@ def test_service_api_health(service_name, running_containers):
     )
 
 
+def test_is_download_client_unreachable_fails_on_download_client_messages():
+    """A download client message is the one thing this tier must fail on.
+
+    No live stack needed: this exercises the classification function directly
+    with the fabricated payload shape a real health endpoint returns, per #124.
+    """
+    fabricated_response = [
+        {
+            "source": "QbittorrentSettingsValidator",
+            "type": "error",
+            "message": "Unable to communicate with QBittorrent. Connection refused",
+            "wikiUrl": "https://wiki.servarr.com/sonarr/system#download-client-unavailable",
+        },
+    ]
+    messages = [item["message"] for item in fabricated_response]
+    assert any(is_download_client_unreachable(m) for m in messages)
+
+
+def test_is_download_client_unreachable_warns_on_environmental_messages():
+    """Environmental messages must not trip the fail list, per #124.
+
+    A stack with no real indexers configured is expected, not broken, and
+    this tier needs to keep passing against it.
+    """
+    fabricated_response = [
+        {
+            "source": "IndexerRssCheck",
+            "type": "warning",
+            "message": "All indexers are unavailable due to failures",
+            "wikiUrl": "https://wiki.servarr.com/sonarr/system#indexers-are-unavailable",
+        },
+        {
+            "source": "IndexerLongTermStatusCheck",
+            "type": "warning",
+            "message": "Indexers unavailable due to failures for more than 24 hours",
+            "wikiUrl": "https://wiki.servarr.com/sonarr/system#indexers-are-unavailable-due-to-failures",
+        },
+    ]
+    messages = [item["message"] for item in fabricated_response]
+    assert not any(is_download_client_unreachable(m) for m in messages)
+
+
 @pytest.mark.parametrize(
     "service_name",
     [
@@ -75,13 +118,25 @@ def test_arr_health_response_empty(service_name, running_containers):
     assert resp.status_code == 200
     data = resp.json()
     assert isinstance(data, list), f"Expected list from {url}, got {type(data)}"
-    # Warn about health issues rather than failing: some warnings are non-critical
+    # Split health issues into a short, explicit fail list (a download client
+    # is unreachable, which is a core function of this stack) and everything
+    # else, which stays a warning: most of what these endpoints report is
+    # environmental (no indexers, no usenet provider, no real trackers
+    # configured in a test environment) and turning all of it into a failure
+    # would make this tier useless. See is_download_client_unreachable in
+    # conftest.py for the fail list itself, and #124 for why this split exists.
     if data:
         import warnings
 
         messages = [item.get("message", str(item)) for item in data]
-        warnings.warn(
-            f"{service_name} reports health issues: {messages}",
-            UserWarning,
-            stacklevel=2,
+        failures = [m for m in messages if is_download_client_unreachable(m)]
+        warn_only = [m for m in messages if m not in failures]
+        if warn_only:
+            warnings.warn(
+                f"{service_name} reports health issues: {warn_only}",
+                UserWarning,
+                stacklevel=2,
+            )
+        assert not failures, (
+            f"{service_name} cannot reach a download client: {failures}"
         )
