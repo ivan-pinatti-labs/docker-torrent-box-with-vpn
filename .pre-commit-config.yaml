@@ -286,7 +286,7 @@ repos:
   # character, and which does not exist in CI at all. pre-commit only ever sees
   # files git knows about.
   - repo: https://github.com/streetsidesoftware/cspell-cli
-    rev: v10.0.1
+    rev: v10.1.0
     hooks:
       - id: cspell
         args:
