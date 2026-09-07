@@ -304,7 +304,7 @@ with nothing available to bypass it the way `vulnerabilityAlerts` bypasses it fo
 pip. That is a conscious trade, not a hedge: see [docs/HARDENING.md](HARDENING.md) for the full
 reasoning behind leaning on the cooling window instead of a scanner for this class of
 dependency. This gap is pre-existing and unrelated to Dependabot's retirement: no container
-image ever had a vulnerability-alert-driven path, from either bot, so there is nothing this
+image ever had a vulnerability alert driven path, from either bot, so there is nothing this
 migration could have narrowed there.
 
 GitHub's Dependabot Alerts and the dependency graph itself are what raises the alert
