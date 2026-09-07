@@ -511,6 +511,15 @@ services, dashboards, and alert rules.
    [docs/READARR.md](docs/READARR.md) for the comic quality profile setup
    script.
 
+   The same retirement is also why Readarr's qBittorrent download client
+   never gets created: qBittorrent 5.2 and later return an empty, successful
+   `204 No Content` response on login instead of the old `200 OK` with body
+   `Ok.`, and Readarr's own client code (unlike Sonarr/Radarr/Lidarr/
+   Whisparr's actively maintained forks) still checks for that exact string,
+   so it reports a real, successful login as an authentication failure every
+   time. See [docs/CONNECTIONS.md](docs/CONNECTIONS.md) for the details;
+   Readarr's SABnzbd client is unaffected.
+
    **Longer-term alternatives:**
    - [pennydreadful/bookshelf](https://github.com/pennydreadful/bookshelf): the most active
      community fork (~600 stars), drop-in replacement, backward-compatible DB, supports GoodReads

@@ -65,6 +65,19 @@ the bare string `prowlarr`, matching the same convention as the arr apps,
 though Prowlarr itself doesn't use it for anything (it isn't sorting content
 into genre folders the way Sonarr/Radarr/etc. are).
 
+**Known limitation:** Readarr's own qBittorrent client creation fails every
+time, against every qBittorrent version this stack has pinned since #83.
+Readarr's retired upstream (see README's Known Issues) never picked up a fix
+for qBittorrent 5.2 and later returning `204 No Content` on a successful
+login instead of the older `200 OK` with body `Ok.`; Readarr's own client
+code still checks for that exact string, so it treats a real, successful
+login as a failure and raises an authentication error on every attempt. This
+is not a race or a lockout, and re-running `make wire_connections` does not
+help; see the comment above `ensure_qbittorrent_client` in
+`scripts/wire-connections.sh` for how this was confirmed directly against
+Readarr's own source. Readarr's SABnzbd client is unaffected and gets wired
+normally.
+
 ### Jellyfin library updates (Sonarr, Radarr, Lidarr, Whisparr → Jellyfin)
 
 Each app gets a Connection of type `MediaBrowser`, which is the \*arr name for

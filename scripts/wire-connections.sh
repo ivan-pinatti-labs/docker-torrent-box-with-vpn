@@ -830,6 +830,29 @@ ensure_readarr_metadata_source() {
 # one, which would silently break the pre-configured save-path layout.
 # SABnzbd's genre-based categories (tv, movies, ebooks, ...) are unrelated
 # to qBittorrent's app-named ones, so each caller passes both explicitly.
+#
+# Readarr's own qBittorrent client creation fails every single time, against
+# every qBittorrent version this stack has pinned since #83 (5.2.2), and
+# reproduces the same way on a completely fresh, isolated bootstrap: not a
+# race, not a brute-force lockout, and not fixed by retrying. Confirmed
+# directly against Readarr's own current develop branch source
+# (QBittorrentProxyV2.cs, AuthenticateClient): it still checks
+# `response.Content != "Ok."` to decide whether the login POST to
+# /api/v2/auth/login succeeded, but qBittorrent 5.2.0 and later return
+# 204 No Content with an empty body on a successful login instead of the
+# old 200 "Ok." (the session cookie is still issued either way, confirmed
+# live by logging in with the exact same request qBittorrent's own log then
+# records as "WebAPI login success"). Readarr's check has no way to see
+# that, so it raises DownloadClientAuthenticationException on every
+# attempt. Sonarr/Radarr/Lidarr/Whisparr share the same QBittorrentProxyV2
+# lineage but are actively maintained forks that already handle the 204
+# response; Readarr's own upstream is retired (see README's Known Issues)
+# and has not picked up that fix. Downgrading this stack's own
+# QBITTORRENT_VERSION to work around one unmaintained app's bug would
+# regress a shared service for every other app that talks to it, so this is
+# left as a known, permanent limitation rather than "fixed" here: see
+# wire_arr_app below for why this failure is still caught rather than left
+# to abort Readarr's other, unrelated wiring steps.
 # ---------------------------------------------------------------------------
 
 # Args: app_name container scheme port api_ver api_key category
@@ -1050,18 +1073,41 @@ jellyfin_host_for() {
 # above.
 JELLYFIN_FAILED=()
 
-# Names of arr apps whose job failed somewhere other than the Jellyfin
-# connection, kept apart from JELLYFIN_FAILED so neither summary claims a
-# cause that is not its own. See wire_arr_app for why the two are
+# Names of arr apps whose qBittorrent and/or SABnzbd client creation did not
+# succeed this run. Kept apart from JELLYFIN_FAILED/ARR_JOB_FAILED for the
+# same reason those two are kept apart from each other: readarr's
+# qBittorrent client is a known, permanent failure (see the comment above
+# ensure_qbittorrent_client), and folding it into either of those would
+# either bury it under a generic "check the output above" or misreport it as
+# a Jellyfin problem.
+DOWNLOAD_CLIENT_FAILED=()
+
+# Names of arr apps whose job failed somewhere other than a download client
+# or the Jellyfin connection, kept apart from the other two so no summary
+# claims a cause that is not its own. See wire_arr_app for why the three are
 # distinguishable at all.
 ARR_JOB_FAILED=()
 
-# Exit status wire_arr_app uses for "everything else worked, the Jellyfin
-# connection did not". Any other non-zero status from that job means it died
-# earlier, under `set -e`, before the Jellyfin call was reached. 90 is chosen
-# to sit clear of both the shell's own 1 and 2 and the 126 to 165 range it
-# reserves for "cannot execute", "not found" and fatal signals.
-readonly JELLYFIN_WIRING_FAILED=90
+# Exit status bits wire_arr_app ORs together and adds to ARR_JOB_STATUS_BASE
+# when one or both of a download client / the Jellyfin connection fail but
+# the job otherwise ran to completion, so the caller can tell "this specific
+# step failed" apart from "the job died early from something unguarded"
+# without losing the ability to report both failing in the same run. Bits
+# rather than the plain JELLYFIN_WIRING_FAILED=90 sentinel this replaced:
+# ensure_qbittorrent_client/ensure_sabnzbd_client used to be called as bare
+# statements, so under `set -e` a failure there killed this function before
+# ensure_jellyfin_connection or, for Readarr, ensure_readarr_metadata_source
+# ever ran. That is exactly the bug PROWLARR_FAILED's own comment already
+# describes and guards against for wire_prowlarr_apps, just not yet applied
+# here: confirmed live, readarr's qBittorrent client fails on every single
+# run (see that comment), which was silently skipping its otherwise-working
+# SABnzbd client every time too, not just its Jellyfin connection.
+# ARR_JOB_STATUS_BASE=100 sits clear of the shell's own 1 and 2 and the 126
+# to 165 range it reserves for "cannot execute", "not found" and fatal
+# signals, with headroom above it for every combination of the bits below.
+readonly ARR_JOB_STATUS_BASE=100
+readonly ARR_JOB_JELLYFIN_FAILED_BIT=1
+readonly ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT=2
 
 # Tells Jellyfin to rescan when an import, upgrade or rename changes the
 # library. Without it Jellyfin only notices on its own scheduled scan, so a
@@ -1199,29 +1245,33 @@ wire_arr_app() {
   local key
   key=$(get_xml_apikey "$xml")
   ensure_arr_host_prereqs "$app_name" "$container" "$scheme" "$port" "$api_ver" "$key"
-  ensure_qbittorrent_client "$app_name" "$container" "$scheme" "$port" "$api_ver" "$key" "$qbit_category"
-  ensure_sabnzbd_client "$app_name" "$container" "$scheme" "$port" "$api_ver" "$key" "$sab_category"
-  # Not "|| true": the caller needs to know whether this actually succeeded,
-  # so the dispatch loop below can collect it into JELLYFIN_FAILED instead of
-  # this looking the same as every legitimate skip inside the function itself
-  # (Jellyfin disabled, no API key yet, connection already there, app doesn't
-  # support it), all of which still return 0 on purpose.
-  #
-  # Reported as JELLYFIN_WIRING_FAILED rather than a plain non-zero status
-  # because the three calls above are not guarded, so under `set -e` any one
-  # of them failing kills this job before the Jellyfin call is ever reached.
-  # A bare "did this job fail" test cannot tell those apart, and would file a
-  # failed qBittorrent client under Jellyfin and tell the reader to re-run
-  # once Jellyfin is up, which would not fix it.
-  local jellyfin_status=0
-  ensure_jellyfin_connection "$app_name" "$container" "$scheme" "$port" "$api_ver" "$key" || jellyfin_status=$?
+
+  # Not left as bare statements under this script's `set -e`: qBittorrent and
+  # SABnzbd are two independent download clients, neither one's success or
+  # failure has anything to do with the other, or with the Jellyfin
+  # connection and (for Readarr) the metadata source fix below. A bare
+  # statement would let either one's failure kill this whole function before
+  # those unrelated steps ever ran, which is exactly what used to happen to
+  # Readarr's SABnzbd client (works every time) on the back of its
+  # qBittorrent client (fails every time, see the comment above
+  # ensure_qbittorrent_client), confirmed live. Recorded into a bit in
+  # status_bits, not returned immediately, so both can fail independently
+  # and still be reported accurately; see ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT.
+  local status_bits=0
+  ensure_qbittorrent_client "$app_name" "$container" "$scheme" "$port" "$api_ver" "$key" "$qbit_category" ||
+    status_bits=$((status_bits | ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT))
+  ensure_sabnzbd_client "$app_name" "$container" "$scheme" "$port" "$api_ver" "$key" "$sab_category" ||
+    status_bits=$((status_bits | ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT))
+
+  ensure_jellyfin_connection "$app_name" "$container" "$scheme" "$port" "$api_ver" "$key" ||
+    status_bits=$((status_bits | ARR_JOB_JELLYFIN_FAILED_BIT))
 
   if [[ "$app_name" == "readarr" ]]; then
     ensure_readarr_metadata_source "$container" "$scheme" "$port" "$api_ver" "$key" || true
   fi
 
-  if [[ "$jellyfin_status" -ne 0 ]]; then
-    return "$JELLYFIN_WIRING_FAILED"
+  if [[ "$status_bits" -ne 0 ]]; then
+    return "$((ARR_JOB_STATUS_BASE + status_bits))"
   fi
   return 0
 }
@@ -1742,17 +1792,24 @@ for name in audiobookshelf calibre calibre-web jellyfin prowlarr; do
 done
 
 # Each of these five ran wire_arr_app, which now reports whether its own
-# Jellyfin connection succeeded (see ensure_jellyfin_connection and
-# JELLYFIN_FAILED above), so their status is worth keeping instead of
-# discarding like the jobs above. JELLYFIN_WIRING_FAILED is the only status
-# that means the Jellyfin connection specifically; anything else non-zero is
-# a job that died earlier and is recorded separately rather than blamed on
-# Jellyfin.
+# download clients and Jellyfin connection succeeded (see
+# ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT/ARR_JOB_JELLYFIN_FAILED_BIT above), so
+# their status is worth decoding instead of discarding like the jobs above.
+# Any status at or above ARR_JOB_STATUS_BASE means the job ran to completion
+# and one or both of those specific steps failed; anything else non-zero is
+# a job that died earlier, before it could even report which step, and is
+# recorded separately rather than blamed on either one.
 for name in lidarr radarr readarr sonarr whisparr; do
   arr_status=0
   wait_job "$name" || arr_status=$?
-  if [[ "$arr_status" -eq "$JELLYFIN_WIRING_FAILED" ]]; then
-    JELLYFIN_FAILED+=("$name")
+  if [[ "$arr_status" -ge "$ARR_JOB_STATUS_BASE" ]]; then
+    status_bits=$((arr_status - ARR_JOB_STATUS_BASE))
+    if ((status_bits & ARR_JOB_JELLYFIN_FAILED_BIT)); then
+      JELLYFIN_FAILED+=("$name")
+    fi
+    if ((status_bits & ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT)); then
+      DOWNLOAD_CLIENT_FAILED+=("$name")
+    fi
   elif [[ "$arr_status" -ne 0 ]]; then
     ARR_JOB_FAILED+=("$name (exit ${arr_status})")
   fi
@@ -1766,9 +1823,23 @@ if [[ ${#JELLYFIN_FAILED[@]} -gt 0 ]]; then
   echo "[Jellyfin] Re-run 'make wire_connections' once Jellyfin and the app are both up."
 fi
 
+if [[ ${#DOWNLOAD_CLIENT_FAILED[@]} -gt 0 ]]; then
+  echo "[arr] WARNING: these apps did NOT get a qBittorrent and/or SABnzbd"
+  echo "[arr] download client wired:"
+  for failed in "${DOWNLOAD_CLIENT_FAILED[@]}"; do
+    echo "[arr]   - ${failed}"
+  done
+  echo "[arr] Check the output above for the first error each one printed. If"
+  echo "[arr] readarr is in this list for its qBittorrent client, re-running"
+  echo "[arr] will not help: see the comment above ensure_qbittorrent_client"
+  echo "[arr] in scripts/wire-connections.sh, this is a known, permanent"
+  echo "[arr] incompatibility in Readarr's own retired upstream, not a"
+  echo "[arr] transient failure."
+fi
+
 if [[ ${#ARR_JOB_FAILED[@]} -gt 0 ]]; then
   echo "[arr] WARNING: these apps did not finish wiring, and stopped before"
-  echo "[arr] their Jellyfin connection was even attempted:"
+  echo "[arr] their download clients or Jellyfin connection were even attempted:"
   for failed in "${ARR_JOB_FAILED[@]}"; do
     echo "[arr]   - ${failed}"
   done
