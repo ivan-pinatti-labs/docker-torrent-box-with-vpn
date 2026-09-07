@@ -1,10 +1,12 @@
 # Dependency Updates
 
-Renovate is the only bot that opens dependency pull requests here. Dependabot did too, until
-its `updates:` config was removed from `.github/dependabot.yml` on 2026-09-07; see "Retiring
-Dependabot" below for the migration itself. This page is the reference for what runs when and
-why the schedule is shaped the way it is. The mechanics of how a bump actually merges live in
-[docs/MERGE_PIPELINE.md](MERGE_PIPELINE.md); this page does not repeat them.
+Renovate opens every routine dependency pull request here. Dependabot did too, until its
+`updates:` config was removed from `.github/dependabot.yml` on 2026-09-07; see "Retiring
+Dependabot" below for the migration itself, and "The one setting that did not move with the
+file" for the one way Dependabot can still open one, until a maintainer clears it. This page is
+the reference for what runs when and why the schedule is shaped the way it is. The mechanics of
+how a bump actually merges live in [docs/MERGE_PIPELINE.md](MERGE_PIPELINE.md); this page does
+not repeat them.
 
 ## Which manager owns what
 
@@ -115,10 +117,12 @@ extra week. The organization policy now lives in
 
 Dependabot's `updates:` config came out of `.github/dependabot.yml` on
 2026-09-07, five days after it last moved (see "Why Renovate is not
-staggered" above), leaving Renovate as the only bot that opens a dependency
-pull request here. The three ecosystems it managed, pre-commit hook
-revisions, GitHub Actions and `tests/requirements.txt`, moved to Renovate's
-own native managers for the same files rather than to a fourth
+staggered" above), leaving Renovate as the only bot that opens a routine
+dependency pull request here (see "The one setting that did not move with
+the file" below for the one path this did not close). The three ecosystems
+it managed, pre-commit hook revisions, GitHub Actions and
+`tests/requirements.txt`, moved to Renovate's own native managers for the
+same files rather than to a fourth
 `customManagers` entry: `pre-commit`, `github-actions` and `pip_requirements`
 each already read the exact field Dependabot did, so nothing needed
 inventing, only switching on. `pre-commit` is the one of the three that ships
@@ -315,9 +319,9 @@ raise a signal) are governed by a separate repository setting,
 "paused": false}`, unchanged by this migration, since nothing in a pull request's file diff
 can touch it.
 
-Left as it is, this is a real gap in "Renovate is the only bot that opens dependency pull
-requests here": a security alert could still make Dependabot open one, on a login this
-repository's tooling no longer recognizes. Concretely, `bot-auto-merge.yml` would supply it no
+Left as it is, this is a real gap in "Renovate opens every routine dependency pull request
+here": a security alert could still make Dependabot open one, on a login this repository's
+tooling no longer recognizes. Concretely, `bot-auto-merge.yml` would supply it no
 approval (only `renovate[bot]` reaches that path now), and `coderabbit-review-verdict.py` would
 grade it in the human lane rather than the unattended bot lane, so it could not merge on its
 own; but it would still sit open needing a maintainer to close it, which is exactly the
