@@ -6,23 +6,30 @@
   // docs/DEPENDENCY_UPDATES.md, "Retiring Dependabot"). Three ecosystems moved
   // over to Renovate's own native managers rather than to another custom
   // regex, since each already has one: `pre-commit` reads the hook `rev:` in
-  // .pre-commit-config.yaml (its own dependency, not the `additional_dependencies`
-  // pins or the image tags inside a hook's `entry:`, which the customManagers
-  // below still own because neither is something the native manager reads),
-  // `github-actions` reads workflow `uses:` versions, and `pip_requirements`
-  // reads tests/requirements.txt. All three ship enabled by default except
-  // `pre-commit`, switched on below.
+  // .pre-commit-config.yaml, `github-actions` reads workflow `uses:` versions,
+  // and `pip_requirements` reads tests/requirements.txt. All three ship
+  // enabled by default except `pre-commit`, switched on below.
   //
   // What remains a customManager, and why: Docker image versions pinned in
   // .env.example behind a `# renovate: depName=...` annotation, Python
-  // packages pinned inline in a workflow `run:` step, the `additional_dependencies`
-  // pins in .pre-commit-config.yaml (a Go module and a pypi package, neither a
-  // container image nor something the native pre-commit manager reads), and
-  // the image tags pinned inside a `repo: local` hook's `entry:` command.
-  // Those four are all inline pins with no manifest file of their own, which is
-  // exactly the shape a native manager cannot read: the seam is real
-  // regardless of which bot reads the manifest-based half, and it is spelled
-  // out in each customManager's own comment below rather than restated here.
+  // packages pinned inline in a workflow `run:` step, and the image tags
+  // pinned inside a `repo: local` hook's `entry:` command. All three are
+  // inline pins with no manifest file of their own, which is exactly the
+  // shape no native manager can read: the seam is real regardless of which
+  // bot reads the manifest-based half, and it is spelled out in each
+  // customManager's own comment below rather than restated here.
+  //
+  // The fourth customManager, for the `additional_dependencies` pins in
+  // .pre-commit-config.yaml, is a different case and worth being exact about:
+  // the native `pre-commit` manager switched on below does read those two
+  // dependencies (`gitleaks-history`'s Go module, `checkov`'s pypi package,
+  // the only two hooks combining `additional_dependencies` with a
+  // `language:` it recognizes), from the very manifest file it already owns
+  // for `rev:`. It is disabled from acting on them by a packageRule further
+  // down instead, so the customManager stays the one manager that proposes
+  // updates for those two pins; see that packageRule's own comment for why
+  // leaving both live risked two managers proposing updates for the same
+  // line.
   extends: ["config:recommended"],
 
   // Kept on for its warnings, not for the overview of pending updates. Two
