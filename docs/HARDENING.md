@@ -271,9 +271,9 @@ file asserts every seeded path has a tracked `.example`.
 
 ## Unattended dependency updates
 
-Patch, minor and digest bumps from Dependabot and Renovate merge with nobody
-reviewing them. [docs/CONTRIBUTING.md](CONTRIBUTING.md) step 8 has the
-mechanics; this is the risk that buys and what is placed against it.
+Patch, minor and digest bumps from Renovate merge with nobody reviewing them.
+[docs/CONTRIBUTING.md](CONTRIBUTING.md) step 8 has the mechanics; this is the
+risk that buys and what is placed against it.
 
 The exposure is a malicious upstream release reaching `main` on its own, and
 being run by the integration suite on a runner that has just authenticated to

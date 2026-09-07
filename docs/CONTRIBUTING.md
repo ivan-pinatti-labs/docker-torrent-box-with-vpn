@@ -76,10 +76,13 @@ maintainer will comment for you.
    `/run-check` is restricted to repository collaborators. It costs a couple
    of lint runs rather than a whole stack.
 8. Dependency updates are the one exception to all of the above, and they merge
-   without anyone reviewing them. Dependabot opens weekly pull requests for
+   without anyone reviewing them. Renovate opens daily pull requests for
    `.pre-commit-config.yaml` hook revs, GitHub Action versions and
-   `tests/requirements.txt`; Renovate opens them for the image versions pinned in
-   `.env.example` and the pins annotated inline in workflows and pre-commit hooks.
+   `tests/requirements.txt` (its own native managers for each), for the image
+   versions pinned in `.env.example`, and for the pins annotated inline in
+   workflows and pre-commit hooks. Dependabot used to open the first three
+   itself, until its `updates:` config was retired; see
+   [docs/DEPENDENCY_UPDATES.md](DEPENDENCY_UPDATES.md), "Retiring Dependabot".
    Patch, minor and digest updates take this path; a major bump gets no
    approval and waits for the maintainer like any other pull request.
    [docs/MERGE_PIPELINE.md](MERGE_PIPELINE.md) has the full unattended path,
@@ -160,8 +163,8 @@ changes upstream.
 - Security scanner findings are also published to the repository's Security tab
   by the `Security Reports` job, which reports rather than gates. See
   docs/HARDENING.md
-- Dependabot and Renovate handle weekly dependency bump PRs, and patch, minor and
-  digest updates merge unattended once the suite passes; major updates are left
+- Renovate handles daily dependency bump PRs, and patch, minor and digest
+  updates merge unattended once the suite passes; major updates are left
   for manual review. See step 8 above for the whole path and what gates it
 
 ## Scripts

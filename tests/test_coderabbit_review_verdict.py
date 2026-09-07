@@ -88,7 +88,13 @@ def test_bot_pull_request_with_a_pin_only_diff_passes_unattended():
     assert "pin-only" in outputs["description"]
 
 
-def test_dependabot_pull_request_with_a_pin_only_diff_passes_unattended():
+def test_dependabot_is_no_longer_a_recognized_bot():
+    # Dependabot's version updates were retired; see
+    # docs/DEPENDENCY_UPDATES.md, "Retiring Dependabot". A pull request from
+    # this login is graded as a human's now, not waved through on a pin-only
+    # verdict it should never reach: a `pin_only_state` reading "success" here
+    # would be Renovate's own Pin Only bot lane leaking to a login that no
+    # longer has one, exactly the sort of stale-assumption bug #114 was about.
     result = _run(
         {
             "is_draft": False,
@@ -97,7 +103,7 @@ def test_dependabot_pull_request_with_a_pin_only_diff_passes_unattended():
             "pin_only_state": "success",
         }
     )
-    assert _outputs(result)["state"] == "success"
+    assert _outputs(result)["state"] == "pending"
 
 
 def test_bot_pull_request_whose_pin_only_verdict_is_not_yet_published_waits():

@@ -243,7 +243,7 @@ jobs:
           set -euo pipefail
           is_bot=false
           case "$AUTHOR" in
-            "renovate[bot]" | "dependabot[bot]") is_bot=true ;;
+            "renovate[bot]") is_bot=true ;;
           esac
 
           if [ "$is_bot" = "true" ] && [ "$IS_FORK" = "false" ]; then

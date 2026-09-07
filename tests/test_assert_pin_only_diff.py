@@ -98,9 +98,9 @@ def test_accepts_a_hook_rev_bump():
 
 
 def test_accepts_a_github_action_sha_and_comment_bump():
-    # The bug this guards: Dependabot rewrites both halves on a real bump, so
-    # the comment moving from `# v7` to `# v7.0.1` alongside the SHA must not
-    # read as a structural change.
+    # The bug this guards: the dependency bot rewrites both halves on a real
+    # bump, so the comment moving from `# v7` to `# v7.0.1` alongside the SHA
+    # must not read as a structural change.
     result = _check(
         _diff(
             ".github/workflows/coderabbit-gate.yml",
@@ -113,7 +113,7 @@ def test_accepts_a_github_action_sha_and_comment_bump():
 
 def test_accepts_a_github_action_sha_only_bump():
     # The SHA moves, the comment does not: a digest-only refresh of a release
-    # that Dependabot did not consider a new tag.
+    # that the dependency bot did not consider a new tag.
     result = _check(
         _diff(
             ".github/workflows/coderabbit-gate.yml",

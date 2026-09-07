@@ -5,13 +5,12 @@ name: CodeRabbit Review Queue
 # been read, one per run, hourly.
 #
 # Why this exists. CodeRabbit support confirmed that pull requests authored by
-# bots are hardcoded to be ignored on their side, so renovate[bot] and
-# dependabot[bot] pull requests are never auto-reviewed here. Those are exactly
-# the pull requests that merge unattended, and docs/HARDENING.md names CodeRabbit
-# as the only thing in the pipeline that reads a bump for intent. Asked directly
-# it answers in under three minutes, so the capability is there and only the
-# automatic trigger is missing. They are investigating; until that changes, this
-# is the trigger.
+# bots are hardcoded to be ignored on their side, so renovate[bot] pull requests
+# are never auto-reviewed here. Those are exactly the pull requests that merge
+# unattended, and docs/HARDENING.md names CodeRabbit as the only thing in the
+# pipeline that reads a bump for intent. Asked directly it answers in under
+# three minutes, so the capability is there and only the automatic trigger is
+# missing. They are investigating; until that changes, this is the trigger.
 #
 # It is not limited to bots, because "was this reviewed" is not the same question
 # as "who opened it". A green `CodeRabbit` status is not evidence of a review: it

@@ -4,11 +4,11 @@ name: Integration Tests
 # The integration suite. Two ways in, and only two:
 #
 #   - a maintainer comments `/run-tests` on a pull request.
-#   - a dependency bot opens or updates one, which starts the suite with nobody
+#   - Renovate opens or updates one, which starts the suite with nobody
 #     asking. That is what lets those pull requests merge unattended: the
 #     required `Tests Verified` context below is otherwise absent, and absent
-#     blocks the merge forever. Restricted to renovate[bot] and dependabot[bot]
-#     on a branch in this repository, decided in the gate job.
+#     blocks the merge forever. Restricted to renovate[bot] on a branch in
+#     this repository, decided in the gate job.
 #
 # It runs here, in the workflow the trigger fires, rather than starting
 # another one. Two earlier designs failed on that:
@@ -55,7 +55,7 @@ on:
   # pull_request_target is flagged by default, and rightly: it hands a write
   # token and every secret to a workflow that a fork can open. What makes it
   # safe here is that the gate job below never checks out the pull request, and
-  # authorizes nothing but the two dependency bots on a branch in this
+  # authorizes nothing but the dependency bot on a branch in this
   # repository. A fork reaching this trigger gets a skipped suite and no status,
   # which is the same "absent, so blocked" state it had before. The alternative,
   # plain `pull_request`, would run this file's own copy from the pull request,
@@ -142,7 +142,7 @@ jobs:
         # would mean carrying a personal access token here, which is more to
         # maintain and rotate than a line of YAML.
         #
-        # On a pull request: only the two dependency bots, matched exactly.
+        # On a pull request: only the dependency bot, matched exactly.
         # `startsWith` or `contains` would be wrong here in a way that is easy
         # to miss, because a user is free to register the login
         # `renovate[bot]-something` and open a pull request from a fork. Exact
@@ -187,16 +187,14 @@ jobs:
           if [ "$EVENT_NAME" = "pull_request_target" ]; then
             echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
             author="${PR_AUTHOR,,}"
-            for name in "renovate[bot]" "dependabot[bot]"; do
-              if [ "$author" = "$name" ]; then
-                echo "authorized=true" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-            done
+            if [ "$author" = "renovate[bot]" ]; then
+              echo "authorized=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             # Not an error. Every pull request opened against this repository
             # fires this trigger, and the ones that are not a dependency bump
             # wait for `/run-tests` exactly as they did before.
-            echo "::notice::$author is not a dependency bot, so the suite waits for /run-tests."
+            echo "::notice::$author is not the dependency bot, so the suite waits for /run-tests."
             echo "authorized=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -524,10 +522,11 @@ jobs:
           # fix: 1.5.0 and 1.6.0 both hang against podman 5.8.4, so the version
           # installed here is ruled out as the cause and podman is not.
           #
-          # The annotation is what keeps the pin from rotting. Neither tool sees
-          # an inline `pip install` on its own: Dependabot's pip ecosystem reads
-          # tests/requirements.txt and nothing else, and Renovate needs telling.
-          # See the customManager in .github/renovate.json5.
+          # The annotation is what keeps the pin from rotting. Renovate's own
+          # native pip_requirements manager reads tests/requirements.txt and
+          # nothing else, so it would never see an inline `pip install` like
+          # this one on its own; it needs telling. See the customManager in
+          # .github/renovate.json5.
           # renovate: datasource=pypi depName=podman-compose
           pip install podman-compose==1.6.0
           # tests/conftest.py's docker_client fixture talks to podman over

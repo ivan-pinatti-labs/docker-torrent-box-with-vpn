@@ -40,17 +40,19 @@ invalidate this one. See "The merge queue" below.
 
 ## A dependency bot pull request
 
-Dependabot and Renovate open pull requests unattended, and patch, minor and
-digest bumps merge unattended too, without anyone reviewing them by hand.
-Nothing above changes for a major bump; it gets no approval and waits for a
-maintainer exactly like a human pull request would. For the ones that do
-merge on their own:
+Renovate opens pull requests unattended, and patch, minor and digest bumps
+merge unattended too, without anyone reviewing them by hand. Nothing above
+changes for a major bump; it gets no approval and waits for a maintainer
+exactly like a human pull request would. Dependabot used to open pull
+requests here too, on the same path, until its `updates:` config was retired;
+see [docs/DEPENDENCY_UPDATES.md](DEPENDENCY_UPDATES.md), "Retiring
+Dependabot". For the ones that do merge on their own:
 
 1. **The suite starts itself.** `integration-tests.yml` authorizes
-   `renovate[bot]` and `dependabot[bot]` directly, on a branch inside this
-   repository, so `Tests Verified` runs without anyone commenting
-   `/run-tests`. Nothing else about the suite changes: every other pull
-   request, forks included, still only runs it when a maintainer asks.
+   `renovate[bot]` directly, on a branch inside this repository, so
+   `Tests Verified` runs without anyone commenting `/run-tests`. Nothing else
+   about the suite changes: every other pull request, forks included, still
+   only runs it when a maintainer asks.
 2. **`Pin Only` is graded.** `scripts/assert-pin-only-diff.py` checks that
    every changed line differs from its counterpart in nothing but a version
    or a digest, in a pin position, across five allowed files, and
@@ -65,11 +67,10 @@ merge on their own:
    branch protection requires. A diff that is not pin-only gets no approval
    and waits for a person, same as a major bump does.
 4. **GitHub merges it** once every required check, `Review Verified` included,
-   is green. Renovate arms auto-merge itself when it opens the pull request;
-   the workflow arms it on the Dependabot path, since Dependabot cannot.
-   Arming auto-merge enqueues the pull request once every required context
-   is green; the queue takes it from there, so a bot pull request no longer
-   has to be rebased in turn behind each merge.
+   is green. Renovate arms auto-merge itself when it opens the pull request
+   (`platformAutomerge`), which enqueues the pull request once every required
+   context is green; the queue takes it from there, so a bot pull request no
+   longer has to be rebased in turn behind each merge.
 
 `Review Verified` is not skipped here, and that is deliberate: see the next
 section for what a pin-only diff actually earns it.
@@ -246,7 +247,7 @@ intervention.
 **Needs a person:**
 
 - **An unresolved CodeRabbit conversation.** Branch protection blocks on it
-  regardless of what either status says, and neither bot ever resolves a
+  regardless of what either status says, and Renovate never resolves a
   thread, so anything CodeRabbit objects to on a bot pull request waits for a
   maintainer.
 - **A bot diff that is not pin-only.** `Pin Only` reads `failure`, no

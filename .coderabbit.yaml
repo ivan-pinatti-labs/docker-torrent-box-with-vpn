@@ -14,8 +14,8 @@ reviews:
   # stack still works, and neither objects to a plausible looking line that does
   # something else as well. Its comments have to be able to stop a merge, and
   # they do. An unresolved conversation blocks one under branch protection, and
-  # neither Renovate nor Dependabot ever resolves a thread, so a bump CodeRabbit
-  # objects to waits for a person. That block does not need this setting.
+  # Renovate never resolves a thread, so a bump CodeRabbit objects to waits
+  # for a person. That block does not need this setting.
   #
   # What the setting adds is an automatic approval once its comments are
   # resolved, and that is the problem. GitHub lets the author of a pull request

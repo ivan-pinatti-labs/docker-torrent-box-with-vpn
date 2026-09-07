@@ -4,8 +4,8 @@ name: Bot Auto Merge
 # Supplies the approving review that lets a dependency bump merge unattended.
 # Nothing else: the tests are proven by `Tests Verified`, which
 # integration-tests.yml publishes on its own for these pull requests, and the
-# merge itself is GitHub's, armed either by Renovate (platformAutomerge) or by
-# the last step here on the Dependabot path, because Dependabot cannot arm it.
+# merge itself is GitHub's, armed by Renovate itself (platformAutomerge) when
+# it opens the pull request.
 #
 # Why an approval has to be supplied at all: branch protection requires one, and
 # `main` no longer requires it to come from a code owner, because CODEOWNERS
@@ -66,16 +66,14 @@ on:
   # own decision changed has no future event left to earn an approval from.
   # #94 and #136 were both stranded exactly that way; #136 was only
   # recovered by closing and reopening it, which is a clumsy lever to ask of
-  # a maintainer, and `nudge-bot` below replaces it for Renovate. It cannot
-  # replace it for Dependabot: see that job for why, and what still needs
-  # closing and reopening until that changes.
+  # a maintainer, and `nudge-bot` below replaces it.
   #
   # `pr_number` follows pull-request-validation.yml's own workflow_dispatch
-  # shape: optional, so leaving it blank re-checks every open Dependabot or
-  # Renovate pull request instead of one. It is validated as digits-only in
-  # `nudge-bot` below before it ever reaches an API path, since this is free
-  # text a maintainer types by hand, unlike github.event.pull_request.number,
-  # which GitHub has already parsed for us.
+  # shape: optional, so leaving it blank re-checks every open Renovate pull
+  # request instead of one. It is validated as digits-only in `nudge-bot`
+  # below before it ever reaches an API path, since this is free text a
+  # maintainer types by hand, unlike github.event.pull_request.number, which
+  # GitHub has already parsed for us.
   #checkov:skip=CKV_GHA_7:workflow_dispatch itself requires write access to
   # trigger at all (GitHub platform-level gate, not something this file
   # controls); pr_number never selects a checkout ref or anything else that
@@ -88,7 +86,7 @@ on:
       pr_number:
         description: >-
           Pull request number to re-check. Leave blank to re-check every
-          open Dependabot or Renovate pull request.
+          open Renovate pull request.
         required: false
 
 # The floor. Each job widens it for itself.
@@ -97,7 +95,7 @@ permissions:
 
 jobs:
   approve:
-    name: Approve and enable auto-merge
+    name: Approve
     # user.login is set by GitHub from the authenticated author, so a pull
     # request cannot claim to be a bot. Exact equality, not startsWith or
     # contains: `renovate[bot]-x` is a login somebody may register, and the
@@ -109,10 +107,8 @@ jobs:
     # #61 collected seven identical approvals before anything had even run. Only
     # the label this job actually reads is worth waking it for.
     if: >-
-      github.event.pull_request.head.repo.fork == false && (
-        github.event.pull_request.user.login == 'renovate[bot]' ||
-        github.event.pull_request.user.login == 'dependabot[bot]'
-      ) && (
+      github.event.pull_request.head.repo.fork == false &&
+      github.event.pull_request.user.login == 'renovate[bot]' && (
         github.event.action != 'labeled' ||
         github.event.label.name == 'automerge'
       )
@@ -127,10 +123,6 @@ jobs:
       group: bot-auto-merge-${{ github.event.pull_request.number }}
       cancel-in-progress: false
     permissions:
-      # For `gh pr merge --auto` on the Dependabot path only. Arming auto-merge
-      # does not merge anything: every required check still has to pass, and
-      # `Tests Verified` is absent until the suite proves this commit.
-      contents: write
       pull-requests: write
     steps:
       - name: Check out the default branch
@@ -189,126 +181,31 @@ jobs:
           echo "::error::No settled Pin Only verdict for $HEAD_SHA after two minutes."
           exit 1
 
-      - name: Fetch Dependabot metadata
-        id: metadata
-        if: github.event.pull_request.user.login == 'dependabot[bot]'
-        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Decide whether this bump may merge unattended
-        # One decision, one place. The steps below read its outputs rather than
-        # restating the condition, which is what went wrong before: the same
-        # expression was written out twice, both copies compared the ecosystem
-        # to a hyphenated name that fetch-metadata never emits (it reports
-        # "pre_commit", confirmed live), and all ten pull requests from the
-        # first run silently skipped both steps, none flagged as a failure
-        # since a skipped step is not an error.
-        #
         # Renovate is asked by label, not by update type. It already decides
         # which of its own pull requests may automerge, in
         # .github/renovate.json5, and the rule that grants it also adds the
-        # `automerge` label. Restating the update types here would be a second
-        # copy of that policy, free to drift from the one Renovate acts on.
-        # A major bump therefore arrives with no label, gets no approval, and
-        # waits.
+        # `automerge` label. Restating the update types here would be a
+        # second copy of that policy, free to drift from the one Renovate
+        # acts on. A major bump therefore arrives with no label, gets no
+        # approval, and waits.
         #
-        # Dependabot has no such config, so its update type is read from the
-        # metadata action. All three of its ecosystems are eligible, test
-        # requirements included: they only reach the test virtualenv, and the
-        # suite is what clears them either way.
-        #
-        # Graded from `updated-dependencies-json` alone, never from the
-        # top-level `update-type` output. update-type is fetch-metadata's own
-        # summary of the *highest* semver level *present* among a group's
-        # entries, not a guarantee that *every* entry is at or below that
-        # level: `maxSemver` builds a set of each entry's updateType and
-        # returns the first of major/minor/patch found in it, blank entries
-        # included in the set but never selected over a real one. A group
-        # pairing one resolved minor bump with one blank, unresolved entry
-        # therefore reports the top-level type as "version-update:semver-minor",
-        # confirmed by running fetch-metadata's own algorithm against that
-        # exact shape, which would have approved the whole group on the
-        # strength of the one entry that happened to resolve. Reading
-        # `updated-dependencies-json` unconditionally instead, and requiring
-        # every single entry in it to be a patch or minor bump, closes that
-        # gap without opening a new one: for a genuine single-dependency
-        # update this is the same check the top-level field would have made,
-        # since its one entry is exactly what `update-type` was built from.
-        #
-        # A grouped update is the normal shape here, not an edge case: this
-        # organization's every repository groups its pre-commit and
-        # github-actions ecosystems with `patterns: ["*"]`, and #94 ("bump
-        # the test-dependencies group ... with 2 updates") is a live example,
-        # confirmed from that pull request's own run: update-type there is
-        # blank, since fetch-metadata has no single semver level to report
-        # for more than one dependency. #94 stays unapproved even with this
-        # fix in place: it is a pip "permit the latest version" style update
-        # whose commit message states no prior version for either
-        # dependency, so fetch-metadata cannot compute an update type for
-        # either entry at all (each reports "" confirmed live), and the
-        # check below correctly reads that as unresolved rather than as a
-        # bump it can vouch for.
+        # This used to also grade Dependabot's own pull requests, reading an
+        # update type off dependabot/fetch-metadata rather than a label,
+        # since Dependabot carries no such config of its own. That branch is
+        # gone with dependabot.yml's `updates:` config; see
+        # docs/DEPENDENCY_UPDATES.md, "Retiring Dependabot".
         id: decide
         env:
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           HAS_AUTOMERGE_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'automerge') }}
-          UPDATED_DEPENDENCIES_JSON: ${{ steps.metadata.outputs.updated-dependencies-json }}
         run: |
           approve=false
-          arm=false
-
-          case "$PR_AUTHOR" in
-            "renovate[bot]")
-              if [ "$HAS_AUTOMERGE_LABEL" = "true" ]; then
-                approve=true
-              else
-                echo "::notice::No automerge label, so Renovate is not asking for this to merge on its own."
-              fi
-              ;;
-            "dependabot[bot]")
-              # Every entry has to be a patch or minor bump on its own, one
-              # dependency or many. Piped in on stdin rather than
-              # interpolated into the jq program text, so nothing about a
-              # dependency's name or version is ever read as jq syntax.
-              #
-              # shellcheck disable=SC2016
-              result=$(printf '%s' "$UPDATED_DEPENDENCIES_JSON" | jq -r -s '
-                  def ok: . == "version-update:semver-patch"
-                    or . == "version-update:semver-minor";
-                  if length != 1 then
-                    "false\texpected exactly one JSON value, got \(length)"
-                  else .[0]
-                    | if (type != "array") or length == 0 then
-                        "false\tno updated-dependencies-json to grade"
-                      else
-                        ([.[].updateType
-                          | if . == "" or . == null then "unknown" else . end]) as $types
-                        | if ($types | all(ok)) then
-                            "true\tevery bump is patch or minor (\($types | join(", ")))"
-                          else
-                            "false\tnot every bump is patch or minor (\($types | join(", ")))"
-                          end
-                      end
-                  end
-                ' 2>/dev/null) || result=""
-              if [ -z "$result" ]; then
-                result="false"$'\t'"updated-dependencies-json was empty or invalid JSON"
-              fi
-              IFS=$'\t' read -r bump_ok bump_reason <<< "$result"
-              if [ "$bump_ok" = "true" ]; then
-                approve=true
-                # Dependabot cannot arm auto-merge itself, unlike Renovate.
-                arm=true
-                echo "::notice::$bump_reason."
-              else
-                echo "::notice::$bump_reason, so it waits for review."
-              fi
-              ;;
-          esac
-
+          if [ "$HAS_AUTOMERGE_LABEL" = "true" ]; then
+            approve=true
+          else
+            echo "::notice::No automerge label, so Renovate is not asking for this to merge on its own."
+          fi
           echo "approve=$approve" >> "$GITHUB_OUTPUT"
-          echo "arm=$arm" >> "$GITHUB_OUTPUT"
 
       - name: Approve
         if: steps.decide.outputs.approve == 'true'
@@ -339,17 +236,6 @@ jobs:
             exit 0
           fi
           gh pr review --approve "$PR_URL"
-
-      - name: Enable auto-merge
-        # With a merge queue on `main`, this still only arms auto-merge; it
-        # does not merge anything itself. GitHub adds the pull request to the
-        # queue on its own once every required check, this one included, is
-        # green, the same as it does for Renovate's own platformAutomerge.
-        if: steps.decide.outputs.arm == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge --auto --squash "$PR_URL"
 
   resolve-owner:
     name: Find the owner's pull request to approve
@@ -632,20 +518,23 @@ jobs:
         # sidesteps that, and this repository stores neither.
         #
         # What is left, and what this step does, is grade a Renovate pull
-        # request directly: unlike Dependabot's, that decision was already
-        # small (has the `automerge` label, Pin Only still success, not
-        # already approved?) and reads entirely off the API, no marketplace
-        # action involved, so duplicating it here is a bounded, low-risk copy
-        # rather than the kind that drifted before (see the Decide step's own
-        # comment in the `approve` job above). The Pin Only check matters as
-        # much here as it does there: an automerge label is Renovate asking
-        # for this to merge, not a guarantee the diff is only a pin, and
-        # approving on the label alone would reopen the exact hole Pin Only
-        # exists to close. A Dependabot pull request cannot be graded this
-        # way: dependabot/fetch-metadata is the one thing here that only
-        # works on a real trigger, so this reports why and leaves closing and
-        # reopening the pull request, which is a genuine `reopened` trigger,
-        # as the still-clumsy but still-working lever for that half.
+        # request directly: the decision is small (has the `automerge`
+        # label, Pin Only still success, not already approved?) and reads
+        # entirely off the API, no marketplace action involved, so
+        # duplicating it here is a bounded, low-risk copy rather than the
+        # kind that drifted before (see the Decide step's own comment in the
+        # `approve` job above). The Pin Only check matters as much here as it
+        # does there: an automerge label is Renovate asking for this to
+        # merge, not a guarantee the diff is only a pin, and approving on the
+        # label alone would reopen the exact hole Pin Only exists to close.
+        #
+        # This used to also carry a Dependabot branch that could only report
+        # why it could not help: dependabot/fetch-metadata, the one thing
+        # the `approve` job's Decide step needed for Dependabot, only works
+        # on a real pull_request_target event, which this job cannot
+        # manufacture (see above). That branch is gone with dependabot.yml's
+        # `updates:` config; see docs/DEPENDENCY_UPDATES.md,
+        # "Retiring Dependabot".
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -665,20 +554,20 @@ jobs:
             fi
             numbers=$(gh api "repos/$REPO/pulls/$INPUT_PR_NUMBER" \
               --jq 'if .state == "open"
-                        and (.user.login == "renovate[bot]" or .user.login == "dependabot[bot]")
+                        and .user.login == "renovate[bot]"
                         and .head.repo.fork == false
                     then .number else empty end')
           else
             # The REST list endpoint, not `gh pr list`: its GraphQL-backed
-            # --json author reports a bot's login as "app/dependabot", not
-            # the "dependabot[bot]" shape every other author check in this
-            # file compares against, confirmed live against this
-            # repository's own open pull requests. REST's `.user.login`
-            # matches what github.event.pull_request.user.login reports on
-            # the pull_request_target path the `approve` job reads, so both
-            # agree on what a bot's login looks like.
+            # --json author reports a bot's login as "app/renovate", not the
+            # "renovate[bot]" shape every other author check in this file
+            # compares against, confirmed live against this repository's own
+            # open pull requests. REST's `.user.login` matches what
+            # github.event.pull_request.user.login reports on the
+            # pull_request_target path the `approve` job reads, so both
+            # agree on what the bot's login looks like.
             numbers=$(gh api "repos/$REPO/pulls?state=open&per_page=100" \
-              --jq '[.[] | select((.user.login == "renovate[bot]" or .user.login == "dependabot[bot]")
+              --jq '[.[] | select(.user.login == "renovate[bot]"
                               and .head.repo.fork == false)
                       | .number] | .[]')
           fi
@@ -691,39 +580,31 @@ jobs:
           while read -r number; do
             [ -n "$number" ] || continue
             pr=$(gh api "repos/$REPO/pulls/$number")
-            author=$(printf '%s' "$pr" | jq -r '.user.login')
 
-            case "$author" in
-              "renovate[bot]")
-                has_label=$(printf '%s' "$pr" | jq -r '[.labels[].name] | any(. == "automerge")')
-                if [ "$has_label" != "true" ]; then
-                  echo "#$number: no automerge label, so Renovate is not asking for this to merge on its own."
-                  continue
-                fi
-                # The same guard the approve job always applies before
-                # approving anything: an automerge label says Renovate wants
-                # this merged, not that the diff is only a pin. Approving
-                # without this would let a Renovate pull request whose diff
-                # was not pin-only through on the strength of the label
-                # alone, which is exactly the hole Pin Only exists to close.
-                head_sha=$(printf '%s' "$pr" | jq -r '.head.sha')
-                pin_only_state=$(gh api "repos/$REPO/commits/$head_sha/status" \
-                  --jq '[.statuses[] | select(.context == "Pin Only")] | first | select(. != null) | .state // ""')
-                if [ "$pin_only_state" != "success" ]; then
-                  echo "#$number: Pin Only is ${pin_only_state:-absent}, not success, so this waits for review."
-                  continue
-                fi
-                existing=$(gh api --paginate "repos/$REPO/pulls/$number/reviews" \
-                  | jq -s '[.[][] | select(.user.login == "github-actions[bot]" and .state == "APPROVED")] | length')
-                if [ "$existing" -gt 0 ]; then
-                  echo "#$number: already approved and not dismissed. Nothing to do."
-                  continue
-                fi
-                gh pr review --approve "$(printf '%s' "$pr" | jq -r '.html_url')"
-                echo "#$number: approved."
-                ;;
-              "dependabot[bot]")
-                echo "::warning::#$number is a Dependabot pull request. Its grouped-update check needs dependabot/fetch-metadata, which only works on a real pull_request_target event; this job cannot manufacture one that survives GitHub's own recursive-trigger guard. Close and reopen the pull request to re-trigger it for real."
-                ;;
-            esac
+            has_label=$(printf '%s' "$pr" | jq -r '[.labels[].name] | any(. == "automerge")')
+            if [ "$has_label" != "true" ]; then
+              echo "#$number: no automerge label, so Renovate is not asking for this to merge on its own."
+              continue
+            fi
+            # The same guard the approve job always applies before approving
+            # anything: an automerge label says Renovate wants this merged,
+            # not that the diff is only a pin. Approving without this would
+            # let a Renovate pull request whose diff was not pin-only through
+            # on the strength of the label alone, which is exactly the hole
+            # Pin Only exists to close.
+            head_sha=$(printf '%s' "$pr" | jq -r '.head.sha')
+            pin_only_state=$(gh api "repos/$REPO/commits/$head_sha/status" \
+              --jq '[.statuses[] | select(.context == "Pin Only")] | first | select(. != null) | .state // ""')
+            if [ "$pin_only_state" != "success" ]; then
+              echo "#$number: Pin Only is ${pin_only_state:-absent}, not success, so this waits for review."
+              continue
+            fi
+            existing=$(gh api --paginate "repos/$REPO/pulls/$number/reviews" \
+              | jq -s '[.[][] | select(.user.login == "github-actions[bot]" and .state == "APPROVED")] | length')
+            if [ "$existing" -gt 0 ]; then
+              echo "#$number: already approved and not dismissed. Nothing to do."
+              continue
+            fi
+            gh pr review --approve "$(printf '%s' "$pr" | jq -r '.html_url')"
+            echo "#$number: approved."
           done <<< "$numbers"

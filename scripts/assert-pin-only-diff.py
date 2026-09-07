@@ -43,10 +43,16 @@ import re
 import sys
 from collections import Counter
 
-# The files a dependency bot is allowed to touch. Renovate needs the workflow
-# directory for the pip pins it maintains there, and .pre-commit-config.yaml for
-# hook revs, additional_dependencies and the scanner image tags. Dependabot
-# needs the same two plus the test requirements.
+# The files Renovate, the only dependency bot here, is allowed to touch:
+# .env.example for image pins, the workflow directory for the pip pins and
+# GitHub Actions versions it maintains there, .pre-commit-config.yaml for hook
+# revs, additional_dependencies and the scanner image tags, tests/requirements.txt
+# for the pip pins the test suite runs on, and .tool-versions for the asdf
+# managed tools. Dependabot managed the pre-commit, github-actions and pip
+# ecosystems from a separate set of pin positions across the same files until
+# its version updates were retired; see docs/DEPENDENCY_UPDATES.md,
+# "Retiring Dependabot". Nothing here shrank when it left, since Renovate's
+# native managers for those three ecosystems write into the same files.
 ALLOWED_PATHS = (
     ".env.example",
     ".pre-commit-config.yaml",
@@ -78,14 +84,14 @@ RELEASE = r"v?[0-9][0-9A-Za-z.+_-]*"
 DIGEST = re.compile(r"@sha256:[0-9a-f]{7,}")
 
 # A GitHub Actions pin: a full 40 character commit SHA, optionally followed by
-# a trailing release comment (`# v7`, `# v7.0.1`) that Dependabot rewrites on
-# the same bump whenever the tag the SHA resolves from changes. Both have to
-# normalize together: an earlier version of this script normalized only the
-# SHA and left the comment as ordinary text, so an ordinary bump that also
-# moved `# v7` to `# v7.0.1` read as a structural change and `Pin Only`
-# refused a diff that was actually pin-only. Every grouped Actions update
-# makes this a near-certainty rather than an edge case, since one bump is
-# enough to trip it.
+# a trailing release comment (`# v7`, `# v7.0.1`) that the dependency bot
+# rewrites on the same bump whenever the tag the SHA resolves from changes.
+# Both have to normalize together: an earlier version of this script
+# normalized only the SHA and left the comment as ordinary text, so an
+# ordinary bump that also moved `# v7` to `# v7.0.1` read as a structural
+# change and `Pin Only` refused a diff that was actually pin-only. Every
+# grouped Actions update makes this a near-certainty rather than an edge
+# case, since one bump is enough to trip it.
 #
 # The comment is folded into the normalization only when it is actually a
 # release token running to the end of the line; anything else after the SHA,

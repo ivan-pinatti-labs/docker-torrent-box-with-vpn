@@ -1,15 +1,28 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
 
-  // Dependabot handles pre-commit hooks, GitHub Actions, and the Python
-  // packages in tests/requirements.txt — see dependabot.yml.
-  // Renovate handles Docker image versions pinned in .env.example, and the Python
-  // packages pinned inline in workflow `run:` steps, both via # renovate:
-  // annotations. Those inline pins are the seam between the two tools:
-  // Dependabot's pip ecosystem reads requirements files and would never see a
-  // `pip install foo==1.2.3` in a workflow, so a pin left unwatched there rots
-  // silently, which is how CI ended up installing whatever version of
-  // podman-compose happened to be current.
+  // Renovate is the only dependency bot here; Dependabot's `updates:` config
+  // was removed from .github/dependabot.yml on 2026-09-07 (see
+  // docs/DEPENDENCY_UPDATES.md, "Retiring Dependabot"). Three ecosystems moved
+  // over to Renovate's own native managers rather than to another custom
+  // regex, since each already has one: `pre-commit` reads the hook `rev:` in
+  // .pre-commit-config.yaml (its own dependency, not the `additional_dependencies`
+  // pins or the image tags inside a hook's `entry:`, which the customManagers
+  // below still own because neither is something the native manager reads),
+  // `github-actions` reads workflow `uses:` versions, and `pip_requirements`
+  // reads tests/requirements.txt. All three ship enabled by default except
+  // `pre-commit`, switched on below.
+  //
+  // What remains a customManager, and why: Docker image versions pinned in
+  // .env.example behind a `# renovate: depName=...` annotation, Python
+  // packages pinned inline in a workflow `run:` step, the `additional_dependencies`
+  // pins in .pre-commit-config.yaml (a Go module and a pypi package, neither a
+  // container image nor something the native pre-commit manager reads), and
+  // the image tags pinned inside a `repo: local` hook's `entry:` command.
+  // Those four are all inline pins with no manifest file of their own, which is
+  // exactly the shape a native manager cannot read: the seam is real
+  // regardless of which bot reads the manifest-based half, and it is spelled
+  // out in each customManager's own comment below rather than restated here.
   extends: ["config:recommended"],
 
   // Kept on for its warnings, not for the overview of pending updates. Two
@@ -21,6 +34,18 @@
   // the wrong thing; an issue here would have shown it. The cost is one
   // standing issue that never closes on its own, taken deliberately.
   dependencyDashboard: true,
+
+  // Off by default upstream, "not supported by the pre-commit maintainers or
+  // community" per the manager's own warning, which is a statement about
+  // where bug reports go rather than a reason to leave hook revisions
+  // unwatched. This is what replaces Dependabot's `pre-commit` ecosystem: it
+  // reads the same field, the `rev:` of each hosted `repo:` entry in
+  // .pre-commit-config.yaml, and leaves `repo: local` hooks and
+  // `additional_dependencies` alone, both of which have no `rev:` for it to
+  // read and stay on the customManagers below.
+  "pre-commit": {
+    enabled: true,
+  },
 
   timezone: "America/Toronto",
 
@@ -142,6 +167,20 @@
   // The exception, and the reason the window can be as long as a week: a fix
   // for a known vulnerability is not made safer by aging, and this stack faces
   // the internet. null clears the inherited window for these updates only.
+  //
+  // This is now the only alert driven remediation path on the repository.
+  // Dependabot's own security updates used to cover GitHub Actions and pip
+  // independently of this setting, opening as soon as GitHub raised an alert
+  // regardless of what Renovate was configured to do; that path is gone with
+  // `updates:` in dependabot.yml. This setting is unscoped by datasource, so
+  // it already covered Actions and pip the whole time the two bots ran side by
+  // side, and it is what carries that coverage forward alone now. Dependabot
+  // Alerts and the dependency graph themselves are a GitHub repository
+  // setting, not something either bot's config file governs, and stay
+  // enabled; see docs/DEPENDENCY_UPDATES.md, "Security updates", for what this
+  // still cannot see, which is unchanged by any of this: GitHub raises no
+  // vulnerability alert for a container image, so image bumps had no alert
+  // driven path before this migration and have none after it either.
   vulnerabilityAlerts: {
     minimumReleaseAge: null,
   },
@@ -511,6 +550,39 @@
       groupSlug: "ci-runtime",
       addLabels: ["ci-runtime"],
     },
+    // The three ecosystems that moved here from Dependabot, each grouped the
+    // way Dependabot grouped it: one pull request per ecosystem
+    // (`patterns: ["*"]` in the old dependabot.yml), rather than one per
+    // dependency. That was about pull request volume, not a shared release
+    // cadence, same reasoning as the arr suite and observability groups
+    // above, and nothing about the reasoning changes just because a different
+    // bot is now the one opening the pull request.
+    //
+    // Labels match what dependabot.yml used to add, on top of the root
+    // `dependencies` label every Renovate pull request already carries, so a
+    // pull request from either era of this repository's history sorts the
+    // same way.
+    {
+      matchManagers: ["pre-commit"],
+      groupName: "pre-commit hooks",
+      groupSlug: "pre-commit-hooks",
+      addLabels: ["pre-commit"],
+    },
+    {
+      matchManagers: ["github-actions"],
+      groupName: "github actions",
+      groupSlug: "github-actions",
+      addLabels: ["github-actions"],
+    },
+    // tests/requirements.txt is the only file this manager reads in this
+    // repository, so scoping the rule to the manager alone, rather than
+    // pairing it with a file match, is enough to mean the same thing.
+    {
+      matchManagers: ["pip_requirements"],
+      groupName: "test dependencies",
+      groupSlug: "test-dependencies",
+      addLabels: ["python"],
+    },
   ],
 
   customManagers: [
@@ -587,14 +659,17 @@
       customType: "regex",
       // Versions pinned inside `repo: local` hooks in .pre-commit-config.yaml.
       //
-      // Dependabot's pre-commit ecosystem updates the `rev:` of a hook
-      // repository and nothing else, so these pins are invisible to it: the
-      // `additional_dependencies` entries (gitleaks, checkov) and the container
-      // image tags inside a hook's `entry:` (trivy, dotenv-linter, hadolint,
-      // lychee). Before the MegaLinter removal they were all carried by that
-      // single pinned image, and Dependabot did keep it current. Without this
-      // manager they would silently rot, which for a secret scanner and two
-      // security scanners is the worst place to have a stale pin.
+      // The native `pre-commit` manager enabled above updates the `rev:` of a
+      // hosted hook repository and nothing else, so these pins are invisible
+      // to it: the `additional_dependencies` entries (gitleaks, checkov) and
+      // the container image tags inside a `repo: local` hook's `entry:`
+      // (trivy, dotenv-linter, hadolint, lychee). Dependabot's own
+      // pre-commit ecosystem had the identical blind spot before it managed
+      // this file at all. Before the MegaLinter removal they were all
+      // carried by one single pinned image, and Dependabot did keep that one
+      // current. Without this manager they would silently rot, which for a
+      // secret scanner and two security scanners is the worst place to have
+      // a stale pin.
       //
       // The image patterns tolerate lines between the annotation and the tag,
       // because `entry:` is a folded block scalar and a comment cannot live
