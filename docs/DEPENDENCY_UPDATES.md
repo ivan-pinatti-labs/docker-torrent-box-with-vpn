@@ -129,17 +129,19 @@ inventing, only switching on. `pre-commit` is the one of the three that ships
 disabled upstream and needed a line in `.github/renovate.json5`; the other
 two were already enabled by default; see "Which manager owns what" above.
 
-Two things did not change as a side effect of this, deliberately. Grouping:
-each ecosystem still opens as one pull request rather than one per
+One thing did not change as a side effect of this, deliberately: grouping.
+Each ecosystem still opens as one pull request rather than one per
 dependency, the same shape `dependabot.yml`'s own `patterns: ["*"]` groups
 gave it, now written as a `packageRules` entry matching the manager instead.
-And security coverage: Dependabot's own alert driven security updates for
-GitHub Actions and pip lost the ecosystems they covered, but
-`vulnerabilityAlerts` in `.github/renovate.json5` is unscoped by datasource
-and was already covering the same two ecosystems the whole time the two bots
-ran side by side, so nothing was leaning on Dependabot alone for that path.
-See "Security updates" below for what does and does not change there,
-including a setting that turned out not to move with the rest.
+
+Security coverage is a different case, worth being careful about rather than
+assuming: `updates:` coming out of `dependabot.yml` only ever governed
+Dependabot's routine version updates, the three ecosystems above. It never
+governed Dependabot's own alert driven security updates for GitHub Actions
+and pip, which read the dependency graph directly and are switched by a
+separate GitHub repository setting untouched by this file. See "Security
+updates" below for what does and does not change there, including a setting
+that turned out not to move with the rest.
 
 What did change, because the old split stopped applying to it: the
 `ALLOWED_PATHS` pin files in `scripts/assert-pin-only-diff.py`, the bot
@@ -275,17 +277,20 @@ the cooldown, and `Tests Verified` is what clears them.
 
 ## Security updates
 
-Renovate's `vulnerabilityAlerts` setting is now the only alert driven remediation path on this
-repository, and it reads none of the schedules above: it clears the inherited
-`minimumReleaseAge` window entirely, so a fix for a known vulnerability is never held back by
-the cooling period described below.
+Renovate's `vulnerabilityAlerts` setting is the alert driven remediation path this repository's
+own merge pipeline is built around, and it reads none of the schedules above: it clears the
+inherited `minimumReleaseAge` window entirely, so a fix for a known vulnerability is never held
+back by the cooling period described below.
 
 That was already true before Dependabot's version updates were retired, not something this
 migration added. `vulnerabilityAlerts` is unscoped by datasource, so it covered GitHub Actions
 and pip the whole time the two bots ran side by side, alongside Dependabot's own security
 updates for the same two ecosystems, which opened independently as soon as GitHub raised an
-alert. Retiring Dependabot removed a second, independent path to the same outcome for Actions
-and pip; it did not remove the only one. See "Retiring Dependabot" above.
+alert. Retiring Dependabot's version updates did not retire that second, independent path:
+Dependabot's own security updates are a separate GitHub setting, `automated-security-fixes`,
+untouched by removing `dependabot.yml`'s `updates:` block and still live as of this writing.
+See "The one setting that did not move with the file" below for exactly what that means and
+what closes it. Nothing here is stated as fully "only Renovate" until that setting is disabled.
 
 That coverage has a real gap, and it is worth stating plainly rather than leaving it implicit.
 The dependency graph GitHub builds for this repository holds 17 packages, all GitHub Actions and
