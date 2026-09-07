@@ -1795,14 +1795,19 @@ done
 # download clients and Jellyfin connection succeeded (see
 # ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT/ARR_JOB_JELLYFIN_FAILED_BIT above), so
 # their status is worth decoding instead of discarding like the jobs above.
-# Any status at or above ARR_JOB_STATUS_BASE means the job ran to completion
-# and one or both of those specific steps failed; anything else non-zero is
-# a job that died earlier, before it could even report which step, and is
-# recorded separately rather than blamed on either one.
+# Only a status wire_arr_app could actually have returned (ARR_JOB_STATUS_BASE
+# plus one or both bits, so 101 to 103) means the job ran to completion and
+# one or both of those specific steps failed; anything else non-zero,
+# including a signal-terminated job (bash reports those as 128+signal, e.g.
+# 137 for SIGKILL, which is also >= ARR_JOB_STATUS_BASE), is a job that died
+# earlier, before it could even report which step, and is recorded
+# separately rather than decoded incorrectly into a false Jellyfin/
+# download-client bit and left out of ARR_JOB_FAILED entirely.
+readonly ARR_JOB_STATUS_MAX=$((ARR_JOB_STATUS_BASE + ARR_JOB_JELLYFIN_FAILED_BIT + ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT))
 for name in lidarr radarr readarr sonarr whisparr; do
   arr_status=0
   wait_job "$name" || arr_status=$?
-  if [[ "$arr_status" -ge "$ARR_JOB_STATUS_BASE" ]]; then
+  if [[ "$arr_status" -gt "$ARR_JOB_STATUS_BASE" && "$arr_status" -le "$ARR_JOB_STATUS_MAX" ]]; then
     status_bits=$((arr_status - ARR_JOB_STATUS_BASE))
     if ((status_bits & ARR_JOB_JELLYFIN_FAILED_BIT)); then
       JELLYFIN_FAILED+=("$name")
