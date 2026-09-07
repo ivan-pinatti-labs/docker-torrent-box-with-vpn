@@ -341,7 +341,7 @@ jobs:
         continue-on-error: true
         run: |
           # renovate: datasource=pypi depName=zizmor
-          pip install zizmor==1.29.0
+          pip install zizmor==1.30.0
           zizmor --no-progress --format sarif .github/workflows/ \
             > sarif/zizmor.sarif || true
 
