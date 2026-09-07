@@ -41,6 +41,21 @@ spelled out in the header comment of
 [`.github/renovate.json5`](../.github/renovate.json5); this page reuses that reasoning rather
 than restating it differently.
 
+The native `pre-commit` manager reads more than `rev:`, and that turned out to matter. Its
+extractor walks every hook in the file, `repo: local` included, and additionally parses
+`additional_dependencies` wherever a hook declares `language: golang`, `python` or `node`,
+which describes exactly two hooks here: `gitleaks-history` (`language: golang`) and `checkov`
+(`language: python`). Both are already read by the `additional_dependencies` customManager
+above, by annotation. Confirmed live with `npx renovate --platform=local --dry-run=lookup`:
+before a fix, the native manager independently proposed the identical `github.com/zricethezav/gitleaks/v8`
+and `checkov` updates the customManager already covers, which is two managers able to open
+competing pull requests for the same line. A `packageRules` entry in `.github/renovate.json5`
+disables the native manager's output for the `pre-commit-golang`, `pre-commit-python` and
+`pre-commit-node` depTypes specifically, confirmed by the same dry run to leave both
+dependencies `skipReason: disabled` there while the customManager keeps proposing them
+normally. The native manager's `rev:` extraction, which carries the plain `repository` depType,
+is untouched by that rule.
+
 ## The daily layout
 
 | When | What opens |
@@ -115,14 +130,12 @@ each ecosystem still opens as one pull request rather than one per
 dependency, the same shape `dependabot.yml`'s own `patterns: ["*"]` groups
 gave it, now written as a `packageRules` entry matching the manager instead.
 And security coverage: Dependabot's own alert driven security updates for
-GitHub Actions and pip are gone with the ecosystems they covered, but
+GitHub Actions and pip lost the ecosystems they covered, but
 `vulnerabilityAlerts` in `.github/renovate.json5` is unscoped by datasource
 and was already covering the same two ecosystems the whole time the two bots
 ran side by side, so nothing was leaning on Dependabot alone for that path.
-See "Security updates" below for what does and does not change there.
-Nothing about GitHub's own Dependabot Alerts or dependency graph is touched
-by any of this: both are repository settings, not something either bot's
-config file turns on or off, and stay enabled.
+See "Security updates" below for what does and does not change there,
+including a setting that turned out not to move with the rest.
 
 What did change, because the old split stopped applying to it: the
 `ALLOWED_PATHS` pin files in `scripts/assert-pin-only-diff.py`, the bot
@@ -133,10 +146,9 @@ identity checks in `.github/workflows/bot-auto-merge.yml`,
 none of the files it checks changed, since Renovate's native managers for the
 three retired ecosystems write into the same paths Dependabot did.
 `.github/dependabot.yml` itself was deleted rather than left as an empty
-shell: nothing in it survives `updates:` coming out, since GitHub's security
-updates and dependency graph are repository settings, not something that
-file configures, and a file with nothing left to configure documents nothing
-by staying.
+shell: nothing left in it after `updates:` comes out is something that file
+configures; see "Security updates" below for the one GitHub setting worth
+being careful about here.
 
 ## The grouping rationale
 
@@ -290,6 +302,32 @@ GitHub's Dependabot Alerts and the dependency graph itself are what raises the a
 `vulnerabilityAlerts` reads. Both are repository settings under Settings, not something either
 bot's config file turns on, and neither is touched by removing `dependabot.yml`'s `updates:`
 block: they stay enabled, and should.
+
+### The one setting that did not move with the file
+
+Removing `.github/dependabot.yml`'s `updates:` block does not, by itself, stop Dependabot from
+opening a security pull request. GitHub's automated security fixes (Dependabot security
+updates, the actual pull request half, as distinct from the Dependabot Alerts that merely
+raise a signal) are governed by a separate repository setting,
+`automated-security-fixes`, that reacts to an alert on its own and does not read
+`dependabot.yml` to decide whether to act. Verified live against this repository with
+`gh api repos/<owner>/<repo>/automated-security-fixes`: it reports `{"enabled": true,
+"paused": false}`, unchanged by this migration, since nothing in a pull request's file diff
+can touch it.
+
+Left as it is, this is a real gap in "Renovate is the only bot that opens dependency pull
+requests here": a security alert could still make Dependabot open one, on a login this
+repository's tooling no longer recognizes. Concretely, `bot-auto-merge.yml` would supply it no
+approval (only `renovate[bot]` reaches that path now), and `coderabbit-review-verdict.py` would
+grade it in the human lane rather than the unattended bot lane, so it could not merge on its
+own; but it would still sit open needing a maintainer to close it, which is exactly the
+orphaned-bot-pull-request shape this migration exists to remove. This is deliberately left as a
+manual action rather than something this pull request's diff changes: disabling
+`automated-security-fixes` is a live repository setting change with no file to review it
+through, not a version-controlled edit, and turning off a security remediation path is a
+decision for a maintainer to make deliberately rather than a side effect of a dependency bot
+migration. **Disable "Dependabot security updates" (`automated-security-fixes`) for this
+repository in Settings, leaving Dependabot Alerts and the dependency graph enabled.**
 
 ## What was frozen, and for how long
 

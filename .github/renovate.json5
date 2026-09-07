@@ -39,10 +39,23 @@
   // community" per the manager's own warning, which is a statement about
   // where bug reports go rather than a reason to leave hook revisions
   // unwatched. This is what replaces Dependabot's `pre-commit` ecosystem: it
-  // reads the same field, the `rev:` of each hosted `repo:` entry in
-  // .pre-commit-config.yaml, and leaves `repo: local` hooks and
-  // `additional_dependencies` alone, both of which have no `rev:` for it to
-  // read and stay on the customManagers below.
+  // reads the `rev:` of each hosted `repo:` entry in .pre-commit-config.yaml.
+  //
+  // It also reads more than that, and the `pre-commit-golang`/
+  // `pre-commit-python`/`pre-commit-node` packageRule below exists because of
+  // it. The manager's own extractor walks every hook in the file, `repo: local`
+  // included, and additionally parses `additional_dependencies` wherever a
+  // hook declares `language: golang`, `python` or `node`, which describes
+  // exactly two hooks here: `gitleaks-history` (`language: golang`) and
+  // `checkov` (`language: python`). Both are already read by name below, by
+  // the customManager built for them, with the annotation as the sole
+  // authority for datasource and depName because the two dependencies do not
+  // share one; see that customManager's own comment for why a shared
+  // `datasourceTemplate` silently broke both lookups for weeks the one time
+  // this was tried. Leaving the native manager free to extract the same two
+  // dependencies a second way risks exactly that regressing, or two
+  // competing pull requests for the one line, so its output for those three
+  // depTypes is disabled rather than merely left alongside the customManager.
   "pre-commit": {
     enabled: true,
   },
@@ -562,6 +575,20 @@
     // `dependencies` label every Renovate pull request already carries, so a
     // pull request from either era of this repository's history sorts the
     // same way.
+    // Turns off the native pre-commit manager's own reading of
+    // `additional_dependencies`, which the `"pre-commit"` block above
+    // explains: it covers exactly the two dependencies (gitleaks-history,
+    // checkov) the customManager below already reads by annotation, and
+    // leaving both live would risk two managers proposing updates for the
+    // one line. `enabled: false` here stops this manager from ever offering
+    // an update under these three depTypes; it does not stop it from
+    // reading `rev:` bumps, which carry the plain `repository` depType
+    // instead and are untouched by this rule.
+    {
+      matchManagers: ["pre-commit"],
+      matchDepTypes: ["pre-commit-golang", "pre-commit-python", "pre-commit-node"],
+      enabled: false,
+    },
     {
       matchManagers: ["pre-commit"],
       groupName: "pre-commit hooks",
