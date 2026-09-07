@@ -2,9 +2,8 @@
 
 Renovate is the only bot that opens dependency pull requests here. Dependabot did too, until
 its `updates:` config was removed from `.github/dependabot.yml` on 2026-09-07; see "Retiring
-Dependabot" below for the migration itself and why it landed as a consolidation rather than a
-second bot being added to. This page is the reference for what runs when and why the schedule
-is shaped the way it is. The mechanics of how a bump actually merges live in
+Dependabot" below for the migration itself. This page is the reference for what runs when and
+why the schedule is shaped the way it is. The mechanics of how a bump actually merges live in
 [docs/MERGE_PIPELINE.md](MERGE_PIPELINE.md); this page does not repeat them.
 
 ## Which manager owns what
