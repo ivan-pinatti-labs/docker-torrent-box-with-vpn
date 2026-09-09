@@ -8,7 +8,9 @@
   // regex, since each already has one: `pre-commit` reads the hook `rev:` in
   // .pre-commit-config.yaml, `github-actions` reads workflow `uses:` versions,
   // and `pip_requirements` reads tests/requirements.txt. All three ship
-  // enabled by default except `pre-commit`, switched on below.
+  // enabled by default except `pre-commit`, switched on below, and
+  // `pip_requirements` needed the `ignorePaths` override below it to actually
+  // reach tests/requirements.txt at all.
   //
   // What remains a customManager, and why: Docker image versions pinned in
   // .env.example behind a `# renovate: depName=...` annotation, Python
@@ -31,6 +33,20 @@
   // leaving both live risked two managers proposing updates for the same
   // line.
   extends: ["config:recommended"],
+
+  // config:recommended pulls in config:ignoreModulesAndTests, whose
+  // ignorePaths includes **/tests/**, meant for a vendored fixture directory
+  // in a language ecosystem, not this repository's own tests/ directory,
+  // where tests/requirements.txt actually lives. Left in place, that pattern
+  // silently drops tests/requirements.txt from every manager repository
+  // wide before pip_requirements ever gets to look at it: confirmed live
+  // with a dry-run=extract, which shows no pip_requirements manager at all
+  // in the output despite it being enabled by default and the packageRule
+  // below naming it by file. ignorePaths cannot be scoped to one manager, so
+  // there is no narrower fix than overriding it repository wide back to
+  // Renovate's own bare default (node_modules, bower_components), which
+  // this repository has no use for either but which costs nothing to keep.
+  ignorePaths: ["**/node_modules/**", "**/bower_components/**"],
 
   // Kept on for its warnings, not for the overview of pending updates. Two
   // lookup failures sat unseen on Mend's hosted dashboard for weeks: nothing
