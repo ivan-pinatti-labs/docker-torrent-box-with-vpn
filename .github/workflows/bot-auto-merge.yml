@@ -43,22 +43,35 @@ on:
     types: [opened, synchronize, reopened, labeled]
     branches:
       - main
-  # For the `approve-owner` job below only. `Review Verified` is realistically
-  # the slowest of the six required contexts, since it waits on CodeRabbit's
-  # own review, and `pull_request_target` never fires again once a pull
-  # request stops changing. Without a second trigger, a pull request whose
-  # review finished after the first poll window closed would need a push it
-  # did not otherwise need, purely to get approved.
+  # For the `approve-owner` job below only. `pull_request_target` never fires
+  # again once a pull request stops changing, so a pull request whose last
+  # required context settles after the first poll window closed would need a
+  # push it did not otherwise need, purely to get approved.
   #
-  # `workflow_run`, not `status`: coderabbit-gate.yml publishes
-  # `Review Verified` with `secrets.GITHUB_TOKEN`, and GitHub does not start
-  # new workflow runs from events a `GITHUB_TOKEN` creates, so a `status`
-  # trigger would never fire from that publish at all, silently.
-  # `workflow_run` reacts to the run finishing rather than to the API call
-  # made during it, which is why it is the sanctioned way to chain workflows
-  # without a personal access token.
+  # Both CodeRabbit Gate and Integration Tests are named here, not just the
+  # first. `Review Verified` was assumed to be the slowest of the required
+  # contexts, since it waits on CodeRabbit's own review, but that is not true
+  # in practice: the integration suite Integration Tests runs routinely takes
+  # longer than a CodeRabbit review does, and #177 sat unapproved for exactly
+  # that reason on 2026-09-10. `Tests Verified` went green at 15:16 UTC, well
+  # after CodeRabbit Gate's own poll window had already closed and given up
+  # at 15:00, and nothing was listening for Integration Tests finishing to
+  # try again. The hourly schedule that should have caught it within the
+  # hour was itself skipped by GitHub, confirmed against the Actions API
+  # rather than assumed, which is the same "deprioritized under load" risk
+  # docs/MERGE_PIPELINE.md already documents for CodeRabbit Gate's own
+  # schedule. Naming both workflows here means whichever of the two required
+  # contexts actually finishes last is what re-triggers the poll, instead of
+  # depending on an assumption about which one that will be.
+  #
+  # `workflow_run`, not `status`: both workflows publish their status with
+  # `secrets.GITHUB_TOKEN`, and GitHub does not start new workflow runs from
+  # events a `GITHUB_TOKEN` creates, so a `status` trigger would never fire
+  # from either publish at all, silently. `workflow_run` reacts to the run
+  # finishing rather than to the API call made during it, which is why it is
+  # the sanctioned way to chain workflows without a personal access token.
   workflow_run:
-    workflows: ["CodeRabbit Gate"]
+    workflows: ["CodeRabbit Gate", "Integration Tests"]
     types: [completed]
   # The recovery lever, for the `nudge-bot` job below only. Neither
   # `pull_request_target` above fires again once a pull request stops
