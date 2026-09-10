@@ -148,7 +148,22 @@ def _normalize_action_sha(match: re.Match[str]) -> str:
 # `actions/checkout@v7` becoming `attacker/checkout@v7`: normalizing the
 # common suffix both sides share does not touch the text that has to match
 # for the lines to be counted as the same pin.
-BARE_ACTION_VERSION = re.compile(r"@" + RELEASE + r"$")
+#
+# Requires a `uses:` field and an owner/repo-shaped coordinate immediately
+# before the `@`, unlike ACTION_SHA above, which does not check for `uses:`
+# at all. A CodeRabbit review of this pull request found the gap an
+# unscoped version left: a `run:` step's `tool@v7` would normalize the same
+# way, so that line could grow an unrelated-looking SHA and comment and
+# still read as a first-time pin, on a file where a `run:` step is already
+# called out above as one of the two executable surfaces a path allowlist
+# alone would not fence. ACTION_SHA is left as it was rather than narrowed
+# to match: its shape (a 40 character hex run) is not one `run:` step
+# content plausibly produces by coincidence the way a short version tag is,
+# and narrowing an already-relied-on pattern belongs in its own change, not
+# folded into this one.
+BARE_ACTION_VERSION = re.compile(
+    r"(?P<action_prefix>\buses:[ \t]+[\w.-]+/[\w./-]+)@" + RELEASE + r"$"
+)
 
 
 # A version-shaped token that sits where a pin sits, and nowhere else. The
@@ -209,7 +224,7 @@ def normalize(line: str, path: str = "") -> str:
     """Reduce a line to everything about it that a version bump may not change."""
     stripped = DIGEST.sub("", line)
     stripped = ACTION_SHA.sub(_normalize_action_sha, stripped)
-    stripped = BARE_ACTION_VERSION.sub(" # <version>", stripped)
+    stripped = BARE_ACTION_VERSION.sub(r"\g<action_prefix> # <version>", stripped)
     if path.endswith(".tool-versions"):
         return TOOL_VERSION_LINE.sub(r"\g<prefix><version>", stripped)
     return VERSION.sub(r"\g<prefix><version>", stripped)

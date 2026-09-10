@@ -218,6 +218,23 @@ def test_refuses_a_first_time_pin_with_a_swapped_owner():
     assert result.returncode == 1
 
 
+def test_refuses_a_run_step_version_bump_disguised_as_a_first_time_pin():
+    # CodeRabbit's finding on this pull request: an unscoped version of
+    # BARE_ACTION_VERSION would let a run: step's trailing tool@v7 normalize
+    # the same way a first-time action pin does, so it could grow an
+    # unrelated-looking SHA and comment and still read as pin-only. Requiring
+    # a uses: field and an owner/repo coordinate immediately before the `@`
+    # closes that: this line has neither.
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            "-          run: tool@v7\n"
+            "+          run: tool@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n",
+        )
+    )
+    assert result.returncode == 1
+
+
 def test_refuses_a_first_time_pin_missing_its_release_comment():
     # A bare SHA with nothing trailing it normalizes to "" (ACTION_SHA), not
     # to the " # <version>" a first-time pin's bare side produces, so the two
