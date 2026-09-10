@@ -59,7 +59,6 @@ FLOATING = {
         "not in the default stack (PLEX_PROFILE=disabled); latest is also a "
         "channel tag with no digest to pin anyway"
     ),
-    "WHISPARR_VERSION": "v3 tracks the v3 branch, which upstream keeps moving",
 }
 
 # Annotated pins that must not carry a digest. Both are consumed twice, as the

@@ -448,10 +448,28 @@ pins are deliberately fixed, not accidentally frozen.
 
 ## Remaining gaps
 
-Three tags are deliberately left floating rather than pinned to a version at all:
-`NGINX_VERSION=stable-alpine`, `PLEX_VERSION=latest`, and `WHISPARR_VERSION=v3`.
+Two tags are deliberately left floating rather than pinned to a version at all:
+`NGINX_VERSION=stable-alpine` and `PLEX_VERSION=latest`.
 `tests/test_renovate_pins.py` carries them in an explicit allowlist, so the exemption is a
 decision on the record rather than an omission.
+
+`WHISPARR_VERSION` used to be the third. `v3` tracks a floating alias hotio republishes
+whenever they rebuild, which they do off Whisparr's `eros` branch with no tagged releases
+of its own, upstream has nothing to point a stable tag at either. On 2026-09-09 hotio pushed
+`v3-3.5.0-release.1585` under that alias, and it broke both the container healthcheck and the
+proxy connectivity check here, three separate merge queue runs in a row, none of it caused by
+anything in this repository: `eros` itself had no real code commit since 2026-01-14, only
+translation updates since, so whatever broke lives in hotio's build layer, not the app.
+
+The fix doesn't need upstream to change anything, hotio already tags each build with an
+immutable version alongside the floating alias (`v3-3.4.0-release.1387`, `v3-3.5.0-release.1585`,
+and so on going back through `v3-3.2.0-release.27`), they just don't document those as the way
+to install this. `WHISPARR_VERSION` is now pinned to `v3-3.4.0-release.1387`'s digest, the
+release immediately before the broken one, which had run clean for five days before that.
+`versioning=loose` because the tag is not semver Renovate can order (`v3-` prefix, `-release.NNNN`
+suffix), the same reasoning as `LAZYLIBRARIAN_VERSION` below. Renovate will still offer a
+`digest` update whenever `v3` moves to a new build; confirm CI actually passes before taking
+one, this pin has no ordering to fall back on if a future one is bad again.
 
 `MYLAR_VERSION` carries no digest, and cannot as it stands. It is read twice out of one
 variable: as the base image the wrapper in `build/` is built on, and as the tag of the locally
