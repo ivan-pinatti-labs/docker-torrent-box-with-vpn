@@ -170,6 +170,71 @@ def test_refuses_a_comment_appearing_where_there_was_none():
 
 
 # ---------------------------------------------------------------------------
+# A first-time GitHub Actions pin normalizes with the bare ref it replaces
+# ---------------------------------------------------------------------------
+
+
+def test_accepts_a_first_time_github_action_pin():
+    # #178: pinDigests adding a SHA and release comment to a previously
+    # unpinned action, refused before this normalized, despite being nothing
+    # but the pin Renovate's own update type exists to add.
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            "-        uses: actions/checkout@v7\n"
+            "+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+            " # v7\n",
+        )
+    )
+    assert result.returncode == 0, result.stdout
+
+
+def test_accepts_a_first_time_pin_alongside_a_tag_bump():
+    # The release comment does not have to match the old bare tag exactly;
+    # Renovate can pin straight to a newer release than the one that was
+    # sitting there unpinned, the same as an ordinary bump would.
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            "-        uses: actions/checkout@v7\n"
+            "+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+            " # v7.0.1\n",
+        )
+    )
+    assert result.returncode == 0, result.stdout
+
+
+def test_refuses_a_first_time_pin_with_a_swapped_owner():
+    # The dependency name stays literal to the left of the `@` for this shape
+    # exactly as it does for every other pin type here.
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            "-        uses: actions/checkout@v7\n"
+            "+        uses: evil/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+            " # v7\n",
+        )
+    )
+    assert result.returncode == 1
+
+
+def test_refuses_a_first_time_pin_missing_its_release_comment():
+    # A bare SHA with nothing trailing it normalizes to "" (ACTION_SHA), not
+    # to the " # <version>" a first-time pin's bare side produces, so the two
+    # still do not match: Renovate always adds the comment on this update
+    # type, and a diff missing it has changed something this script cannot
+    # account for as a plain pin.
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            "-        uses: actions/checkout@v7\n"
+            "+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n",
+        )
+    )
+    assert result.returncode == 1
+
+
+# ---------------------------------------------------------------------------
 # Refused: anything else, including alongside a legitimate bump
 # ---------------------------------------------------------------------------
 

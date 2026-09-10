@@ -37,6 +37,15 @@ malicious. `checkov==3.3.2` becoming `checkov==3.3.11` is the change this file
 exists to permit, and no amount of diff reading can tell a good release from a
 backdoored one. That is what the cooling window in .github/renovate.json5, the
 integration suite, and the scanners are for. See docs/HARDENING.md.
+
+A first pin counts as a version moving too, not only a bump between two
+existing pins: `uses: actions/checkout@v7` becoming
+`uses: actions/checkout@<sha> # v7` is Renovate's `pinDigests` update type
+adding a SHA and a release comment where there was previously only a bare
+tag, which is exactly as safe to wave through as any other version moving in
+a pin position, for the same reason a first Docker image digest already is
+(see DIGEST below). #178 was refused before this normalized, despite being
+nothing else.
 """
 
 import re
@@ -113,6 +122,35 @@ def _normalize_action_sha(match: re.Match[str]) -> str:
     return ""
 
 
+# A first-time `pinDigests` bump on a GitHub Action changes
+# `uses: actions/checkout@v7` to `uses: actions/checkout@<sha> # v7` in one
+# step: there is no prior SHA to compare against, and the trailing release
+# comment appears for the first time alongside it. #178 proved this live,
+# refused by `Pin Only` despite being nothing but the pin Renovate's own
+# `pinDigests` update type exists to add.
+#
+# ACTION_SHA above normalizes the pinned side to " # <version>" whenever a
+# release comment trails the SHA, exactly what a first-time pin always
+# carries (Renovate never adds a bare SHA with no comment). This pattern
+# gives the unpinned side the identical placeholder, so the two sides of a
+# first-time pin compare equal the same way an ordinary SHA-to-SHA bump does.
+# It has to run before the generic VERSION fallback below, which would
+# otherwise normalize the bare form to `@<version>` instead, a shape the
+# pinned side can never produce and so could never match; ACTION_SHA already
+# ran first and would have consumed any line that has a SHA, so by the time
+# this pattern is tried, `@RELEASE$` can only mean a bare, unpinned ref.
+#
+# Anchored to end of line for the same reason ACTION_SHA is: a version token
+# followed by anything else is not this shape and is left alone, so it is
+# still read as a structural change if it differs between the two sides. The
+# dependency name stays literal to the left of the `@` exactly as with every
+# other pin type here, which is what still refuses
+# `actions/checkout@v7` becoming `attacker/checkout@v7`: normalizing the
+# common suffix both sides share does not touch the text that has to match
+# for the lines to be counted as the same pin.
+BARE_ACTION_VERSION = re.compile(r"@" + RELEASE + r"$")
+
+
 # A version-shaped token that sits where a pin sits, and nowhere else. The
 # prefix is what makes this narrow: matching any number on the line would accept
 # `PUID=1000` becoming `PUID=0`, or a `fetch-depth` moving, since both sides
@@ -171,6 +209,7 @@ def normalize(line: str, path: str = "") -> str:
     """Reduce a line to everything about it that a version bump may not change."""
     stripped = DIGEST.sub("", line)
     stripped = ACTION_SHA.sub(_normalize_action_sha, stripped)
+    stripped = BARE_ACTION_VERSION.sub(" # <version>", stripped)
     if path.endswith(".tool-versions"):
         return TOOL_VERSION_LINE.sub(r"\g<prefix><version>", stripped)
     return VERSION.sub(r"\g<prefix><version>", stripped)
