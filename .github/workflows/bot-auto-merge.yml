@@ -139,7 +139,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Check out the default branch
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # Explicitly the base branch, which is also what pull_request_target
           # checks out by default. Stated anyway, because the assertion below is

@@ -70,7 +70,7 @@ jobs:
     if: github.event_name != 'workflow_dispatch' || inputs.job_scope != 'tests'
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/head', inputs.pr_number) || github.ref }}
           # The gitleaks-history hook scans commits, not the working tree. The
@@ -100,7 +100,7 @@ jobs:
         run: grep -m1 '^PYTHON_VERSION=' .env >> "$GITHUB_ENV"
 
       - name: Python Setup
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -162,7 +162,7 @@ jobs:
       # It exists to give a local push the whole-repository view CI gets for
       # free here, and running it would recurse into the work already in flight.
       - name: Pre-commit Run
-        uses: pre-commit/action@v3.0.1
+        uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
         with:
           extra_args: --all-files --hook-stage pre-push
         env:
@@ -175,7 +175,7 @@ jobs:
     if: github.event_name != 'workflow_dispatch' || inputs.job_scope != 'checks'
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/head', inputs.pr_number) || github.ref }}
 
@@ -221,7 +221,7 @@ jobs:
         run: grep -m1 '^PYTHON_VERSION=' .env >> "$GITHUB_ENV"
 
       - name: Python Setup
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -271,7 +271,7 @@ jobs:
       security-events: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/head', inputs.pr_number) || github.ref }}
           # The secret scan reads commits, not the working tree.
@@ -429,13 +429,13 @@ jobs:
       renovate: ${{ steps.filter.outputs.renovate }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/head', inputs.pr_number) || github.ref }}
 
       - name: Filter
         id: filter
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         with:
           # Every predicate has to hold for a path to count, not just one of
           # them. The default is `some`, under which `**` alone matches
@@ -479,7 +479,7 @@ jobs:
       && (needs.changes.outputs.renovate == 'true' || github.event_name == 'workflow_dispatch') }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/head', inputs.pr_number) || github.ref }}
           # This job downloads and runs Renovate through npx. checkout leaves
