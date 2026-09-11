@@ -679,3 +679,23 @@ def test_refuses_an_action_ref_disguise_outside_a_block_scalar():
         )
     )
     assert result.returncode == 1
+
+
+def test_refuses_a_first_time_pin_disguise_inside_a_sequence_item_scalar():
+    # A CodeRabbit review found BLOCK_SCALAR_OPENER itself was still too
+    # narrow: it required a colon before the scalar indicator, so a bare
+    # sequence-item header with no key in front, `- |`, was not
+    # recognized as opening a block scalar. A uses: line nested under one
+    # then reached pin normalization as ordinary YAML structure instead
+    # of literal block scalar content. Confirmed exploitable before
+    # BLOCK_SCALAR_OPENER also matched a standalone sequence-item header.
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            "        scripts:\n"
+            "          - |\n"
+            "-            uses: fake/action@v7\n"
+            "+            uses: fake/action@v8\n",
+        )
+    )
+    assert result.returncode == 1
