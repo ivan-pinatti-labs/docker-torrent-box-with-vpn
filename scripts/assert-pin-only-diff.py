@@ -289,7 +289,19 @@ VERSION = re.compile(
 # at all). `.env.example`'s own `@` usage is a Docker image digest, and
 # DIGEST above already removes that entirely before this pattern ever
 # runs, so nothing here needs an `.env.example` case to stay working.
-ACTION_REF_VERSION = re.compile(r"(?P<prefix>@)[0-9A-Za-z][0-9A-Za-z.+_-]*")
+#
+# Anchored to a genuine `uses:` field at the start of the line, the same
+# anchor ACTION_SHA and BARE_ACTION_VERSION use, rather than a bare `@`
+# matched anywhere: a CodeRabbit review found the block scalar gating
+# above was not enough on its own, because this pattern's own unscoped
+# `@` still matched a plain, single-line `run:` step's own text once
+# outside a block scalar, `run: echo fake/action@v7` becoming
+# `run: echo fake/action@v8` in particular, with no `uses:` field
+# involved at all. Confirmed exploitable before this anchor was added.
+ACTION_REF_VERSION = re.compile(
+    r"(?P<prefix>^(?:[ \t]*-[ \t]+)?[ \t]*uses:[ \t]+[\w.-]+/[\w./-]+)"
+    r"@[0-9A-Za-z][0-9A-Za-z.+_-]*$"
+)
 
 FILE_HEADER = re.compile(r"^diff --git a/(?P<old>.+) b/(?P<new>.+)$")
 
@@ -374,7 +386,7 @@ def normalize(line: str, path: str = "", in_block_scalar: bool = False) -> str:
     if not (in_block_scalar and path.startswith(".github/workflows/")):
         stripped = ACTION_SHA.sub(_normalize_action_sha, stripped)
         stripped = BARE_ACTION_VERSION.sub(_normalize_bare_action_version, stripped)
-        stripped = ACTION_REF_VERSION.sub(r"\g<prefix><version>", stripped)
+        stripped = ACTION_REF_VERSION.sub(r"\g<prefix>@<version>", stripped)
     if path.endswith(".tool-versions"):
         return TOOL_VERSION_LINE.sub(r"\g<prefix><version>", stripped)
     return VERSION.sub(r"\g<prefix><version>", stripped)

@@ -660,3 +660,22 @@ def test_accepts_a_floating_tag_bump_outside_a_block_scalar():
         )
     )
     assert result.returncode == 0, result.stdout
+
+
+def test_refuses_an_action_ref_disguise_outside_a_block_scalar():
+    # A CodeRabbit review found ACTION_REF_VERSION itself was still
+    # unscoped: its own bare `@` prefix matched anywhere on a line, block
+    # scalar or not, so a plain single-line `run:` step's own text with
+    # an `@version`-shaped token normalized the same way a real `uses:`
+    # field does, with no block scalar and no `uses:` field involved at
+    # all. Confirmed exploitable before ACTION_REF_VERSION was anchored
+    # to a genuine `uses:` field: this exact diff read as Pin-only.
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            "      - name: Run\n"
+            "-        run: echo fake/action@v7\n"
+            "+        run: echo fake/action@v8\n",
+        )
+    )
+    assert result.returncode == 1
