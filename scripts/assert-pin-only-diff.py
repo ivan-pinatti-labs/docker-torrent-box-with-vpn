@@ -295,20 +295,27 @@ FILE_HEADER = re.compile(r"^diff --git a/(?P<old>.+) b/(?P<new>.+)$")
 
 # A YAML block scalar opener: `key: |`, `key: >`, with the optional
 # chomping (`-`/`+`) and explicit indentation (a digit) modifiers the spec
-# allows. Everything indented more than a line matching this, until a line
-# at or below its own indentation appears, is that block scalar's literal
-# content, not further YAML structure: a `run: |` step body is the shape
-# that matters here, since its content can coincidentally read exactly
-# like a `uses:` field. A CodeRabbit review found and confirmed this: an
-# indented `uses: owner/action@<sha> # v7` inside a run: | block matched
-# ACTION_SHA and BARE_ACTION_VERSION alike, treating shell text as if it
-# were a real GitHub Actions step, which a required check reading `Pin
-# Only` then approves. Deliberately not applied to VERSION below: its own
-# `@` prefix already covers a pip pin's `pkg==1.2.3` living inside a
-# `run:` step by design (see VERSION's own comment), a legitimate shape
-# in this repository's workflows that a block scalar check must not cost
-# its normalization.
-BLOCK_SCALAR_OPENER = re.compile(r":\s*[|>][+-]?[1-9]?\s*$")
+# allows, in either order (`|2-` and `|-2` are both valid YAML), and an
+# optional trailing comment after them. Everything indented more than a
+# line matching this, until a line at or below its own indentation
+# appears, is that block scalar's literal content, not further YAML
+# structure: a `run: |` step body is the shape that matters here, since
+# its content can coincidentally read exactly like a `uses:` field. A
+# CodeRabbit review found and confirmed this: an indented `uses:
+# owner/action@<sha> # v7` inside a run: | block matched ACTION_SHA and
+# BARE_ACTION_VERSION alike, treating shell text as if it were a real
+# GitHub Actions step, which a required check reading `Pin Only` then
+# approves. A later review round found the first regex here only matched
+# one modifier order and no trailing comment, so `run: |2-  # step body`
+# or `run: |-2` opened a block scalar this check could not recognize as
+# one. Deliberately not applied to VERSION below: its own `@` prefix
+# already covers a pip pin's `pkg==1.2.3` living inside a `run:` step by
+# design (see VERSION's own comment), a legitimate shape in this
+# repository's workflows that a block scalar check must not cost its
+# normalization.
+BLOCK_SCALAR_OPENER = re.compile(
+    r":\s*[|>](?:[+-][1-9]?|[1-9][+-]?)?(?:[ \t]+#.*)?\s*$"
+)
 
 
 def _line_indent(line: str) -> int:
@@ -329,6 +336,24 @@ def _in_block_scalar(context: list[str], indent: int) -> bool:
     cannot be told apart from one that was never open, and refusing the
     line as a candidate pin either way is the fail closed direction, the
     same one every other shape in this file takes when it cannot be sure.
+
+    A CodeRabbit review named the residual gap in this precisely: the
+    first shallower line found is trusted as the boundary even when it is
+    itself ordinary scalar content one level further out, rather than the
+    real opener sitting deeper in the scan, so a `uses:` line nested under
+    something like an `if` inside a `run: |` block, both indented past the
+    block's own floor, is not caught. Scanning past a shallower non-opener
+    line to keep looking, rather than trusting it as decisive, would close
+    that gap, but was tried and reverted: it also requires reaching the
+    file's own top level (indentation zero) before a real diff's limited
+    context ever earns a confident "not inside one", and no ordinary `gh
+    pr diff` output carries that much. Verified against #178's own real
+    diff, which never contains the change's enclosing indentation chain
+    down to indentation zero: the deeper version refused it outright, the
+    same result a compromised bot's diff should get, not a clean one.
+    This narrower version is the one actually deployed; the nested case
+    above is an accepted, documented gap rather than a silently unfixed
+    one.
     """
     for seen in reversed(context):
         if not seen.strip():
@@ -361,13 +386,21 @@ def parse(diff: str) -> tuple[dict[str, tuple[Counter, Counter]], list[str]]:
     structural: list[str] = []
     path = None
     in_hunk = False
-    # The lines of each side of this file seen so far in the diff, in file
-    # order: what a block scalar check has to work with, since the diff
-    # never carries the whole file. Kept separate because a hunk can add or
-    # remove a block scalar's own opening line, which changes whether a
-    # later line on just one side is inside one. Reset on every file header,
-    # not every hunk, since hunks in one file's diff always appear in
-    # ascending line order and a block scalar can span more than one hunk.
+    # The lines of each side of this file seen so far in the current hunk,
+    # in file order: what a block scalar check has to work with, since the
+    # diff never carries the whole file. Kept separate because a hunk can
+    # add or remove a block scalar's own opening line, which changes
+    # whether a later line on just one side is inside one. Reset on every
+    # hunk header, not only every file header: a hunk boundary means the
+    # diff skips lines in between, and a line just past the gap could
+    # otherwise be judged against context from before it, a shallower line
+    # left over from the previous hunk that is not actually the nearest
+    # one to the real file. Kept context from the file's earlier hunks
+    # cannot be trusted to still be the true boundary once the diff has
+    # jumped past lines neither side of this comparison ever saw; starting
+    # each hunk with nothing visible falls back to the same fail closed
+    # default `_in_block_scalar` already takes when a file's first hunk
+    # opens with no context at all.
     old_context: list[str] = []
     new_context: list[str] = []
 
@@ -386,6 +419,8 @@ def parse(diff: str) -> tuple[dict[str, tuple[Counter, Counter]], list[str]]:
 
         if line.startswith("@@"):
             in_hunk = True
+            old_context = []
+            new_context = []
             continue
 
         # Everything between a file header and its first hunk is preamble: the
