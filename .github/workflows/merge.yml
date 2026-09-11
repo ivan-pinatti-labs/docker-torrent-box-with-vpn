@@ -14,6 +14,11 @@ jobs:
     timeout-minutes: 1
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Nothing in this job pushes or runs anything past the checkout
+          # itself, so the checked out credential has no reason to survive
+          # past this step.
+          persist-credentials: false
 
   create_tag:
     name: Create Tag
@@ -41,11 +46,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
+      # ncipollo/release-action wrapped exactly this: a release with a given
+      # body plus GitHub's own generated notes appended, nothing this
+      # repository used it for that gh does not already do. zizmor flags the
+      # action as superfluous for that reason (the runner ships gh
+      # preinstalled), and unlike rsync-crypt's use of the same action, this
+      # job never sets allowUpdates, the one option gh has no equivalent for,
+      # so there is no capability gap to keep the action around for.
+      # No checkout: gh release create talks to the API directly and never
+      # touches a local git tree, the same as the action it replaces, so
+      # GH_REPO stands in for the repository context a checkout would
+      # otherwise provide.
       - name: Create a GitHub release
-        id: create_release
-        uses: ncipollo/release-action@v1.21.0
-        with:
-          tag: ${{ needs.create_tag.outputs.new_tag }}
-          name: Release ${{ needs.create_tag.outputs.new_tag }}
-          body: ${{ needs.create_tag.outputs.changelog }}
-          generateReleaseNotes: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.create_tag.outputs.new_tag }}
+          NOTES: ${{ needs.create_tag.outputs.changelog }}
+        run: |
+          gh release create "$TAG" \
+            --title "Release $TAG" \
+            --notes "$NOTES" \
+            --generate-notes
