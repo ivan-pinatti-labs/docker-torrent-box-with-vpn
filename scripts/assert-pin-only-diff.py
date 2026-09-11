@@ -119,16 +119,26 @@ DIGEST = re.compile(r"@sha256:[0-9a-f]{7,}")
 # through ACTION_SHA entirely and was accepted by BARE_ACTION_VERSION's
 # generic RELEASE grammar instead, which does not check that a
 # first-time pin's target is SHA-shaped at all.
+#
+# Anchored to a genuine `uses:` field at the start of the line, the same
+# anchor BARE_ACTION_VERSION uses, rather than a bare `@<sha>` matched
+# anywhere: a follow-up CodeRabbit finding pointed out the original,
+# unanchored ACTION_SHA matched a 40 character hex run on ANY changed
+# workflow line, `run:` step content included, so a `run:` command could
+# change while its normalized form stayed equal, as long as the line
+# still ended in something SHA-shaped.
 ACTION_SHA = re.compile(
+    r"(?P<uses_prefix>^(?:[ \t]*-[ \t]+)?[ \t]*uses:[ \t]+[\w.-]+/[\w./-]+)"
     r"@[0-9a-fA-F]{40}(?![0-9a-fA-F])(?P<comment>[ \t]+#[ \t]*" + RELEASE + r")?$"
 )
 
 
 def _normalize_action_sha(match: re.Match[str]) -> str:
     """Strip a `@<sha>` action pin, normalizing its trailing release comment."""
+    prefix = match.group("uses_prefix")
     if match.group("comment"):
-        return " # <version>"
-    return ""
+        return f"{prefix} # <version>"
+    return prefix
 
 
 # A first-time `pinDigests` bump on a GitHub Action changes
@@ -255,19 +265,91 @@ def _normalize_bare_action_version(match: re.Match[str]) -> str:
 # `checkov==3.3.2` becoming `evil==3.3.2`. What a bump is allowed to change is
 # the value in a pin position, and only there, which is why `PUID=1000` is
 # untouched by this and a change to it is refused.
+#
+# `@` is deliberately not one of the prefixes here, unlike the five that
+# are: it is a separate pattern below, ACTION_REF_VERSION, gated by block
+# scalar status the same way ACTION_SHA and BARE_ACTION_VERSION are. This
+# regex used to carry `@` directly, and a block scalar review found the
+# gap that left: skipping ACTION_SHA and BARE_ACTION_VERSION for a line
+# inside a run: | block did not stop that line being treated as a pin at
+# all, since this regex's own unscoped `@` still matched it independently.
+# Confirmed exploitable: `uses: fake/action@v7` becoming
+# `uses: fake/action@v8` inside a run: | block still read as Pin-only
+# before this split, even with the block scalar check already in place.
 VERSION = re.compile(
-    r"(?P<prefix>==|>=|@|(?<=VERSION)=|\brev:[ \t]+|(?<=\S):)"
+    r"(?P<prefix>==|>=|(?<=VERSION)=|\brev:[ \t]+|(?<=\S):)"
     r"[0-9A-Za-z][0-9A-Za-z.+_-]*"
 )
 
+# The `@` case VERSION used to carry directly: an action ref that is not a
+# SHA pin at all, either a first-time pin's bare, unpinned side (`@v7`,
+# handled together with the pinned side by BARE_ACTION_VERSION when it is
+# not inside a block scalar) or a floating tag moving to another floating
+# tag (`@v7` becoming `@v7.1.0`, an action that has never been SHA-pinned
+# at all). `.env.example`'s own `@` usage is a Docker image digest, and
+# DIGEST above already removes that entirely before this pattern ever
+# runs, so nothing here needs an `.env.example` case to stay working.
+ACTION_REF_VERSION = re.compile(r"(?P<prefix>@)[0-9A-Za-z][0-9A-Za-z.+_-]*")
+
 FILE_HEADER = re.compile(r"^diff --git a/(?P<old>.+) b/(?P<new>.+)$")
 
+# A YAML block scalar opener: `key: |`, `key: >`, with the optional
+# chomping (`-`/`+`) and explicit indentation (a digit) modifiers the spec
+# allows. Everything indented more than a line matching this, until a line
+# at or below its own indentation appears, is that block scalar's literal
+# content, not further YAML structure: a `run: |` step body is the shape
+# that matters here, since its content can coincidentally read exactly
+# like a `uses:` field. A CodeRabbit review found and confirmed this: an
+# indented `uses: owner/action@<sha> # v7` inside a run: | block matched
+# ACTION_SHA and BARE_ACTION_VERSION alike, treating shell text as if it
+# were a real GitHub Actions step, which a required check reading `Pin
+# Only` then approves. Deliberately not applied to VERSION below: its own
+# `@` prefix already covers a pip pin's `pkg==1.2.3` living inside a
+# `run:` step by design (see VERSION's own comment), a legitimate shape
+# in this repository's workflows that a block scalar check must not cost
+# its normalization.
+BLOCK_SCALAR_OPENER = re.compile(r":\s*[|>][+-]?[1-9]?\s*$")
 
-def normalize(line: str, path: str = "") -> str:
+
+def _line_indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" \t"))
+
+
+def _in_block_scalar(context: list[str], indent: int) -> bool:
+    """Judge, from the lines already seen in this file's diff, whether
+    `indent` sits inside an open YAML block scalar.
+
+    Scans backward for the nearest line indented less than `indent`,
+    skipping blank lines (a block scalar can itself contain one, and its
+    zero indentation must not be mistaken for the boundary that closes the
+    scalar). Inside a block scalar if that nearer line opens one.
+    Conservatively also inside one if no such line is visible at all: the
+    diff is all this script ever sees of the file around a change, so a
+    block scalar whose own opening line sits outside the diff's context
+    cannot be told apart from one that was never open, and refusing the
+    line as a candidate pin either way is the fail closed direction, the
+    same one every other shape in this file takes when it cannot be sure.
+    """
+    for seen in reversed(context):
+        if not seen.strip():
+            continue
+        if _line_indent(seen) < indent:
+            return bool(BLOCK_SCALAR_OPENER.search(seen))
+    return True
+
+
+def normalize(line: str, path: str = "", in_block_scalar: bool = False) -> str:
     """Reduce a line to everything about it that a version bump may not change."""
     stripped = DIGEST.sub("", line)
-    stripped = ACTION_SHA.sub(_normalize_action_sha, stripped)
-    stripped = BARE_ACTION_VERSION.sub(_normalize_bare_action_version, stripped)
+    # Scoped to .github/workflows/: nothing else here (.env.example,
+    # .tool-versions) has a YAML block scalar to be inside. Every `@`
+    # pattern is gated together, since ACTION_REF_VERSION is the same
+    # unpinned-action-ref shape BARE_ACTION_VERSION and ACTION_SHA cover,
+    # just without a first-time pin's SHA on the other side.
+    if not (in_block_scalar and path.startswith(".github/workflows/")):
+        stripped = ACTION_SHA.sub(_normalize_action_sha, stripped)
+        stripped = BARE_ACTION_VERSION.sub(_normalize_bare_action_version, stripped)
+        stripped = ACTION_REF_VERSION.sub(r"\g<prefix><version>", stripped)
     if path.endswith(".tool-versions"):
         return TOOL_VERSION_LINE.sub(r"\g<prefix><version>", stripped)
     return VERSION.sub(r"\g<prefix><version>", stripped)
@@ -279,6 +361,15 @@ def parse(diff: str) -> tuple[dict[str, tuple[Counter, Counter]], list[str]]:
     structural: list[str] = []
     path = None
     in_hunk = False
+    # The lines of each side of this file seen so far in the diff, in file
+    # order: what a block scalar check has to work with, since the diff
+    # never carries the whole file. Kept separate because a hunk can add or
+    # remove a block scalar's own opening line, which changes whether a
+    # later line on just one side is inside one. Reset on every file header,
+    # not every hunk, since hunks in one file's diff always appear in
+    # ascending line order and a block scalar can span more than one hunk.
+    old_context: list[str] = []
+    new_context: list[str] = []
 
     for line in diff.splitlines():
         header = FILE_HEADER.match(line)
@@ -286,6 +377,8 @@ def parse(diff: str) -> tuple[dict[str, tuple[Counter, Counter]], list[str]]:
             old, new = header.group("old"), header.group("new")
             path = new
             in_hunk = False
+            old_context = []
+            new_context = []
             changes.setdefault(path, (Counter(), Counter()))
             if old != new:
                 structural.append(f"{old} renamed to {new}")
@@ -311,9 +404,22 @@ def parse(diff: str) -> tuple[dict[str, tuple[Counter, Counter]], list[str]]:
             continue
 
         if line.startswith("-"):
-            changes[path][0][normalize(line[1:], path)] += 1
+            content = line[1:]
+            in_scalar = _in_block_scalar(old_context, _line_indent(content))
+            changes[path][0][normalize(content, path, in_scalar)] += 1
+            old_context.append(content)
         elif line.startswith("+"):
-            changes[path][1][normalize(line[1:], path)] += 1
+            content = line[1:]
+            in_scalar = _in_block_scalar(new_context, _line_indent(content))
+            changes[path][1][normalize(content, path, in_scalar)] += 1
+            new_context.append(content)
+        elif line.startswith(" ") or line == "":
+            # An unchanged context line: not compared itself, but part of
+            # the surrounding structure a block scalar check on a later
+            # line in this file needs to see.
+            content = line[1:] if line else line
+            old_context.append(content)
+            new_context.append(content)
 
     return changes, structural
 

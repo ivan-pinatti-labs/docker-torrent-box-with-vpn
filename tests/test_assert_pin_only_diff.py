@@ -100,10 +100,14 @@ def test_accepts_a_hook_rev_bump():
 def test_accepts_a_github_action_sha_and_comment_bump():
     # The bug this guards: the dependency bot rewrites both halves on a real
     # bump, so the comment moving from `# v7` to `# v7.0.1` alongside the SHA
-    # must not read as a structural change.
+    # must not read as a structural change. The leading `- name:` line is
+    # real diff context, mirroring what `gh pr diff` always carries: without
+    # it, _in_block_scalar has nothing to judge from and conservatively
+    # refuses.
     result = _check(
         _diff(
             ".github/workflows/coderabbit-gate.yml",
+            "       - name: Checkout\n"
             "-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
             "+        uses: actions/checkout@f7dd8b1f9e0d1c9a1e0e5a3b0e0f0a0b0c0d0e0f # v7.0.1\n",
         )
@@ -117,6 +121,7 @@ def test_accepts_a_github_action_sha_only_bump():
     result = _check(
         _diff(
             ".github/workflows/coderabbit-gate.yml",
+            "       - name: Checkout\n"
             "-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
             "+        uses: actions/checkout@f7dd8b1f9e0d1c9a1e0e5a3b0e0f0a0b0c0d0e0f # v7\n",
         )
@@ -181,6 +186,7 @@ def test_accepts_a_first_time_github_action_pin():
     result = _check(
         _diff(
             ".github/workflows/pull-request-validation.yml",
+            "       - name: Checkout\n"
             "-        uses: actions/checkout@v7\n"
             "+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
             " # v7\n",
@@ -196,6 +202,7 @@ def test_accepts_a_first_time_pin_alongside_a_tag_bump():
     result = _check(
         _diff(
             ".github/workflows/pull-request-validation.yml",
+            "       - name: Checkout\n"
             "-        uses: actions/checkout@v7\n"
             "+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
             " # v7.0.1\n",
@@ -209,6 +216,7 @@ def test_accepts_an_uppercase_first_time_pin():
     result = _check(
         _diff(
             ".github/workflows/pull-request-validation.yml",
+            "       - name: Checkout\n"
             "-        uses: actions/checkout@v7\n"
             "+        uses: actions/checkout@3D3C42E5AAC5BA805825DA76410C181273BA90B1"
             " # v7\n",
@@ -256,12 +264,30 @@ def test_accepts_a_first_time_pin_as_a_yaml_list_item():
     result = _check(
         _diff(
             ".github/workflows/pull-request-validation.yml",
+            "     steps:\n"
             "-      - uses: actions/checkout@v7\n"
             "+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
             " # v7\n",
         )
     )
     assert result.returncode == 0, result.stdout
+
+
+def test_refuses_a_first_time_pin_with_no_visible_context():
+    # _in_block_scalar has nothing to judge from when the diff shows no
+    # line shallower than the change at all (a synthetic edge case a real
+    # gh pr diff essentially never produces, since it always carries a
+    # line or two of context), and conservatively refuses rather than
+    # guess, the same fail closed direction every other shape here takes.
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            "-        uses: actions/checkout@v7\n"
+            "+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+            " # v7\n",
+        )
+    )
+    assert result.returncode == 1
 
 
 def test_refuses_uses_embedded_in_a_run_step_disguised_as_a_first_time_pin():
@@ -554,3 +580,83 @@ def test_refuses_a_floor_pin_becoming_an_exact_pin():
     # difference even when the package and the version are both plausible.
     result = _check(_diff("tests/requirements.txt", "-json5>=0.12.1\n+json5==0.15.0\n"))
     assert result.returncode == 1
+
+
+# ---------------------------------------------------------------------------
+# A uses: line inside a run: | block scalar is not a real GitHub Actions
+# field, and no pattern here may treat it as a pin
+# ---------------------------------------------------------------------------
+
+
+def test_refuses_a_first_time_pin_disguise_inside_a_run_step():
+    # A CodeRabbit review found and confirmed this: normalize() has no YAML
+    # awareness, so an indented uses: line inside a run: | block, plain
+    # shell text, matched ACTION_SHA and BARE_ACTION_VERSION the same way a
+    # real GitHub Actions uses: field does.
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            "       - name: Something\n"
+            "         run: |\n"
+            "           echo hello\n"
+            "-          uses: fake/action@v7\n"
+            "+          uses: fake/action@3d3c42e5aac5ba805825da76410c181273ba90b1"
+            " # v7\n",
+        )
+    )
+    assert result.returncode == 1
+
+
+def test_refuses_a_bare_tag_disguise_inside_a_run_step():
+    # A second gap the same review surfaced: skipping ACTION_SHA and
+    # BARE_ACTION_VERSION for a block scalar line was not enough on its
+    # own here, because VERSION's own @ prefix independently matched the
+    # same uses: owner/repo@version shape, with no SHA or comment
+    # involved at all. Confirmed exploitable before ACTION_REF_VERSION
+    # split that prefix out and gated it the same way: this exact diff
+    # read as Pin-only.
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            "       - name: Something\n"
+            "         run: |\n"
+            "           echo hello\n"
+            "-          uses: fake/action@v7\n"
+            "+          uses: fake/action@v8\n",
+        )
+    )
+    assert result.returncode == 1
+
+
+def test_accepts_a_pip_pin_bump_inside_a_block_scalar_run_step():
+    # The block scalar check must not cost this repository's own
+    # documented shape: a pip pin bump legitimately lives inside a run: |
+    # step (see VERSION's own comment), and has nothing to do with the
+    # uses: disguise the check above exists to catch.
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            "      - name: Install\n"
+            "        run: |\n"
+            "-          pip install checkov==3.3.2\n"
+            "+          pip install checkov==3.3.11\n",
+        )
+    )
+    assert result.returncode == 0, result.stdout
+
+
+def test_accepts_a_floating_tag_bump_outside_a_block_scalar():
+    # An action that has never been SHA-pinned can still move from one
+    # floating tag to another; ACTION_REF_VERSION covers this ordinary
+    # case (distinct from a first-time pin, which BARE_ACTION_VERSION
+    # covers), and it is not inside a block scalar here, so it still
+    # normalizes and accepts.
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            "      - name: Checkout\n"
+            "-        uses: actions/checkout@v7\n"
+            "+        uses: actions/checkout@v7.1.0\n",
+        )
+    )
+    assert result.returncode == 0, result.stdout
