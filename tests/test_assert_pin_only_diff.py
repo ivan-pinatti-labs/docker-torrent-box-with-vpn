@@ -218,6 +218,38 @@ def test_refuses_a_first_time_pin_with_a_swapped_owner():
     assert result.returncode == 1
 
 
+def test_accepts_a_first_time_pin_as_a_yaml_list_item():
+    # A step is also legally written as a bare list item, `- uses: ...`,
+    # with no name: line above it. The anchor has to allow the optional
+    # marker, not just plain indentation.
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            "-      - uses: actions/checkout@v7\n"
+            "+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+            " # v7\n",
+        )
+    )
+    assert result.returncode == 0, result.stdout
+
+
+def test_refuses_uses_embedded_in_a_run_step_disguised_as_a_first_time_pin():
+    # A follow-up CodeRabbit finding on this exact pattern: \buses: is a
+    # word-boundary check, not a position check, so it matched the
+    # substring "uses:" anywhere on the line, including inside a run:
+    # step's own text. Confirmed exploitable before this fix: this exact
+    # diff normalized as Pin-only.
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            "-          run: uses: actions/checkout@v7\n"
+            "+          run: uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+            " # v7\n",
+        )
+    )
+    assert result.returncode == 1
+
+
 def test_refuses_a_run_step_version_bump_disguised_as_a_first_time_pin():
     # CodeRabbit's finding on this pull request: an unscoped version of
     # BARE_ACTION_VERSION would let a run: step's trailing tool@v7 normalize

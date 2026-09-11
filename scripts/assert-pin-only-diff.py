@@ -161,8 +161,21 @@ def _normalize_action_sha(match: re.Match[str]) -> str:
 # content plausibly produces by coincidence the way a short version tag is,
 # and narrowing an already-relied-on pattern belongs in its own change, not
 # folded into this one.
+#
+# `uses:` alone was not narrow enough either, as a follow-up CodeRabbit
+# finding on this exact pattern (ported to other repositories in this
+# family) went on to show: `\buses:` is a word-boundary check, not a
+# position check, so it matched the substring "uses:" anywhere a line
+# contains it, including inside a `run:` step's own text
+# (`run: uses: actions/checkout@v7` normalized the same way a real `uses:`
+# line did, and was confirmed to slip past this check before this fix).
+# Anchored to the start of the line instead, with only an optional YAML
+# list marker (`- `) and indentation in front of `uses:`, which is the only
+# place a real `uses:` field can sit.
 BARE_ACTION_VERSION = re.compile(
-    r"(?P<action_prefix>\buses:[ \t]+[\w.-]+/[\w./-]+)@" + RELEASE + r"$"
+    r"(?P<action_prefix>^(?:[ \t]*-[ \t]+)?[ \t]*uses:[ \t]+[\w.-]+/[\w./-]+)@"
+    + RELEASE
+    + r"$"
 )
 
 
