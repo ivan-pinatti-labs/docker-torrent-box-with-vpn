@@ -204,6 +204,37 @@ def test_accepts_a_first_time_pin_alongside_a_tag_bump():
     assert result.returncode == 0, result.stdout
 
 
+def test_accepts_an_uppercase_first_time_pin():
+    # GitHub resolves a uses: SHA the same way regardless of case.
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            "-        uses: actions/checkout@v7\n"
+            "+        uses: actions/checkout@3D3C42E5AAC5BA805825DA76410C181273BA90B1"
+            " # v7\n",
+        )
+    )
+    assert result.returncode == 0, result.stdout
+
+
+def test_refuses_a_non_hex_40_character_token_as_a_first_time_pin():
+    # A third finding on this pattern: RELEASE accepts any alphanumeric
+    # run, hex or not, so a 40 character token that is not real hex slips
+    # past ACTION_SHA (not hex) and was accepted here regardless, since
+    # nothing checked that a first-time pin's target was ever a real SHA.
+    # 40 characters is the shape ACTION_SHA exists to own exclusively, so
+    # anything that length reaching this pattern is refused outright.
+    fake = "0" + "z" * 39
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            f"-        uses: actions/checkout@v7\n"
+            f"+        uses: actions/checkout@{fake} # v7\n",
+        )
+    )
+    assert result.returncode == 1
+
+
 def test_refuses_a_first_time_pin_with_a_swapped_owner():
     # The dependency name stays literal to the left of the `@` for this shape
     # exactly as it does for every other pin type here.

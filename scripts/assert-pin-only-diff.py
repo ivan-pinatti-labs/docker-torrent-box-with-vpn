@@ -110,8 +110,17 @@ DIGEST = re.compile(r"@sha256:[0-9a-f]{7,}")
 # prefix of a longer hex run (a sha256 digest, in particular) from matching
 # and silently swallowing the character that would have made the shapes
 # differ.
+#
+# Case-insensitive (`[0-9a-fA-F]`, not `[0-9a-f]`): GitHub resolves a
+# `uses:` SHA the same way regardless of case, so an uppercase or
+# mixed-case SHA is just as real a pin as a lowercase one, and matching
+# only lowercase left a gap a CodeRabbit review of BARE_ACTION_VERSION
+# below found: an uppercase SHA on a first-time pin's new side fell
+# through ACTION_SHA entirely and was accepted by BARE_ACTION_VERSION's
+# generic RELEASE grammar instead, which does not check that a
+# first-time pin's target is SHA-shaped at all.
 ACTION_SHA = re.compile(
-    r"@[0-9a-f]{40}(?![0-9a-fA-F])(?P<comment>[ \t]+#[ \t]*" + RELEASE + r")?$"
+    r"@[0-9a-fA-F]{40}(?![0-9a-fA-F])(?P<comment>[ \t]+#[ \t]*" + RELEASE + r")?$"
 )
 
 
@@ -172,11 +181,32 @@ def _normalize_action_sha(match: re.Match[str]) -> str:
 # Anchored to the start of the line instead, with only an optional YAML
 # list marker (`- `) and indentation in front of `uses:`, which is the only
 # place a real `uses:` field can sit.
+#
+# The version is its own capture group, `bare_version`, rather than folded
+# unnamed into the match, because a third CodeRabbit-class finding (found by
+# extending their own test, not reported directly) showed RELEASE alone is
+# still too permissive here: `_normalize_bare_action_version` below refuses
+# a 40 character match outright, real hex or not, because 40 characters is
+# the shape ACTION_SHA exists to own exclusively. Without that check, a
+# non-hex 40 character token, `0` followed by 39 `z`s for instance, never
+# matches ACTION_SHA (not hex) and was accepted here instead, since nothing
+# about this pattern's own grammar checked that the "version" replacing a
+# first-time pin's bare tag was ever a real SHA at all, only that it was
+# RELEASE-shaped. A real first-time pin's target is always exactly a 40
+# character SHA, ACTION_SHA's exclusive domain, so anything that length
+# reaching this pattern instead is already suspect, and refusing it outright
+# costs nothing: a length that long never occurs in a genuine bare release
+# tag either.
 BARE_ACTION_VERSION = re.compile(
     r"(?P<action_prefix>^(?:[ \t]*-[ \t]+)?[ \t]*uses:[ \t]+[\w.-]+/[\w./-]+)@"
-    + RELEASE
-    + r"$"
+    r"(?P<bare_version>" + RELEASE + r")$"
 )
+
+
+def _normalize_bare_action_version(match: re.Match[str]) -> str:
+    if len(match.group("bare_version")) == 40:
+        return match.group(0)
+    return f"{match.group('action_prefix')} # <version>"
 
 
 # A version-shaped token that sits where a pin sits, and nowhere else. The
@@ -237,7 +267,7 @@ def normalize(line: str, path: str = "") -> str:
     """Reduce a line to everything about it that a version bump may not change."""
     stripped = DIGEST.sub("", line)
     stripped = ACTION_SHA.sub(_normalize_action_sha, stripped)
-    stripped = BARE_ACTION_VERSION.sub(r"\g<action_prefix> # <version>", stripped)
+    stripped = BARE_ACTION_VERSION.sub(_normalize_bare_action_version, stripped)
     if path.endswith(".tool-versions"):
         return TOOL_VERSION_LINE.sub(r"\g<prefix><version>", stripped)
     return VERSION.sub(r"\g<prefix><version>", stripped)
