@@ -528,8 +528,14 @@ repos:
   # Reads checkmake.ini at the repo root. The .PHONY declaration in the
   # Makefile has to stay one per line; the comment above it says why.
   # See the library's docs/hook-catalogue.md, "Makefile linting".
+  # No `stages:` key, deliberately. The Code Check job runs
+  # `pre-commit run --all-files --hook-stage pre-push`, and a hook that names
+  # `stages: [pre-commit]` is excluded from that selection, so it would run on
+  # a local commit and never once in CI. That is what this entry did when it
+  # landed in #189: `checkmake` was configured, green, and checking nothing on
+  # every pull request. The `no-commit-to-branch` hook above is the one place
+  # `stages: [pre-commit]` is correct, and its own comment says why.
   - repo: https://github.com/ivan-pinatti-labs/pre-commit-checklists
     rev: v2.3.0
     hooks:
       - id: checklist-dev-make
-        stages: [pre-commit]
