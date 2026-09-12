@@ -173,6 +173,51 @@ repos:
       - id: yamllint
         exclude: *app_managed
 
+      # CITATION.cff is YAML, but `identify` tags it only `text`, since the
+      # tag comes from the extension and `.cff` is not one it knows. The
+      # hook's own manifest carries `types: [file, yaml]`, so the entry above
+      # never sees the file and nothing else here does either. A second entry
+      # with `types:` overridden is the way in; it cannot be done from a
+      # consumer's selector alone.
+      #
+      # Worth covering because GitHub reads the file for the "Cite this
+      # repository" widget, where a file it cannot use produces nothing at
+      # all rather than an error anyone would see.
+      - id: yamllint
+        name: yamllint (CITATION.cff)
+        files: ^CITATION\.cff$
+        types: [text]
+
+  # The other half of that check: the Citation File Format schema itself,
+  # which yamllint knows nothing about. Not a theoretical gap. The author
+  # block in this file used to read `name:` and `url:`, and `url` is not a key
+  # CFF has at all (the person and entity definitions both spell it
+  # `website`), so the file had never been valid while parsing as YAML
+  # perfectly well the whole time. yamllint alone would have gone on passing
+  # it.
+  #
+  # cffconvert is the reference implementation's own validator. A repo: local
+  # hook because it ships no `.pre-commit-hooks.yaml` of its own, which is
+  # what the annotation below is for: the native pre-commit manager only
+  # updates a `rev:`, so the customManager in .github/renovate.json5 that
+  # reads an annotated `additional_dependencies` is what keeps this pin
+  # moving.
+  #
+  # pass_filenames is false with the path written out because cffconvert takes
+  # its input through `-i` and rejects a bare positional argument, so an
+  # appended filename would fail the hook on a valid file. `files:` still
+  # scopes it to that one file.
+  - repo: local
+    hooks:
+      - id: cffconvert-validate
+        name: Validate CITATION.cff against the CFF schema
+        language: python
+        # renovate: datasource=pypi depName=cffconvert
+        additional_dependencies: ["cffconvert==2.0.0"]
+        entry: cffconvert --validate -i CITATION.cff
+        files: ^CITATION\.cff$
+        pass_filenames: false
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.5
     hooks:
