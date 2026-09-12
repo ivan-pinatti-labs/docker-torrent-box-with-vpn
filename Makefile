@@ -46,7 +46,7 @@ VPN_ROUTE_SERVICES := bazarr flaresolverr lazylibrarian lidarr mylar prowlarr ra
 VPN_VALID_TOKENS := servarr $(VPN_ROUTE_SERVICES)
 VPN_UNKNOWN_TOKENS := $(filter-out $(VPN_VALID_TOKENS),$(VPN_ON_LIST))
 ifneq ($(VPN_UNKNOWN_TOKENS),)
-$(error Unknown VPN_ON service(s): $(VPN_UNKNOWN_TOKENS). Valid values: $(VPN_VALID_TOKENS))
+$(error Unknown VPN_ON service(s) [$(VPN_UNKNOWN_TOKENS)]. Valid values are [$(VPN_VALID_TOKENS)])
 endif
 VPN_ROUTE_FILES := $(if $(filter servarr,$(VPN_ON_LIST)),docker-compose.routes/servarr-vpn.yml,$(foreach service,$(VPN_ROUTE_SERVICES),$(if $(filter $(service),$(VPN_ON_LIST)),docker-compose.routes/$(service)-vpn.yml)))
 ROUTE_FILES ?= $(VPN_ROUTE_FILES)
@@ -81,21 +81,35 @@ STOP_VPN_ON_LIST := $(strip $(subst $(comma),$(space),$(STOP_VPN_ON)))
 STOP_ROUTE_FILES := $(if $(filter servarr,$(STOP_VPN_ON_LIST)),docker-compose.routes/servarr-vpn.yml,$(foreach service,$(VPN_ROUTE_SERVICES),$(if $(filter $(service),$(STOP_VPN_ON_LIST)),docker-compose.routes/$(service)-vpn.yml)))
 STOP_COMPOSE_FILES := --file docker-compose.yml $(foreach route_file,$(STOP_ROUTE_FILES),--file $(route_file))
 
-.PHONY: all backup backup-configs backup-full backup-schedule bootstrap bootstrap_tests build_images clean clean_all check_requirements seed_all \
-	configure_jellyfin_network configure_jdownloader2_api \
-	detect_secrets_create_baseline down enable_test_profiles generate_certificate \
-	heal_vpn_dependents \
-	rotate_all rotate_api_keys rotate_certificate rotate_passwords wire_connections \
-	disk_status korsync_users permissions_check permissions_repair permissions_smoke permissions_host_smoke prune_cache rotate_nginx_logs \
-	storage_mount storage_unmount storage_status storage_install_boot storage_uninstall_boot storage_guard \
-	install_requirements pull_docker_images pre_commit \
-	restore-configs restore-full \
-	restart sanity_fast sanity_full start start_library start_observability \
-	stop stop_all update_containers update_pre_commit test test_ci test_extended test_prerequisites \
-	test_no_rotate_passwords
+# One .PHONY per line, not a backslash continuation. checkmake reads only
+# the first physical line of a .PHONY declaration and silently drops the
+# rest, so a continuation makes it report restore-full, stop and test as
+# undeclared when they are right here. Upstream: checkmake#280, fix open
+# as checkmake#281. That fix reaches us only once it merges, checkmake
+# releases it, and pre-commit-checklists moves its own checkmake pin to
+# that release. Until then this form is load bearing. make treats the two
+# forms identically.
+.PHONY: all backup backup-configs backup-full backup-schedule bootstrap bootstrap_tests build_images clean clean_all check_requirements seed_all
+.PHONY: configure_jellyfin_network configure_jdownloader2_api
+.PHONY: detect_secrets_create_baseline down enable_test_profiles generate_certificate
+.PHONY: heal_vpn_dependents
+.PHONY: rotate_all rotate_api_keys rotate_certificate rotate_passwords wire_connections
+.PHONY: disk_status korsync_users permissions_check permissions_repair permissions_smoke permissions_host_smoke prune_cache rotate_nginx_logs
+.PHONY: storage_mount storage_unmount storage_status storage_install_boot storage_uninstall_boot storage_guard
+.PHONY: install_requirements pull_docker_images pre_commit
+.PHONY: restore-configs restore-full
+.PHONY: restart sanity_fast sanity_full start start_library start_observability
+.PHONY: stop stop_all update_containers update_pre_commit test test_ci test_extended test_prerequisites
+.PHONY: test_no_rotate_passwords
 
 BACKUP_DIR ?= backup
-BACKUP_TIMESTAMP ?= $(shell date +%Y-%m-%d-%H%M%S)
+# Simply expanded, not ?=. The three archive names below each expand this,
+# and a recursively expanded $(shell date) re-runs date on every expansion,
+# so a run that straddles a second boundary gets two different timestamps in
+# one backup. := runs date once. A command line override
+# (make backup BACKUP_TIMESTAMP=...) still wins, same as before; only an
+# environment variable of the same name no longer does.
+BACKUP_TIMESTAMP := $(shell date +%Y-%m-%d-%H%M%S)
 CONFIG_BACKUP_ARCHIVE := $(BACKUP_DIR)/configs-$(BACKUP_TIMESTAMP).tar.gz
 FULL_BACKUP_ARCHIVE := $(BACKUP_DIR)/full-$(BACKUP_TIMESTAMP).tar.gz
 RESTORE_SAFETY_ARCHIVE := $(BACKUP_DIR)/pre-restore-$(BACKUP_TIMESTAMP).tar.gz
