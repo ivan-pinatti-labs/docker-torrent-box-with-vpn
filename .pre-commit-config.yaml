@@ -515,3 +515,21 @@ repos:
     rev: v0.23.2
     hooks:
       - id: markdownlint-cli2
+
+  # The one hook in this file that comes from the organization's checklist
+  # library rather than being assembled here. Nothing else has moved over,
+  # and this is not the start of a migration: checkmake simply arrives with
+  # a repo-root config file, a .PHONY convention and two documented false
+  # positive shapes, and the library is where that context already lives.
+  # Pointing at it beats copying the reasoning into this file and letting
+  # the two drift.
+  #
+  # No selector: checkmake's own hook manifest carries types: [makefile].
+  # Reads checkmake.ini at the repo root. The .PHONY declaration in the
+  # Makefile has to stay one per line; the comment above it says why.
+  # See the library's docs/hook-catalogue.md, "Makefile linting".
+  - repo: https://github.com/ivan-pinatti-labs/pre-commit-checklists
+    rev: v2.3.0
+    hooks:
+      - id: checklist-dev-make
+        stages: [pre-commit]
