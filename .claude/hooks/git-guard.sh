@@ -7,7 +7,7 @@
 # command, so every path that is not an explicit refusal must fall through to
 # the exit 0 at the bottom.
 #
-# Enforces three rules that were previously prose in CLAUDE.md and were broken
+# Enforces three rules that were previously prose in AGENTS.md and were broken
 # anyway:
 #
 #   1. No skipping the pre-commit hooks. They run the secret scanners, and a

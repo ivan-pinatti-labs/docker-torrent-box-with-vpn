@@ -1148,7 +1148,7 @@ if Path('$LAZYLIBRARIAN_CONFIG').exists():
     # real rotation, neither the bogus keys nor updated real ones were on
     # disk, meaning LazyLibrarian's own startup save (which only knows its
     # real schema) silently dropped the unrecognized ones on its next
-    # config write, per CLAUDE.md's note on apps clobbering host edits.
+    # config write, per AGENTS.md's note on apps clobbering host edits.
     parser.set('SABNZBD', 'sab_user', 'sabnzbd')
     parser.set('SABNZBD', 'sab_pass', new_password)
     parser.set('SABNZBD', 'sab_api', new_api_key)
@@ -1354,7 +1354,7 @@ prestart_api_containers
 # the Servarr apps) touches the same containers, config.ini files, or DB
 # tables as one another, so it stays fully sequential below: concurrent
 # writes to the same file/DB race and can corrupt it (see the "Editing
-# runtime app state" note in CLAUDE.md), and qBittorrent/SABnzbd's rotation
+# runtime app state" note in AGENTS.md), and qBittorrent/SABnzbd's rotation
 # stops the very Servarr containers their own rotation needs running.
 # ---------------------------------------------------------------------------
 
@@ -1365,7 +1365,7 @@ PARALLEL_ROTATION_FAILURES=()
 # "sed" filter fed by process substitution (`> >(sed ...)`). That used to
 # stream output live, but any rotate_* function that runs `podman start` (most
 # of them do, per the "Editing runtime app state" stop/edit/start pattern in
-# CLAUDE.md) spawns a conmon process that inherits the process substitution's
+# AGENTS.md) spawns a conmon process that inherits the process substitution's
 # pipe write-end and holds it open for the container's entire lifetime. The
 # sed filter then never sees EOF and blocks forever, and since sed's own
 # stdout is inherited from this script's stdout, that dangling filter also

@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.json
 #
-# CodeRabbit picks up CLAUDE.md automatically as review guidelines, so its
+# CodeRabbit picks up AGENTS.md automatically as review guidelines, so its
 # rules (no hyphens/dashes as punctuation, etc.) don't need restating here.
 
 language: en-US
@@ -98,5 +98,5 @@ reviews:
 knowledge_base:
   code_guidelines:
     filePatterns:
-      # Not auto-detected the way CLAUDE.md is, so listed explicitly.
+      # Not auto-detected the way AGENTS.md is, so listed explicitly.
       - "docs/COMPOSE_CONVENTIONS.md"

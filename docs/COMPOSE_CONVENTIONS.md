@@ -223,7 +223,7 @@ key, web UI password, or forwarded credential (SABnzbd, qBittorrent, NZBGet,
 Prowlarr, ComicVine, ...) it accumulates sits in git in the clear, and the
 apps rewriting it on their own schedule turns ordinary `git diff` noise into
 a risk (see the pre-commit stash corruption note under "Editing runtime app
-state" in `CLAUDE.md`).
+state" in `AGENTS.md`).
 
 The fix mirrors the secrets override pattern above, minus the split-file
 part, since these aren't loaded via `env_file`:

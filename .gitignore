@@ -7,8 +7,6 @@
 !.vscode/*.code-snippets
 .idea/
 .agents/
-.claude/settings.local
-CLAUDE.md
 
 # Local History for Visual Studio Code
 .history/
@@ -156,3 +154,9 @@ storage/grafana/data/*
 !storage/prometheus/data/.gitkeep
 !storage/loki/data/.gitkeep
 !storage/grafana/data/.gitkeep
+
+# Personal AI agent files, never committed (see AGENTS.md)
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/agents/local/
+.claude/worktrees/

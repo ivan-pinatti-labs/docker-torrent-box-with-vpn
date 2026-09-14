@@ -81,7 +81,7 @@ Servarr apps stay sequential because they touch the same containers,
 SABnzbd's rotations stop the very Servarr containers their own password
 rotation needs running, for instance); running those concurrently would
 race on the same file or database writes. See the "Editing runtime app
-state" note in `CLAUDE.md` for why that's unsafe.
+state" note in `AGENTS.md` for why that's unsafe.
 
 ## API Keys (`rotate-api-keys.sh`)
 
