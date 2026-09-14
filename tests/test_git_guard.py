@@ -1,6 +1,6 @@
 """Tests for .claude/hooks/git-guard.sh, the PreToolUse hook on the Bash tool.
 
-The hook enforces three rules that were prose in CLAUDE.md and got broken
+The hook enforces three rules that were prose in AGENTS.md and got broken
 anyway: no skipping the pre-commit hooks, no working-tree git operations while
 the stack is running, and no committing into a clone where the hooks were never
 installed.
@@ -136,8 +136,29 @@ def test_settings_json_is_valid():
 
 def test_settings_json_keeps_its_permission_rules():
     """The hook was merged into a file that already carried allow rules."""
-    settings = json.loads(SETTINGS.read_text())
-    assert len(settings["permissions"]["allow"]) >= 30
+    allow = json.loads(SETTINGS.read_text())["permissions"]["allow"]
+    assert "Bash(podman ps *)" in allow
+    assert "Bash(podman logs *)" in allow
+
+
+def test_settings_json_allows_only_read_only_commands():
+    """An allow rule skips the permission prompt, so every one stays read only.
+
+    Any other checkout of this project running on the same host can share its
+    Compose project label, so an allowed `podman stop *` could stop those
+    containers without anyone being asked. `cat *` would read any file on the
+    host, credentials included, with no prompt either.
+    """
+    allow = json.loads(SETTINGS.read_text())["permissions"]["allow"]
+    changing = {"stop", "kill", "rm", "rmi", "restart", "pause", "down", "compose"}
+    container_changes = [
+        rule
+        for rule in allow
+        if rule.startswith(("Bash(podman ", "Bash(docker "))
+        and rule.split()[1] in changing
+    ]
+    assert not container_changes
+    assert "Bash(cat *)" not in allow
 
 
 def test_hook_script_exists_and_is_executable():
@@ -266,7 +287,7 @@ def test_allows_verified_git_with_the_stack_stopped(allowed, stub_bin):
 )
 def test_blocks_working_tree_rewrites_while_the_stack_runs(subcommand, stub_bin):
     """pre-commit's stash cycle rewrote tracked runtime files mid-flight and
-    corrupted live SQLite databases. CLAUDE.md warned about it and the warning
+    corrupted live SQLite databases. AGENTS.md warned about it and the warning
     was not enough, so this is enforced."""
     decision, _ = _decision(f"git {subcommand}", stub_bin(containers_running=True))
     assert decision == "deny", f"git {subcommand} was not blocked"
