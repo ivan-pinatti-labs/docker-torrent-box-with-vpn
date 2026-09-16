@@ -1,0 +1,67 @@
+---
+name: CodeQL
+
+# CodeQL security analysis of this repository's Python.
+#
+# Python only, and it is worth being clear how small that scope is. CodeQL
+# supports JavaScript/TypeScript, Ruby, Python, Go, Java/Kotlin, C/C++ and C#.
+# It does not support shell, Dockerfile, Makefile or YAML, which is most of
+# what this repository ships. Those are covered on every commit by the hooks in
+# .pre-commit-config.yaml instead. What CodeQL adds is the Python under
+# scripts/ and tests/
+#
+# No `pull_request:` trigger. Code scanning derives alert lineage from
+# default-branch analyses, and this adds nothing a reviewer acts on inside a
+# pull request, so a weekly schedule plus the merge to main keeps the Security
+# tab current. workflow_dispatch is there for a manual re-run.
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Staggered across the organization's repositories so their CodeQL runs do
+    # not all contend for a runner at the same minute.
+    - cron: "0 8 * * 1"
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  analyze:
+    name: Analyze Python
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # The SARIF upload below attaches to this repository's code scanning tab.
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: python
+          # 'security-extended' rather than the default suite: it keeps the
+          # lower-severity and higher-false-positive security queries the
+          # default omits, which is worth it over a tooling directory this
+          # small. Quality queries are deliberately not run here.
+          queries: security-extended
+          # Restricted to the code this repository maintains.
+          # patches/ carries upstream Mylar sources this repository patches but
+          # does not own, and configs/ holds third-party application config
+          # shipped with the containers. Neither is code this repository
+          # maintains, so a finding in either is not actionable here.
+          config: |
+            paths-ignore:
+              - patches
+              - configs
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          # A distinct category keeps this analysis's alert lineage separate
+          # from any image or dependency scanner reporting into the same tab.
+          category: codeql-python
