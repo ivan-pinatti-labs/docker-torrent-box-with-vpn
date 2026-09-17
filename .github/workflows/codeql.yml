@@ -1,14 +1,26 @@
 ---
 name: CodeQL
 
-# CodeQL security analysis of this repository's Python.
+# CodeQL security *and quality* analysis of this repository's Python.
+#
+# This repository runs quality here, in the workflow, rather than through
+# GitHub's managed Code Quality setup the way the rest of the organization
+# does. That is deliberate and it is forced by paths. The managed setup takes
+# no path filter at all: its API permits only state, languages, runner_type,
+# runner_label and ai_findings_option, and rejects paths-ignore, config_file
+# and config outright (measured 2026-09-17). This repository carries more
+# third-party Python than its own -- 676 KB under patches/ and configs/
+# against 505 KB of ours -- and GitHub detects javascript-typescript here too,
+# so a managed run would report quality findings on vendored Mylar sources
+# nobody here can fix. The workflow honours paths-ignore, so quality runs
+# against our code only.
 #
 # Python only, and it is worth being clear how small that scope is. CodeQL
 # supports JavaScript/TypeScript, Ruby, Python, Go, Java/Kotlin, C/C++ and C#.
 # It does not support shell, Dockerfile, Makefile or YAML, which is most of
 # what this repository ships. Those are covered on every commit by the hooks in
 # .pre-commit-config.yaml instead. What CodeQL adds is the Python under
-# scripts/ and tests/
+# scripts/ and tests/.
 #
 # No `pull_request:` trigger. Code scanning derives alert lineage from
 # default-branch analyses, and this adds nothing a reviewer acts on inside a
@@ -44,12 +56,15 @@ jobs:
         uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           languages: python
-          # 'security-extended' rather than the default suite: it keeps the
-          # lower-severity and higher-false-positive security queries the
-          # default omits, which is worth it over a tooling directory this
-          # small. Quality queries are deliberately not run here.
-          queries: security-extended
-          # Restricted to the code this repository maintains.
+          # 'security-and-quality': everything security-extended runs, plus
+          # the maintainability and reliability queries. The rest of the
+          # organization gets those from the managed Code Quality setup, which
+          # cannot be used here (see this file's header), so they are folded
+          # into this run instead. Both halves inherit the paths-ignore below,
+          # which is the whole reason for doing it this way.
+          queries: security-and-quality
+          # Restricted to the code this repository maintains, and now load
+          # bearing for the quality queries as well as the security ones.
           # patches/ carries upstream Mylar sources this repository patches but
           # does not own, and configs/ holds third-party application config
           # shipped with the containers. Neither is code this repository
