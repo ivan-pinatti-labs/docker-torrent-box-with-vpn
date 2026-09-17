@@ -385,7 +385,7 @@ jobs:
       # non-zero, which is exactly when there is something to publish.
       - name: Upload results
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
         with:
           sarif_file: sarif
           category: security-scanners
