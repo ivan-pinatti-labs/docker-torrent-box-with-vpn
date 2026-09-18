@@ -10,6 +10,7 @@ No containers and no stack state, so these run anywhere:
 """
 
 import subprocess
+import sys
 
 import pytest
 
@@ -20,6 +21,9 @@ pytestmark = pytest.mark.scripts
 SCRIPT = REPO_ROOT / "scripts" / "assert-pin-only-diff.py"
 
 DIGEST = "sha256:" + "a" * 64
+# 40 character hex strings, the shape of a GitHub Actions commit pin.
+SHA = "a" * 40
+OTHER_SHA = "b" * 40
 
 
 def _check(diff: str) -> subprocess.CompletedProcess:
@@ -699,3 +703,151 @@ def test_refuses_a_first_time_pin_disguise_inside_a_sequence_item_scalar():
         )
     )
     assert result.returncode == 1
+
+
+# ---------------------------------------------------------------------------
+# Whole-file block scalar judgment: a real git diff against a real base
+# ---------------------------------------------------------------------------
+
+STEP_WITH_COMMENT = (
+    "jobs:\n"
+    "  scan:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    steps:\n"
+    "      - name: Upload the scan\n"
+    "        # A comment between the step's name and its uses: line, long\n"
+    "        # enough that three lines of diff context above the pin never\n"
+    "        # reach anything shallower than it.\n"
+    "        uses: github/codeql-action/upload-sarif@{sha} # v4\n"
+    "        with:\n"
+    "          sarif_file: scan.sarif\n"
+)
+
+NESTED_IN_RUN = (
+    "jobs:\n"
+    "  build:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    steps:\n"
+    "      - name: Build\n"
+    "        run: |\n"
+    "          if true; then\n"
+    "            uses: fake/action@{sha} # v4\n"
+    "          fi\n"
+)
+
+
+def _git(repo, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", *args],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
+def _check_in_repo(tmp_path, before: str, after: str, *, base: str | None = None):
+    """Commit `before`, diff it against `after`, and grade that diff with a
+    copy of the script whose checkout holds `base` (default: `before`)."""
+    workflow = tmp_path / ".github" / "workflows" / "scan.yml"
+    workflow.parent.mkdir(parents=True)
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / SCRIPT.name).write_bytes(SCRIPT.read_bytes())
+    _git(tmp_path, "init", "-q")
+    workflow.write_text(before)
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-q", "-m", "base")
+    workflow.write_text(after)
+    diff = _git(tmp_path, "diff")
+    workflow.write_text(before if base is None else base)
+    return subprocess.run(
+        [sys.executable, str(tmp_path / "scripts" / SCRIPT.name)],
+        input=diff,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+
+def test_accepts_a_pin_whose_step_name_sits_above_a_comment(tmp_path):
+    # ivan-pinatti-labs/rsync-crypt#105: the three lines of context above
+    # the pin are all comments at its own indentation, so the diff alone
+    # shows nothing shallower and the fallback refuses. Read whole, the
+    # file proves the line is ordinary YAML structure.
+    result = _check_in_repo(
+        tmp_path,
+        STEP_WITH_COMMENT.format(sha=SHA),
+        STEP_WITH_COMMENT.format(sha=OTHER_SHA),
+    )
+    assert result.returncode == 0, result.stdout
+
+
+def test_refuses_a_uses_line_nested_deep_inside_a_run_block(tmp_path):
+    # The gap `_in_block_scalar` documents: judged from context, the
+    # nearest shallower line is `if true; then`, which is not an opener,
+    # so the fallback would read this shell text as a step. The whole file
+    # shows it sits inside `run: |`.
+    result = _check_in_repo(
+        tmp_path,
+        NESTED_IN_RUN.format(sha=SHA),
+        NESTED_IN_RUN.format(sha=OTHER_SHA),
+    )
+    assert result.returncode == 1, result.stdout
+
+
+def test_falls_back_to_the_diff_when_main_has_moved_the_file(tmp_path):
+    # The checkout no longer matches the diff's base blob, so nothing read
+    # from it can be trusted to describe this diff: the context judgment
+    # applies again, and it refuses the #105 shape as it always did.
+    result = _check_in_repo(
+        tmp_path,
+        STEP_WITH_COMMENT.format(sha=SHA),
+        STEP_WITH_COMMENT.format(sha=OTHER_SHA),
+        base=STEP_WITH_COMMENT.format(sha=SHA) + "# moved on main\n",
+    )
+    assert result.returncode == 1, result.stdout
+
+
+def test_falls_back_when_the_hunks_disagree_with_the_base(tmp_path):
+    # A matching blob id with a context line the base does not have means
+    # the diff was not taken against this file; the whole-file view is
+    # discarded rather than trusted, and the context judgment refuses.
+    before = STEP_WITH_COMMENT.format(sha=SHA)
+    after = STEP_WITH_COMMENT.format(sha=OTHER_SHA)
+    assert _check_in_repo(tmp_path, before, after).returncode == 0
+    workflow = tmp_path / ".github" / "workflows" / "scan.yml"
+    workflow.write_text(after)
+    diff = _git(tmp_path, "diff").replace("shallower than it.", "else at all.")
+    workflow.write_text(before)
+    result = subprocess.run(
+        [sys.executable, str(tmp_path / "scripts" / SCRIPT.name)],
+        input=diff,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 1, result.stdout
+
+
+def test_falls_back_when_a_hunk_is_shorter_than_its_header(tmp_path):
+    # Valid context, but the header declares more lines than the body
+    # carries: a truncated diff. The whole-file view is discarded rather
+    # than filled in from the base, and the context judgment refuses.
+    before = STEP_WITH_COMMENT.format(sha=SHA)
+    after = STEP_WITH_COMMENT.format(sha=OTHER_SHA)
+    assert _check_in_repo(tmp_path, before, after).returncode == 0
+    workflow = tmp_path / ".github" / "workflows" / "scan.yml"
+    workflow.write_text(after)
+    lines = _git(tmp_path, "diff").splitlines()
+    diff = "\n".join(lines[:-1]) + "\n"
+    workflow.write_text(before)
+    result = subprocess.run(
+        [sys.executable, str(tmp_path / "scripts" / SCRIPT.name)],
+        input=diff,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 1, result.stdout

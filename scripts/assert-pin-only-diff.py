@@ -48,9 +48,16 @@ a pin position, for the same reason a first Docker image digest already is
 nothing else.
 """
 
+import hashlib
 import re
 import sys
 from collections import Counter
+from pathlib import Path
+
+# The checkout this script runs from. coderabbit-gate.yml checks out the
+# default branch, never the pull request's head, so a file read from here is
+# the base side as it stands on main.
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # The files Renovate, the only dependency bot here, is allowed to touch:
 # .env.example for image pins, the workflow directory for the pip pins and
@@ -304,6 +311,15 @@ ACTION_REF_VERSION = re.compile(
 )
 
 FILE_HEADER = re.compile(r"^diff --git a/(?P<old>.+) b/(?P<new>.+)$")
+# The blob ids a diff's preamble names for each side, and a hunk's starting
+# line and length on each side (a length of one is written by omitting it).
+INDEX_LINE = re.compile(
+    r"^index (?P<old>[0-9a-f]{7,64})\.\.[0-9a-f]{7,64}(?: [0-7]{6})?$"
+)
+HUNK_HEADER = re.compile(
+    r"^@@ -(?P<old_start>\d+)(?:,(?P<old_len>\d+))? "
+    r"\+(?P<new_start>\d+)(?:,(?P<new_len>\d+))? @@"
+)
 
 # A YAML block scalar opener: `key: |`, `key: >`, or a bare sequence item
 # whose own value is the scalar (`- |`, `- >-`), with the optional
@@ -368,9 +384,14 @@ def _in_block_scalar(context: list[str], indent: int) -> bool:
     diff, which never contains the change's enclosing indentation chain
     down to indentation zero: the deeper version refused it outright, the
     same result a compromised bot's diff should get, not a clean one.
-    This narrower version is the one actually deployed; the nested case
-    above is an accepted, documented gap rather than a silently unfixed
-    one.
+    This narrower version is the one actually deployed for a diff it
+    cannot see past.
+
+    It is now the fallback rather than the rule. When the file's base side
+    can be read whole and proven to be the diff's own base, which is the
+    ordinary case, `_whole_file_block_scalars` below decides instead, from
+    every line of the file rather than from three lines of context, and
+    that also closes the nested gap described above.
     """
     for seen in reversed(context):
         if not seen.strip():
@@ -378,6 +399,168 @@ def _in_block_scalar(context: list[str], indent: int) -> bool:
         if _line_indent(seen) < indent:
             return bool(BLOCK_SCALAR_OPENER.search(seen))
     return True
+
+
+def _block_scalar_lines(lines: list[str]) -> list[bool]:
+    """Mark every line of a whole YAML file as inside a block scalar or not.
+
+    Walks the file top to bottom. After a line opening a block scalar,
+    every following line that is blank or indented deeper than the opener
+    is that scalar's literal content, until a non-blank line at or below
+    the opener's own indentation closes it. Content is never read as an
+    opener itself, which is what the diff context version above cannot
+    guarantee: a `uses:` nested under an `if` inside a `run: |` block is
+    content here, however deep. Anything that merely looks like an opener
+    (a comment ending in `: |`, say) marks what follows as content, which
+    only ever refuses more, never less.
+    """
+    marks: list[bool] = []
+    floor: int | None = None
+    for line in lines:
+        if floor is not None:
+            if not line.strip() or _line_indent(line) > floor:
+                marks.append(True)
+                continue
+            floor = None
+        marks.append(False)
+        if BLOCK_SCALAR_OPENER.search(line):
+            floor = _line_indent(line)
+    return marks
+
+
+def _git_blob_id(data: bytes) -> str:
+    # git's own object id, recomputed to compare against the diff's `index`
+    # line. It identifies a file version rather than guarding one: what
+    # actually holds `_apply_hunks` honest is that every context and removed
+    # line must match the base, which no hash collision can fake.
+    header = b"blob %d\0" % len(data)
+    return hashlib.sha1(header + data, usedforsecurity=False).hexdigest()
+
+
+def _base_lines(path: str, blob: str) -> list[str] | None:
+    """The file's base side read from the checkout, or None if it is not
+    provably the same file the diff was taken against.
+
+    coderabbit-gate.yml checks out the default branch, never the pull
+    request's head, so this reads the file as it stands on main. That is
+    the diff's own base only while main has not moved the file since the
+    pull request branched, which is what comparing the git blob id against
+    the diff's `index` line proves. If main has moved it, or the path
+    leaves the checkout, the answer is None and the caller falls back to
+    judging from the diff's context.
+    """
+    root = REPO_ROOT.resolve()
+    target = (root / path).resolve()
+    if not target.is_relative_to(root) or not target.is_file():
+        return None
+    data = target.read_bytes()
+    if not _git_blob_id(data).startswith(blob):
+        return None
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def _apply_hunks(
+    base: list[str], hunks: list[tuple[re.Match[str], list[str]]]
+) -> list[str] | None:
+    """Rebuild the file's head side from its base and the diff's hunks.
+
+    Every context and removed line has to match the base where the hunk
+    header says it sits, every hunk has to land where its header says it
+    does on the head side too, and each hunk body has to carry exactly the
+    line counts its header declares on both sides. Any disagreement means
+    the diff and the base are not describing the same file, or the diff
+    was cut short, and the answer is None.
+    """
+    head: list[str] = []
+    cursor = 0
+    for header, body in hunks:
+        old_len = int(header.group("old_len") or 1)
+        new_len = int(header.group("new_len") or 1)
+        start = int(header.group("old_start")) - (1 if old_len else 0)
+        if start < cursor:
+            return None
+        head.extend(base[cursor:start])
+        if len(head) != int(header.group("new_start")) - (1 if new_len else 0):
+            return None
+        position = start
+        added = 0
+        for line in body:
+            tag, content = (line[:1], line[1:]) if line else (" ", "")
+            if tag in (" ", "-"):
+                if position >= len(base) or base[position] != content:
+                    return None
+                position += 1
+                if tag == " ":
+                    head.append(content)
+                    added += 1
+            elif tag == "+":
+                head.append(content)
+                added += 1
+            elif tag != "\\":
+                return None
+        if position - start != old_len or added != new_len:
+            return None
+        cursor = position
+    head.extend(base[cursor:])
+    return head
+
+
+def _whole_file_block_scalars(
+    diff_lines: list[str],
+) -> dict[str, tuple[list[bool], list[bool]]]:
+    """Block scalar marks for each side of every workflow file whose base
+    can be read whole and proven to be the diff's own.
+
+    Keyed by path; each value holds the base side's marks and the head
+    side's, indexed by line number minus one. A file missing from the
+    result is judged by `_in_block_scalar` from the diff alone, exactly as
+    before this existed. Only `.github/workflows/` is read, the one place
+    `normalize` consults the answer.
+    """
+    files: dict[str, tuple[str | None, list[tuple[re.Match[str], list[str]]]]] = {}
+    path = None
+    for line in diff_lines:
+        header = FILE_HEADER.match(line)
+        if header:
+            same = header.group("old") == header.group("new")
+            path = header.group("new") if same else None
+            if path is not None:
+                files[path] = (None, [])
+            continue
+        if path is None:
+            continue
+        blob, hunks = files[path]
+        hunk = HUNK_HEADER.match(line)
+        if hunk:
+            hunks.append((hunk, []))
+        elif hunks:
+            hunks[-1][1].append(line)
+        else:
+            index = INDEX_LINE.match(line)
+            if index:
+                files[path] = (index.group("old"), hunks)
+
+    marks: dict[str, tuple[list[bool], list[bool]]] = {}
+    for path, (blob, hunks) in files.items():
+        if not path.startswith(".github/workflows/") or not blob or not hunks:
+            continue
+        if not blob.strip("0"):
+            continue
+        base = _base_lines(path, blob)
+        if base is None:
+            continue
+        head = _apply_hunks(base, hunks)
+        if head is None:
+            continue
+        marks[path] = (_block_scalar_lines(base), _block_scalar_lines(head))
+    return marks
 
 
 def normalize(line: str, path: str = "", in_block_scalar: bool = False) -> str:
@@ -420,8 +603,14 @@ def parse(diff: str) -> tuple[dict[str, tuple[Counter, Counter]], list[str]]:
     # opens with no context at all.
     old_context: list[str] = []
     new_context: list[str] = []
+    # Whole-file marks where the base could be proven, and each side's
+    # current line number (zero based) to look a line up in them by.
+    diff_lines = diff.splitlines()
+    whole_file = _whole_file_block_scalars(diff_lines)
+    marks = None
+    old_number = new_number = 0
 
-    for line in diff.splitlines():
+    for line in diff_lines:
         header = FILE_HEADER.match(line)
         if header:
             old, new = header.group("old"), header.group("new")
@@ -429,6 +618,7 @@ def parse(diff: str) -> tuple[dict[str, tuple[Counter, Counter]], list[str]]:
             in_hunk = False
             old_context = []
             new_context = []
+            marks = whole_file.get(path) if old == new else None
             changes.setdefault(path, (Counter(), Counter()))
             if old != new:
                 structural.append(f"{old} renamed to {new}")
@@ -438,6 +628,12 @@ def parse(diff: str) -> tuple[dict[str, tuple[Counter, Counter]], list[str]]:
             in_hunk = True
             old_context = []
             new_context = []
+            hunk = HUNK_HEADER.match(line)
+            if hunk:
+                old_number = int(hunk.group("old_start")) - 1
+                new_number = int(hunk.group("new_start")) - 1
+            else:
+                marks = None
             continue
 
         # Everything between a file header and its first hunk is preamble: the
@@ -457,14 +653,24 @@ def parse(diff: str) -> tuple[dict[str, tuple[Counter, Counter]], list[str]]:
 
         if line.startswith("-"):
             content = line[1:]
-            in_scalar = _in_block_scalar(old_context, _line_indent(content))
+            in_scalar = (
+                marks[0][old_number]
+                if marks
+                else _in_block_scalar(old_context, _line_indent(content))
+            )
             changes[path][0][normalize(content, path, in_scalar)] += 1
             old_context.append(content)
+            old_number += 1
         elif line.startswith("+"):
             content = line[1:]
-            in_scalar = _in_block_scalar(new_context, _line_indent(content))
+            in_scalar = (
+                marks[1][new_number]
+                if marks
+                else _in_block_scalar(new_context, _line_indent(content))
+            )
             changes[path][1][normalize(content, path, in_scalar)] += 1
             new_context.append(content)
+            new_number += 1
         elif line.startswith(" ") or line == "":
             # An unchanged context line: not compared itself, but part of
             # the surrounding structure a block scalar check on a later
@@ -472,6 +678,8 @@ def parse(diff: str) -> tuple[dict[str, tuple[Counter, Counter]], list[str]]:
             content = line[1:] if line else line
             old_context.append(content)
             new_context.append(content)
+            old_number += 1
+            new_number += 1
 
     return changes, structural
 
