@@ -911,3 +911,27 @@ def test_accepts_a_uses_line_beside_a_dash_name_block(tmp_path):
         DASH_NAME_SIBLING.format(sha=OTHER_SHA),
     )
     assert result.returncode == 0, result.stdout
+
+
+PROPERTIES_ON_STEP = (
+    "jobs:\n"
+    "  scan:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    steps:\n"
+    "      - {props} name: |\n"
+    "          Upload the scan\n"
+    "        uses: github/codeql-action/upload-sarif@{sha} # v4\n"
+)
+
+
+@pytest.mark.parametrize("props", ["&step", "!!map"])
+def test_accepts_a_uses_line_beside_an_anchored_or_tagged_step(tmp_path, props):
+    # Properties leading a compact mapping, `- &step name: |`, belong to the
+    # mapping, which starts at their column; `uses:` there is a sibling key
+    # (PyYAML confirms), not scalar content.
+    result = _check_in_repo(
+        tmp_path,
+        PROPERTIES_ON_STEP.format(props=props, sha=SHA),
+        PROPERTIES_ON_STEP.format(props=props, sha=OTHER_SHA),
+    )
+    assert result.returncode == 0, result.stdout

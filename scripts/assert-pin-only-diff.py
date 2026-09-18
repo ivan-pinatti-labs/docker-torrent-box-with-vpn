@@ -357,8 +357,10 @@ BLOCK_SCALAR_OPENER = re.compile(
     r"(?::|^[ \t]*-)(?:[ \t]+[&!]\S*)*\s*[|>](?:[+-][1-9]?|[1-9][+-]?)?"
     r"(?:[ \t]+#.*)?\s*$"
 )
-# The sequence markers leading a line, each a dash followed by whitespace.
+# The sequence markers leading a line, each a dash followed by whitespace,
+# and the node properties (anchors, tags) that may lead a node after one.
 SEQUENCE_MARKER = re.compile(r"-[ \t]+")
+NODE_PROPERTIES = re.compile(r"(?:[&!]\S*[ \t]+)*")
 
 
 def _line_indent(line: str) -> int:
@@ -419,7 +421,9 @@ def _block_scalar_floor(line: str) -> int:
     reads a line starting at that column as the key's sibling, not as
     scalar content (confirmed with PyYAML), so a step's `uses:` beside a
     `- name: |` is ordinary structure. Only when the sequence item itself
-    is the scalar, `- |` or `- &body |`, is the dash the floor.
+    is the scalar, `- |` or `- &body |`, is the dash the floor. Properties
+    leading a compact mapping, `- &step name: |`, belong to the mapping,
+    which starts where they do, so they are skipped before deciding.
     """
     column = _line_indent(line)
     rest = line[column:]
@@ -428,7 +432,8 @@ def _block_scalar_floor(line: str) -> int:
         if not marker:
             return column
         after = rest[marker.end() :]
-        if not after or after[0] in "|>&!":
+        value = after[NODE_PROPERTIES.match(after).end() :]
+        if not value or value[0] in "|>":
             return column
         column += marker.end()
         rest = after
