@@ -361,6 +361,15 @@ BLOCK_SCALAR_OPENER = re.compile(
 # and the node properties (anchors, tags) that may lead a node after one.
 SEQUENCE_MARKER = re.compile(r"-[ \t]+")
 NODE_PROPERTIES = re.compile(r"(?:[&!]\S*[ \t]+)*")
+# A block scalar indicator alone on its line, optionally after node
+# properties: the value of the key on an earlier line. `run: &body` or a
+# bare `run:` followed by an indented `|` is as much a block scalar as
+# `run: |` (confirmed with PyYAML), and its content may sit at the very
+# column of that `|`. A CodeRabbit review found both paths missed it.
+STANDALONE_INDICATOR = re.compile(
+    r"^[ \t]*(?:[&!]\S*[ \t]+)*[|>](?:[+-][1-9]?|[1-9][+-]?)?"
+    r"(?:[ \t]+#.*)?\s*$"
+)
 
 
 def _line_indent(line: str) -> int:
@@ -408,6 +417,11 @@ def _in_block_scalar(context: list[str], indent: int) -> bool:
     for seen in reversed(context):
         if not seen.strip():
             continue
+        # A standalone indicator's content can sit at its own column, so
+        # meeting one before any shallower line means the line may be its
+        # content; refused either way, the fail closed direction.
+        if STANDALONE_INDICATOR.match(seen):
+            return True
         if _line_indent(seen) < indent:
             return bool(BLOCK_SCALAR_OPENER.search(seen))
     return True
@@ -439,6 +453,20 @@ def _block_scalar_floor(line: str) -> int:
         rest = after
 
 
+def _standalone_floor(previous: list[str], indent: int) -> int:
+    """The floor of a block scalar whose indicator stands alone on its line.
+
+    That scalar is the value of the key on the nearest earlier line
+    shallower than the indicator, so the floor is that key's column, not
+    the indicator's. With no such line in sight, every later line counts as
+    content, which only ever refuses more.
+    """
+    for line in reversed(previous):
+        if line.strip() and _line_indent(line) < indent:
+            return _block_scalar_floor(line)
+    return -1
+
+
 def _block_scalar_lines(lines: list[str]) -> list[bool]:
     """Mark every line of a whole YAML file as inside a block scalar or not.
 
@@ -454,7 +482,7 @@ def _block_scalar_lines(lines: list[str]) -> list[bool]:
     """
     marks: list[bool] = []
     floor: int | None = None
-    for line in lines:
+    for number, line in enumerate(lines):
         if floor is not None:
             if not line.strip() or _line_indent(line) > floor:
                 marks.append(True)
@@ -463,6 +491,8 @@ def _block_scalar_lines(lines: list[str]) -> list[bool]:
         marks.append(False)
         if BLOCK_SCALAR_OPENER.search(line):
             floor = _block_scalar_floor(line)
+        elif STANDALONE_INDICATOR.match(line):
+            floor = _standalone_floor(lines[:number], _line_indent(line))
     return marks
 
 

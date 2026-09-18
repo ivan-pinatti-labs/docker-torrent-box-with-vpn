@@ -935,3 +935,43 @@ def test_accepts_a_uses_line_beside_an_anchored_or_tagged_step(tmp_path, props):
         PROPERTIES_ON_STEP.format(props=props, sha=OTHER_SHA),
     )
     assert result.returncode == 0, result.stdout
+
+
+SPLIT_INDICATOR_RUN = (
+    "jobs:\n"
+    "  build:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    steps:\n"
+    "      - name: Build\n"
+    "        run: {props}\n"
+    "          |\n"
+    "          uses: fake/action@{sha} # v4\n"
+)
+
+
+@pytest.mark.parametrize("props", ["&body", "!!str", ""])
+def test_refuses_a_uses_line_under_a_standalone_indicator(tmp_path, props):
+    # `run: &body` (or a bare `run:`) followed by an indented `|` is a block
+    # scalar too, and its content may sit at the `|` line's own column
+    # (PyYAML confirms). Raised by CodeRabbit on
+    # ivan-pinatti-labs/pre-commit-checklists#50.
+    result = _check_in_repo(
+        tmp_path,
+        SPLIT_INDICATOR_RUN.format(props=props, sha=SHA),
+        SPLIT_INDICATOR_RUN.format(props=props, sha=OTHER_SHA),
+    )
+    assert result.returncode == 1, result.stdout
+
+
+@pytest.mark.parametrize("props", ["&body", "!!str", ""])
+def test_refuses_a_standalone_indicator_from_context(props):
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            f"         run: {props}\n"
+            "           |\n"
+            f"-          uses: fake/action@{SHA} # v4\n"
+            f"+          uses: fake/action@{OTHER_SHA} # v4\n",
+        )
+    )
+    assert result.returncode == 1, result.stdout
