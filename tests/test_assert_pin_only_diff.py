@@ -851,3 +851,63 @@ def test_falls_back_when_a_hunk_is_shorter_than_its_header(tmp_path):
         check=False,
     )
     assert result.returncode == 1, result.stdout
+
+
+ANCHORED_RUN = (
+    "jobs:\n"
+    "  build:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    steps:\n"
+    "      - name: Build\n"
+    "        run: {props} |2-\n"
+    "            uses: fake/action@{sha} # v4\n"
+)
+
+DASH_NAME_SIBLING = (
+    "jobs:\n"
+    "  scan:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    steps:\n"
+    "      - name: |\n"
+    "          Upload the scan\n"
+    "        uses: github/codeql-action/upload-sarif@{sha} # v4\n"
+)
+
+
+@pytest.mark.parametrize("props", ["&body", "!!str"])
+def test_refuses_a_uses_line_inside_an_anchored_or_tagged_run_block(tmp_path, props):
+    # YAML allows an anchor or a tag between the colon and the block scalar
+    # indicator, and `run: &body |2-` opens a scalar just as `run: |` does.
+    # BLOCK_SCALAR_OPENER missed both until a CodeRabbit review found it.
+    result = _check_in_repo(
+        tmp_path,
+        ANCHORED_RUN.format(props=props, sha=SHA),
+        ANCHORED_RUN.format(props=props, sha=OTHER_SHA),
+    )
+    assert result.returncode == 1, result.stdout
+
+
+@pytest.mark.parametrize("props", ["&body", "!!str"])
+def test_refuses_an_anchored_or_tagged_run_block_from_context(props):
+    # The same shape judged from the diff alone, as when main has moved on.
+    result = _check(
+        _diff(
+            ".github/workflows/pull-request-validation.yml",
+            f"         run: {props} |2-\n"
+            f"-            uses: fake/action@{SHA} # v4\n"
+            f"+            uses: fake/action@{OTHER_SHA} # v4\n",
+        )
+    )
+    assert result.returncode == 1, result.stdout
+
+
+def test_accepts_a_uses_line_beside_a_dash_name_block(tmp_path):
+    # For `- name: |` the scalar's floor is the key's column, not the dash's:
+    # a `uses:` at that column is the step's next key, which YAML (PyYAML
+    # confirms) reads as a sibling rather than as scalar content.
+    result = _check_in_repo(
+        tmp_path,
+        DASH_NAME_SIBLING.format(sha=SHA),
+        DASH_NAME_SIBLING.format(sha=OTHER_SHA),
+    )
+    assert result.returncode == 0, result.stdout

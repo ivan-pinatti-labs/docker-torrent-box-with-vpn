@@ -346,9 +346,19 @@ HUNK_HEADER = re.compile(
 # `pkg==1.2.3` living inside a `run:` step by design (see VERSION's own
 # comment), a legitimate shape in this repository's workflows that a
 # block scalar check must not cost its normalization.
+#
+# YAML also allows node properties, an anchor (`&body`) and a tag (`!!str`,
+# `!local`), between the colon or dash and the indicator, in either order:
+# `run: &body |2-` and `run: !!str |-` open a block scalar just as `run: |`
+# does. A CodeRabbit review found the pattern missed them, which let a
+# `uses:` shaped line inside an anchored or tagged `run:` body read as a
+# real step. Confirmed with PyYAML before the fix.
 BLOCK_SCALAR_OPENER = re.compile(
-    r"(?::|^[ \t]*-)\s*[|>](?:[+-][1-9]?|[1-9][+-]?)?(?:[ \t]+#.*)?\s*$"
+    r"(?::|^[ \t]*-)(?:[ \t]+[&!]\S*)*\s*[|>](?:[+-][1-9]?|[1-9][+-]?)?"
+    r"(?:[ \t]+#.*)?\s*$"
 )
+# The sequence markers leading a line, each a dash followed by whitespace.
+SEQUENCE_MARKER = re.compile(r"-[ \t]+")
 
 
 def _line_indent(line: str) -> int:
@@ -401,6 +411,29 @@ def _in_block_scalar(context: list[str], indent: int) -> bool:
     return True
 
 
+def _block_scalar_floor(line: str) -> int:
+    """The indentation a block scalar opened on `line` has to exceed.
+
+    For `key: |` that is the key's own column. After a sequence marker,
+    `- name: |`, it is still the key's column rather than the dash's: YAML
+    reads a line starting at that column as the key's sibling, not as
+    scalar content (confirmed with PyYAML), so a step's `uses:` beside a
+    `- name: |` is ordinary structure. Only when the sequence item itself
+    is the scalar, `- |` or `- &body |`, is the dash the floor.
+    """
+    column = _line_indent(line)
+    rest = line[column:]
+    while True:
+        marker = SEQUENCE_MARKER.match(rest)
+        if not marker:
+            return column
+        after = rest[marker.end() :]
+        if not after or after[0] in "|>&!":
+            return column
+        column += marker.end()
+        rest = after
+
+
 def _block_scalar_lines(lines: list[str]) -> list[bool]:
     """Mark every line of a whole YAML file as inside a block scalar or not.
 
@@ -424,7 +457,7 @@ def _block_scalar_lines(lines: list[str]) -> list[bool]:
             floor = None
         marks.append(False)
         if BLOCK_SCALAR_OPENER.search(line):
-            floor = _line_indent(line)
+            floor = _block_scalar_floor(line)
     return marks
 
 
