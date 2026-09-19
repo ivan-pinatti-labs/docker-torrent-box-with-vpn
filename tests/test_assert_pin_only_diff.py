@@ -1023,3 +1023,52 @@ def test_refuses_a_nested_run_line_when_main_has_moved_the_file(tmp_path):
         base=NESTED_IN_RUN.format(sha=SHA) + "# moved on main\n",
     )
     assert result.returncode == 1, result.stdout
+
+
+PIP_IN_RUN = (
+    "jobs:\n"
+    "  scan:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    steps:\n"
+    "      - name: Install\n"
+    "        run: |\n"
+    "          pip install checkov=={version}\n"
+)
+
+
+def test_refuses_a_pip_pin_in_a_workflow_with_no_base_to_read():
+    # A pip pin in a `run:` step is a pin no block scalar check guards, so
+    # withholding pin normalization alone would still grade it. A workflow
+    # whose base cannot be proven is refused as a whole instead.
+    path = ".github/workflows/scan.yml"
+    body = "".join(
+        difflib.unified_diff(
+            [line + "\n" for line in PIP_IN_RUN.format(version="3.3.2").splitlines()],
+            [line + "\n" for line in PIP_IN_RUN.format(version="3.3.11").splitlines()],
+            f"a/{path}",
+            f"b/{path}",
+        )
+    )
+    result = _check(f"diff --git a/{path} b/{path}\n{body}")
+    assert result.returncode == 1
+    assert "could not be proven" in result.stdout
+
+
+def test_refuses_a_pip_pin_in_a_workflow_when_main_has_moved_it(tmp_path):
+    result = _check_in_repo(
+        tmp_path,
+        PIP_IN_RUN.format(version="3.3.2"),
+        PIP_IN_RUN.format(version="3.3.11"),
+        base=PIP_IN_RUN.format(version="3.3.2") + "# moved on main\n",
+    )
+    assert result.returncode == 1
+    assert "could not be proven" in result.stdout
+
+
+def test_accepts_a_pip_pin_in_a_workflow_with_a_proven_base(tmp_path):
+    result = _check_in_repo(
+        tmp_path,
+        PIP_IN_RUN.format(version="3.3.2"),
+        PIP_IN_RUN.format(version="3.3.11"),
+    )
+    assert result.returncode == 0, result.stdout

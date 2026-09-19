@@ -630,6 +630,16 @@ def parse(diff: str) -> tuple[dict[str, tuple[Counter, Counter]], list[str]]:
             path = new
             in_hunk = False
             marks = whole_file.get(path) if old == new else None
+            # Refused as a whole, not only by withholding pin normalization
+            # from its lines: a workflow also carries pins no block scalar
+            # check guards (a pip pin in a `run:` step, say), and none of
+            # them is graded without a proven base.
+            if marks is None and path.startswith(".github/workflows/"):
+                structural.append(
+                    f"{path}: its base on main could not be proven to be this "
+                    "diff's, so nothing in it is graded as a pin until the "
+                    "branch is rebased onto main"
+                )
             changes.setdefault(path, (Counter(), Counter()))
             if old != new:
                 structural.append(f"{old} renamed to {new}")
