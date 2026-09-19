@@ -975,3 +975,52 @@ def test_refuses_a_standalone_indicator_from_context(props):
         )
     )
     assert result.returncode == 1, result.stdout
+
+
+SEQUENCE_ITEM_SPLIT = (
+    "jobs:\n"
+    "  build:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    steps:\n"
+    "      - name: Build\n"
+    "        run:\n"
+    "          {item}\n"
+    "            |\n"
+    "            uses: fake/action@{sha} # v4\n"
+)
+
+COMMENT_BEFORE_OPENER = (
+    "jobs:\n"
+    "  build:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    steps:\n"
+    "      - name: Build\n"
+    "        # note: |\n"
+    "        run: &body |-\n"
+    "          uses: fake/action@{sha} # v4\n"
+)
+
+
+@pytest.mark.parametrize("item", ["- &body", "- !!str", "- run:"])
+def test_refuses_a_uses_line_under_a_sequence_item_split_indicator(tmp_path, item):
+    # A lone indicator's owner, and so its content's floor, depends on lines
+    # above it; `- &body` then `|` makes the item itself the scalar. Every
+    # line after a lone indicator now counts as content. Raised by CodeRabbit
+    # across the ports of this script and confirmed by fuzzing against PyYAML.
+    result = _check_in_repo(
+        tmp_path,
+        SEQUENCE_ITEM_SPLIT.format(item=item, sha=SHA),
+        SEQUENCE_ITEM_SPLIT.format(item=item, sha=OTHER_SHA),
+    )
+    assert result.returncode == 1, result.stdout
+
+
+def test_refuses_a_uses_line_under_an_opener_after_a_comment(tmp_path):
+    # A comment ending in `: |` is not an opener. Read as one, it swallowed
+    # the real `run: &body |-` below it, found by fuzzing against PyYAML.
+    result = _check_in_repo(
+        tmp_path,
+        COMMENT_BEFORE_OPENER.format(sha=SHA),
+        COMMENT_BEFORE_OPENER.format(sha=OTHER_SHA),
+    )
+    assert result.returncode == 1, result.stdout

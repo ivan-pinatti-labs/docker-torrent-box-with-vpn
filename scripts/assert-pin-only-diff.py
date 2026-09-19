@@ -360,7 +360,7 @@ BLOCK_SCALAR_OPENER = re.compile(
 # The sequence markers leading a line, each a dash followed by whitespace,
 # and the node properties (anchors, tags) that may lead a node after one.
 SEQUENCE_MARKER = re.compile(r"-[ \t]+")
-NODE_PROPERTIES = re.compile(r"(?:[&!]\S*[ \t]+)*")
+NODE_PROPERTIES = re.compile(r"(?:[&!]\S*(?:[ \t]+|$))*")
 # A block scalar indicator alone on its line, optionally after node
 # properties: the value of the key on an earlier line. `run: &body` or a
 # bare `run:` followed by an indented `|` is as much a block scalar as
@@ -453,17 +453,18 @@ def _block_scalar_floor(line: str) -> int:
         rest = after
 
 
-def _standalone_floor(previous: list[str], indent: int) -> int:
+def _standalone_floor() -> int:
     """The floor of a block scalar whose indicator stands alone on its line.
 
-    That scalar is the value of the key on the nearest earlier line
-    shallower than the indicator, so the floor is that key's column, not
-    the indicator's. With no such line in sight, every later line counts as
-    content, which only ever refuses more.
+    None at all: every later line in the file counts as its content. Which
+    node owns a lone indicator, and so where its content may start, depends
+    on lines above it (a bare `- &body`, a property on a line of its own, an
+    explicit indentation digit measured from that owner), and each attempt
+    to derive it from them was found to under-mark some valid YAML, fuzzed
+    against PyYAML. No workflow here uses a lone indicator, so treating the
+    rest of the file as content costs nothing today and only ever refuses
+    more: a pin below one waits for a person.
     """
-    for line in reversed(previous):
-        if line.strip() and _line_indent(line) < indent:
-            return _block_scalar_floor(line)
     return -1
 
 
@@ -482,17 +483,23 @@ def _block_scalar_lines(lines: list[str]) -> list[bool]:
     """
     marks: list[bool] = []
     floor: int | None = None
-    for number, line in enumerate(lines):
+    for line in lines:
         if floor is not None:
             if not line.strip() or _line_indent(line) > floor:
                 marks.append(True)
                 continue
             floor = None
         marks.append(False)
+        # Outside a scalar, a line starting with `#` is a comment, never an
+        # opener: reading `# note: |` as one would mark what follows as its
+        # content, and a real opener among those lines would go unseen.
+        # Fuzzing against PyYAML found exactly that.
+        if line.lstrip().startswith("#"):
+            continue
         if BLOCK_SCALAR_OPENER.search(line):
             floor = _block_scalar_floor(line)
         elif STANDALONE_INDICATOR.match(line):
-            floor = _standalone_floor(lines[:number], _line_indent(line))
+            floor = _standalone_floor()
     return marks
 
 
