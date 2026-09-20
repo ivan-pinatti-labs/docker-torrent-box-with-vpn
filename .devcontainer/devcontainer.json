@@ -11,6 +11,8 @@
   "customizations": {
     "vscode": {
       "extensions": [
+        "Anthropic.claude-code",
+        "openai.chatgpt",
         "adpyke.codesnap",
         "alefragnani.Bookmarks",
         "bierner.emojisense",

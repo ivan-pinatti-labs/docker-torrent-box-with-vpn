@@ -24,11 +24,7 @@
       "Bash(uname *)",
       "Bash(whoami)",
       "Bash(id *)",
-      "Bash(uptime)",
-      "Bash(asdf list *)",
-      "Bash(asdf current *)",
-      "Bash(asdf where *)",
-      "Bash(asdf which *)"
+      "Bash(uptime)"
     ]
   },
   "hooks": {

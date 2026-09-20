@@ -523,25 +523,17 @@ def test_still_refuses_a_swapped_image_name_with_the_widest_token():
     assert result.returncode == 1
 
 
-def test_accepts_a_tool_versions_bump():
-    # .tool-versions writes `<tool> <version>` with only a space between them,
-    # which none of the prefix rules can see. #67 was refused for it.
+def test_refuses_a_tool_versions_file_entirely():
+    # asdf was removed from this organization on 2026-09-19 and
+    # `.tool-versions` deleted with it, so the file is no longer a pin
+    # surface. A bot proposing one is proposing to reintroduce a version
+    # manager, which is a decision for a person rather than a version bump.
+    # This replaces three tests that graded its contents: a bump used to be
+    # accepted (#67 was refused for it before the grammar existed), and a
+    # swapped tool name or an added tool refused.
     result = _check(_diff(".tool-versions", "-pre-commit 4.5.1\n+pre-commit 4.6.2\n"))
-    assert result.returncode == 0, result.stdout
-
-
-def test_refuses_a_swapped_tool_name_in_tool_versions():
-    result = _check(
-        _diff(".tool-versions", "-pre-commit 4.5.1\n+attacker-tool 4.5.1\n")
-    )
-    assert result.returncode == 1
-
-
-def test_refuses_an_extra_tool_added_to_tool_versions():
-    result = _check(
-        _diff(".tool-versions", "-pre-commit 4.5.1\n+pre-commit 4.6.2\n+evil 1.0.0\n")
-    )
-    assert result.returncode == 1
+    assert result.returncode == 1, result.stdout
+    assert "not a dependency pin file" in result.stdout
 
 
 def test_accepts_a_pip_floor_bump_in_test_requirements():

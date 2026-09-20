@@ -63,8 +63,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # .env.example for image pins, the workflow directory for the pip pins and
 # GitHub Actions versions it maintains there, .pre-commit-config.yaml for hook
 # revs, additional_dependencies and the scanner image tags, tests/requirements.txt
-# for the pip pins the test suite runs on, and .tool-versions for the asdf
-# managed tools. Dependabot managed the pre-commit, github-actions and pip
+# for the pip pins the test suite runs on. `.tool-versions` used to be a
+# sixth surface; asdf was removed from this organization on 2026-09-19 and
+# the file is gone. Dependabot managed the pre-commit, github-actions and pip
 # ecosystems from a separate set of pin positions across the same files until
 # its version updates were retired; see docs/DEPENDENCY_UPDATES.md,
 # "Retiring Dependabot". Nothing here shrank when it left, since Renovate's
@@ -74,15 +75,7 @@ ALLOWED_PATHS = (
     ".pre-commit-config.yaml",
     ".github/workflows/",
     "tests/requirements.txt",
-    ".tool-versions",
 )
-
-# `.tool-versions` writes `<tool> <version>`, one per line, with nothing to
-# anchor on but the space. That cannot go in the prefix set below, because a
-# lookbehind of variable width is not allowed and "the word after a space" would
-# match most of a workflow file. It is matched whole-line instead, and only for
-# that file, which is why normalize takes the path.
-TOOL_VERSION_LINE = re.compile(r"^(?P<prefix>[A-Za-z0-9_.-]+[ \t]+)\S+[ \t]*$")
 
 # A released version, always starting with a digit (an optional single leading
 # `v` aside): `v7`, `v7.0.1`, `3.1.0`. Anchors the trailing comment on a GitHub
@@ -231,7 +224,7 @@ def _normalize_bare_action_version(match: re.Match[str]) -> str:
 # `PUID=1000` becoming `PUID=0`, or a `fetch-depth` moving, since both sides
 # would normalize alike.
 #
-# The six prefixes are the shapes a pin takes everywhere except .tool-versions,
+# The six prefixes are the shapes a pin takes in this repository,
 # which is handled whole-line above:
 #
 #   ==1.2.3              pip, in a workflow run step or additional_dependencies
@@ -599,8 +592,6 @@ def normalize(line: str, path: str = "", in_block_scalar: bool = False) -> str:
         stripped = ACTION_SHA.sub(_normalize_action_sha, stripped)
         stripped = BARE_ACTION_VERSION.sub(_normalize_bare_action_version, stripped)
         stripped = ACTION_REF_VERSION.sub(r"\g<prefix>@<version>", stripped)
-    if path.endswith(".tool-versions"):
-        return TOOL_VERSION_LINE.sub(r"\g<prefix><version>", stripped)
     return VERSION.sub(r"\g<prefix><version>", stripped)
 
 

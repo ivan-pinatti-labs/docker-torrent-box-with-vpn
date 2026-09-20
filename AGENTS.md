@@ -24,10 +24,10 @@ are more specific, follow them.
 
 ### Run binaries in containers, not on the host
 
-A binary that did not come from the operating system's package manager or a
-version manager such as asdf (a release download, an installer script, a new
-version under evaluation, a scanner, a debugging tool) runs inside a rootless
-Podman container, never directly on the host. That holds when validating,
+A binary that did not come from the operating system's package manager (a
+release download, an installer script, a new version under evaluation, a
+scanner, a debugging tool) runs inside a rootless Podman container, never
+directly on the host. That holds when validating,
 testing, checking a new version and debugging.
 
 ```bash

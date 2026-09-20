@@ -653,7 +653,7 @@ install_requirements:
 	@echo "Alternative: Docker"
 	@echo "  sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras xmlstarlet wireguard"
 	@echo ""
-	@echo "yq: https://github.com/mikefarah/yq#install  (or via asdf: asdf install)"
+	@echo "yq: https://github.com/mikefarah/yq#install"
 
 pre_commit:
 	@echo "Running pre-commit checks..."
