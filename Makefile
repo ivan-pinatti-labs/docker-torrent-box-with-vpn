@@ -1015,3 +1015,74 @@ test_no_rotate_passwords: tests/.venv ## Run full test suite except password rot
 # every `make test`. `bootstrap_tests` calls this, not plain `test`.
 test_extended: test ## Run the full suite plus rinse-and-repeat lifecycle cycles
 	@tests/.venv/bin/pytest -m "rinse_and_repeat" $(PYTEST_ARGS)
+
+# A shell inside the development container, without an editor in the loop.
+#
+# The flags mirror .devcontainer/devcontainer.json's runArgs, deliberately
+# and by hand: a devcontainer.json is read by editors and by the devcontainer
+# CLI, neither of which is involved here, so the two lists have to be kept in
+# step. Anything added there that this target needs belongs here too.
+#
+# container_engine_t and /dev/fuse are what let the nested runtime work under
+# SELinux, for the two pre-commit hooks here that call `docker` by name. See
+# docs/IMAGES.md in ivan-pinatti-labs/devcontainer-images, under "Running
+# containers inside it".
+#
+# Deliberately not the wider opt in set. /dev/net/tun, unmask=/proc/sys and
+# the bridge network override exist for nested containers that need a network
+# of their own, which is the compose stack and the VPN, and neither runs in
+# here. `make start` and the integration suite run on the host against the
+# host's own podman; this container is for the editor, the agent CLIs and the
+# hooks.
+#
+# The two agent directories are bind mounted from the host so Claude Code and
+# Codex read and write the same sessions, transcripts and credentials whether
+# they run in here or on the host. Lowercase z on those two, uppercase Z on
+# the working tree: Z labels a mount private to one container, which is right
+# for a working tree, and wrong for directories the host's own agents and
+# every other repository's container also use.
+#
+# SHELL_EXTRA_MOUNTS exists because a bind mount carries a symlink across as
+# a symlink, so anything under ~/.claude or ~/.codex pointing outside those
+# directories dangles until its target is mounted too:
+#
+#   make shell SHELL_EXTRA_MOUNTS='-v /path/on/host:/path/on/host:rw,z'
+DEV_IMAGE ?= docker-torrent-box-with-vpn-dev
+SHELL_EXTRA_MOUNTS ?=
+
+# GH_TOKEN by the mechanism devcontainer.json uses where that is available,
+# and by the ordinary environment where it is not. `--secret` naming a secret
+# that does not exist aborts the run rather than degrading, so hard coding it
+# would break this target on every machine that has not run
+# `podman secret create gh-devcontainer`.
+_comma := ,
+_shell_gh_secret := $(shell podman secret exists gh-devcontainer >/dev/null 2>&1 && echo present)
+_shell_gh_token := $(if $(_shell_gh_secret),\
+--secret=gh-devcontainer$(_comma)type=env$(_comma)target=GH_TOKEN,\
+$(if $(GH_TOKEN),-e GH_TOKEN,))
+
+_shell_ssh_dir := $(XDG_RUNTIME_DIR)/devcontainer-ssh
+_shell_ssh := $(if $(wildcard $(_shell_ssh_dir)),\
+-v "$(_shell_ssh_dir):/run/devcontainer-ssh:rw,z" \
+-e SSH_AUTH_SOCK=/run/devcontainer-ssh/agent.sock \
+-e GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=/run/devcontainer-ssh/known_hosts -o StrictHostKeyChecking=yes",)
+
+.PHONY: shell
+shell:
+	@echo "Building the development container..."
+	@podman build --file .devcontainer/Dockerfile --tag $(DEV_IMAGE) .
+	@mkdir -p "$(HOME)/.claude" "$(HOME)/.codex"
+	@echo "Entering $(DEV_IMAGE). Type exit to leave."
+	@podman run --rm --interactive --tty \
+		--userns=keep-id:uid=1000,gid=1000 \
+		--security-opt label=type:container_engine_t \
+		--security-opt label=level:s0:c555,c666 \
+		--device /dev/fuse \
+		-v "$(CURDIR):$(CURDIR):rw,Z" \
+		-v "$(HOME)/.claude:/home/dev/.claude:rw,z" \
+		-v "$(HOME)/.codex:/home/dev/.codex:rw,z" \
+		$(_shell_ssh) \
+		$(_shell_gh_token) \
+		$(SHELL_EXTRA_MOUNTS) \
+		--workdir "$(CURDIR)" \
+		$(DEV_IMAGE) bash

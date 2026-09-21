@@ -28,3 +28,12 @@ misconfigurations:
     statement: >-
       Healthchecks are defined per service in the compose files, where they can
       probe the real HTTP endpoint and port.
+
+  - id: DS-0026
+    paths:
+      - ".devcontainer/Dockerfile"
+    statement: >-
+      A development container runs an interactive shell, not a service. There
+      is nothing for a healthcheck to probe, and one would report on bash
+      rather than on anything meaningful. This is not a deferred fix and has no
+      expiry: the check does not apply to this kind of image at all.

@@ -1,13 +1,31 @@
 {
-  "name": "Ubuntu",
-  "image": "mcr.microsoft.com/devcontainers/base:jammy",
-  "features": {
-    "ghcr.io/devcontainers/features/python:1": {},
-    "ghcr.io/jungaretti/features/make:1": {},
-    "ghcr.io/devcontainers-extra/features/pre-commit:2": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  "name": "docker-torrent-box-with-vpn",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
   },
+  "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind,relabel=private",
+  "workspaceFolder": "${localWorkspaceFolder}",
+  "runArgs": [
+    "--userns=keep-id:uid=1000,gid=1000",
+    "--security-opt",
+    "label=type:container_engine_t",
+    "--security-opt",
+    "label=level:s0:c555,c666",
+    "--device",
+    "/dev/fuse",
+    "--secret",
+    "gh-devcontainer,type=env,target=GH_TOKEN"
+  ],
+  "mounts": [
+    "source=${localEnv:XDG_RUNTIME_DIR}/devcontainer-ssh,target=/run/devcontainer-ssh,type=bind"
+  ],
+  "remoteEnv": {
+    "SSH_AUTH_SOCK": "/run/devcontainer-ssh/agent.sock",
+    "GIT_SSH_COMMAND": "ssh -o UserKnownHostsFile=/run/devcontainer-ssh/known_hosts -o StrictHostKeyChecking=yes"
+  },
+  "remoteUser": "dev",
+  "updateRemoteUserUID": false,
   "customizations": {
     "vscode": {
       "extensions": [
@@ -39,12 +57,5 @@
         "ms-vscode.makefile-tools"
       ]
     }
-  },
-  "mounts": [
-    "source=${localEnv:HOME}/.bash_profile,target=/home/vscode/.bash_profile,type=bind,consistency=cached",
-    "source=${localEnv:HOME}/.bash_aliases,target=/home/vscode/.bash_aliases,type=bind,consistency=cached",
-    "source=${localEnv:HOME}/.bashrc,target=/home/vscode/.bashrc,type=bind,consistency=cached",
-    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached",
-    "source=${localEnv:HOME}/.ssh/,target=/home/vscode/.ssh/,type=bind,consistency=cached"
-  ]
+  }
 }
