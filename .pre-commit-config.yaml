@@ -280,7 +280,7 @@ repos:
           bash -c 'runtime=$(command -v docker || command -v podman) || {
           echo "actionlint hook needs docker or podman on PATH" >&2; exit 1; };
           exec "$runtime" run --rm -v "$PWD:/repo:ro" -w /repo
-          rhysd/actionlint:1.7.12 -color "$0" "$@"'
+          docker.io/rhysd/actionlint:1.7.12 -color "$0" "$@"'
         language: system
         types: ["yaml"]
         files: ^\.github/workflows/
@@ -312,7 +312,7 @@ repos:
           bash -c 'runtime=$(command -v docker || command -v podman) || {
           echo "hadolint hook needs docker or podman on PATH" >&2; exit 1; };
           exec "$runtime" run --rm -v "$PWD:/src:ro" -w /src
-          hadolint/hadolint:v2.15.1 hadolint --no-color "$0" "$@"'
+          docker.io/hadolint/hadolint:v2.15.1 hadolint --no-color "$0" "$@"'
         language: system
         types: [dockerfile]
 
@@ -504,7 +504,7 @@ repos:
           bash -c 'runtime=$(command -v docker || command -v podman) || {
           echo "dotenv-linter hook needs docker or podman on PATH" >&2; exit 1; };
           exec "$runtime" run --rm -v "$PWD:/src:ro" -w /src
-          dotenvlinter/dotenv-linter:4.0.0 check --skip-updates
+          docker.io/dotenvlinter/dotenv-linter:4.0.0 check --skip-updates
           --ignore-checks UnorderedKey --ignore-checks ValueWithoutQuotes
           .env.example'
         language: system

@@ -31,6 +31,9 @@ USER 0:0
 #   python3-venv  `make bootstrap_tests` builds tests/.venv, and Ubuntu marks
 #                 its own Python externally managed so pip will not install
 #                 into it
+#   shfmt         the jumanjihouse shfmt hook is a script hook that needs the
+#                 binary on PATH and reports "This check needs shfmt from
+#                 https://github.com/mvdan/sh/releases" without it
 #
 # The base image already provides git, make, python3, jq, curl,
 # openssh-client, nodejs, the Claude Code and Codex CLIs, and rootless podman
@@ -49,6 +52,7 @@ RUN printf '%s\n' \
     gh \
     pre-commit \
     python3-venv \
+    shfmt \
   && rm -rf /var/lib/apt/lists/*
 
 USER 1000:1000
