@@ -387,8 +387,8 @@ jobs:
         # bot job's wait step reads, because two of the four required
         # contexts here, `Pre-commit` and `Tests`, are ordinary GitHub Checks
         # (workflow jobs), not commit statuses, and that endpoint only ever
-        # returns the latter. `statusCheckRollup` is the one place both
-        # shapes show up together, the same reasoning
+        # returns the latter. `statusCheckRollup` is the one place where
+        # both shapes show up together.
         #
         # A two minute window is still not a guarantee `Review Verified`
         # settles inside it, since it depends on CodeRabbit's own review
