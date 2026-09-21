@@ -389,7 +389,6 @@ jobs:
         # (workflow jobs), not commit statuses, and that endpoint only ever
         # returns the latter. `statusCheckRollup` is the one place both
         # shapes show up together, the same reasoning
-        # coderabbit-review-queue.yml already relies on for the same reason.
         #
         # A two minute window is still not a guarantee `Review Verified`
         # settles inside it, since it depends on CodeRabbit's own review

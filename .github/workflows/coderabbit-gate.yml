@@ -60,7 +60,8 @@ on:
   # assuming the SHA it was told about is a pull request head.
   status:
   schedule:
-    # Offset from coderabbit-review-queue.yml's :23 so the two hourly jobs do
+    # The offset originally kept this clear of coderabbit-review-queue.yml's
+    # :23, retired on 2026-09-21. Kept so the remaining hourly jobs do
     # not compete for the same GitHub Actions minute for no reason.
     - cron: "47 * * * *"
   merge_group:

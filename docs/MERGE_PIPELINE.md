@@ -131,10 +131,14 @@ direct result (#114).
    clean `Pin Only` verdict, so a person is already looking at it regardless
    of what `Review Verified` says. Requiring a real review on top of that
    cannot stall the happy path, since there was never an unattended path for
-   this diff to begin with, and it cannot deadlock either: CodeRabbit will
-   never review a bot's pull request on its own, but
-   `coderabbit-review-queue.yml`'s hourly nudge reaches exactly this pull
-   request, asking for the review this lane needs on its behalf.
+   this diff to begin with. CodeRabbit will never review a bot's pull request
+   on its own, so the review this lane needs is asked for by the person who
+   is already looking at it:
+
+   ```shell
+   gh pr comment <n> --body '@coderabbitai review'
+   ```
+
 3. **Everything else** (a human pull request, a fork, or a bot pull request
    that fell through from lane 2) is `success` only for the literal
    description `Review completed`. Absent is `pending`. A rate limited
@@ -201,33 +205,49 @@ intervention.
 - **An absent or stale `Review Verified`.** `coderabbit-gate.yml` re-grades
   every open pull request hourly, so a missed or failed run recovers without
   anyone noticing it was ever wrong.
+- **A rejected bot pull request that later becomes mergeable.** GitHub does
+  not disable a pull request's auto-merge just because it currently fails a
+  required check; it re-evaluates automatically once the blocking condition
+  clears, the same way the hourly re-grade above clears a bad
+  `Review Verified` run without a person acting.
+
+**Needs a person:**
+
 - **A quota-exhausted `CodeRabbit` status, or a bot pull request CodeRabbit has
-  never looked at.** `coderabbit-review-queue.yml` nudges CodeRabbit hourly
-  with `@coderabbitai review`, one pull request at a time, whenever
-  `Review Verified` reads `failure` or reads `pending` specifically for
-  "waiting for a CodeRabbit review", which is the state a bot pull request
-  that fell out of the pin-only lane sits in forever otherwise, since
-  CodeRabbit never reviews one on its own. It skips a pull request that is
-  failing something else, has a merge conflict, or already has an unresolved
-  thread of its own, since a review cannot fix any of those and the quota slot
-  would be wasted.
+  never looked at.** This is the state a bot pull request that fell out of the
+  pin-only lane sits in forever otherwise, since CodeRabbit never reviews one
+  on its own. Ask for the review by hand:
 
-  **That comment is posted with `CODERABBIT_NUDGE_TOKEN`, not `GITHUB_TOKEN`,
-  and the distinction is the whole thing.** CodeRabbit silently ignores an
-  `@coderabbitai review` command posted by a bot account, the same way it
-  ignores a pull request authored by one: no review, no decline, no rate limit
-  notice, nothing. `GITHUB_TOKEN` posts as `github-actions[bot]`, so a nudge
-  sent that way is discarded without a CodeRabbit reply, status, or rate limit
-  notice. The comment itself is still posted and still visible on the pull
-  request, which is what makes this hard to spot: the nudge looks like it
-  worked and nothing downstream of it ever happens.
+  ```shell
+  gh pr comment <n> --body '@coderabbitai review'
+  ```
 
-  This repository sent them that way until 2026-09-03, which is why its bot
-  pull requests kept needing a human to ask by hand while the other five
-  repositories recovered on their own. Measured on `rsync-crypt#33`, where the
-  same command text was posted by both accounts on one pull request:
-  `ivan-pinatti` drew a reply within about seven seconds every time,
-  `github-actions[bot]` drew nothing, three times out of three.
+  `coderabbit-review-queue.yml` used to do this hourly and was retired on
+  2026-09-21. It is worth recording why, because the obvious reason is the
+  wrong one.
+
+  **The comment has to come from a human account.** CodeRabbit silently
+  ignores an `@coderabbitai review` command posted by a bot account, the same
+  way it ignores a pull request authored by one: no review, no decline, no
+  rate limit notice, nothing. `GITHUB_TOKEN` posts as `github-actions[bot]`,
+  so a nudge sent that way is discarded. The comment is still posted and still
+  visible, which is what makes it hard to spot: it looks like it worked and
+  nothing downstream ever happens. This repository sent them that way until
+  2026-09-03. Measured on `rsync-crypt#33`, where the same command text was
+  posted by both accounts on one pull request: `ivan-pinatti` drew a reply
+  within about seven seconds every time, `github-actions[bot]` drew nothing,
+  three times out of three.
+
+  **After 2026-09-03 the workflow posted with `CODERABBIT_NUDGE_TOKEN`, and it
+  worked.** The retirement is not a correction of the above. It is a cost
+  judgement: that token is an organization secret whose visibility is set per
+  repository and which fails silently when a repository is left off the list.
+  In `ivan-pinatti-labs/.github` it resolved empty, and eight of that
+  repository's last ten scheduled runs found the stuck pull request, tried to
+  comment, and exited 4. The job also could not see the shared quota it was
+  firing into, so a mistimed nudge spent the slot that later frees. What it
+  bought was one command from a person who was already involved, since a bot
+  pull request in this lane gets no automatic approval either.
 
   The quota itself is worth meeting here rather than being surprised by it:
   this repository is on CodeRabbit's Open Source plan, which scales the
@@ -237,15 +257,7 @@ intervention.
   reviews per hour" from an earlier check; that was the trial's behavior, not
   this plan's, and is stale. At 2 an hour, pushing a fix and then pushing
   another fix to that fix can exhaust the quota for the rest of the hour, and
-  the only recovery is time or the hourly nudge above, never another push.
-- **A rejected bot pull request that later becomes mergeable.** GitHub does
-  not disable a pull request's auto-merge just because it currently fails a
-  required check; it re-evaluates automatically once the blocking condition
-  clears, the same way the hourly re-grade above clears a bad
-  `Review Verified` run without a person acting.
-
-**Needs a person:**
-
+  the only recovery is time, never another push.
 - **An unresolved CodeRabbit conversation.** Branch protection blocks on it
   regardless of what either status says, and Renovate never resolves a
   thread, so anything CodeRabbit objects to on a bot pull request waits for a

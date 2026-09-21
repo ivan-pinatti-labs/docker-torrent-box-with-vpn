@@ -254,10 +254,13 @@ repos:
   # the slow part; handed the same script with actionlint's own flags it
   # returns no findings in 0.03s.
   #
-  # coderabbit-review-queue.yml's single 8.6 KB step crosses that line, which
+  # coderabbit-review-queue.yml's single 8.6 KB step crossed that line, which
   # made `pre-commit run --all-files` hang forever, and with it every `git
   # push`, since all-files-sweep runs at the pre-push stage and git holds the
-  # connection to the remote open while hooks run until GitHub drops it.
+  # connection to the remote open while hooks run until GitHub drops it. That
+  # workflow was retired on 2026-09-21, so no file here currently crosses the
+  # threshold. This note stays because nothing stops the next one from doing
+  # so: the trigger left, the hazard did not.
   #
   # `actionlint-docker` does not deadlock (0.28s on the same file, with the
   # image's own bundled shellcheck 0.11.0), so the bug is in the golang build
