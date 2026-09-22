@@ -53,9 +53,10 @@ Dependabot". For the ones that do merge on their own:
    `Tests Verified` runs without anyone commenting `/run-tests`. Nothing else
    about the suite changes: every other pull request, forks included, still
    only runs it when a maintainer asks.
-2. **`Pin Only` is graded.** `scripts/assert-pin-only-diff.py` checks that
-   every changed line differs from its counterpart in nothing but a version
-   or a digest, in a pin position, across five allowed files, and
+2. **`Pin Only` is graded.** The shared pin-only check in
+   ivan-pinatti-labs/gh-actions checks that every changed line differs from
+   its counterpart in nothing but a version or a digest, in a pin position,
+   across the files `.github/pin-only.yml` allows, and
    `.github/workflows/coderabbit-gate.yml` publishes its verdict as the `Pin
    Only` status. A number that is not a pin does not count as one: `PUID`
    moving, or a `timeout-minutes` changing, is refused the same as an added
@@ -109,7 +110,7 @@ branch protection reads from it, that can tell the three apart. Three pull
 requests merged with no review having actually happened on 2026-08-19 as a
 direct result (#114).
 
-`scripts/coderabbit-review-verdict.py`, published as `Review Verified` by
+The shared review verdict, published as `Review Verified` by
 `coderabbit-gate.yml`, is the fix: it reads the actual description behind the
 `CodeRabbit` status rather than its color, and grades in three lanes.
 

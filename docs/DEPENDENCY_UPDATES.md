@@ -100,7 +100,7 @@ not open pull requests in the same hour and queue their CodeRabbit review
 requests behind each other.
 
 That turned out not to be a concern either. A pin-only bump from *either* bot
-resolves `Review Verified` through `coderabbit-review-verdict.py`'s bot lane
+resolves `Review Verified` through the shared review verdict's bot lane
 with CodeRabbit never asked, so Dependabot spent no review quota and had
 nothing to queue behind. Confirmed on this repository's own merged pull
 requests: #139 and #140 are Dependabot and report `pin-only diff, nothing to
@@ -144,10 +144,10 @@ updates" below for what does and does not change there, including a setting
 that turned out not to move with the rest.
 
 What did change, because the old split stopped applying to it: the
-`ALLOWED_PATHS` pin files in `scripts/assert-pin-only-diff.py`, the bot
+allowed pin files in the pin-only check, the bot
 identity checks in `.github/workflows/bot-auto-merge.yml`,
-`coderabbit-gate.yml` and `integration-tests.yml`, and the `BOTS` set in
-`scripts/coderabbit-review-verdict.py` all named `dependabot[bot]` alongside
+`coderabbit-gate.yml` and `integration-tests.yml`, and the bot set in the
+review verdict all named `dependabot[bot]` alongside
 `renovate[bot]`. Every one of those checks now names `renovate[bot]` only;
 none of the files it checks changed, since Renovate's native managers for the
 three retired ecosystems write into the same paths Dependabot did.
@@ -327,7 +327,7 @@ can touch it.
 Left as it is, this is a real gap in "Renovate opens every routine dependency pull request
 here": a security alert could still make Dependabot open one, on a login this repository's
 tooling no longer recognizes. Concretely, `bot-auto-merge.yml` would supply it no
-approval (only `renovate[bot]` reaches that path now), and `coderabbit-review-verdict.py` would
+approval (only `renovate[bot]` reaches that path now), and the review verdict would
 grade it in the human lane rather than the unattended bot lane, so it could not merge on its
 own; but it would still sit open needing a maintainer to close it, which is exactly the
 orphaned-bot-pull-request shape this migration exists to remove. This is deliberately left as a

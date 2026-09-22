@@ -34,8 +34,10 @@ needs the comment updated, or a change that is wrong.
   it cannot answer, never pass.
 - Put decision logic in a script under `scripts/`, tested by a file under
   `tests/` carrying `pytestmark = pytest.mark.scripts`, rather than inline in
-  YAML. `scripts/assert-pin-only-diff.py` and `tests/test_assert_pin_only_diff.py`
-  are the pattern to copy.
+  YAML. `scripts/permissions.py` and `tests/test_permissions_symlinks.py`
+  are the pattern to copy. The merge pipeline's own two scripts were that
+  pattern too, until they moved to ivan-pinatti-labs/gh-actions, where the
+  same rule holds and this repository's tests for them went along.
 - Run `pre-commit run --all-files` before committing and fix what it reports.
   Never disable a hook to get past it without saying so explicitly.
 - Never run git commands while the dev stack is running. `.claude/hooks/git-guard.sh`

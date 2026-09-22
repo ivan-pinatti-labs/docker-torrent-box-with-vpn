@@ -152,7 +152,7 @@ jobs:
         # The check that keeps "approve on the strength of the author" from
         # meaning "the bot identity has write access to main". Read here
         # instead of run: coderabbit-gate.yml publishes the `Pin Only` status
-        # from the same script, scripts/assert-pin-only-diff.py, on the same
+        # from the same shared check, ivan-pinatti-labs/gh-actions, on the same
         # `pull_request_target` events this job fires on, so computing it a
         # second time here would only be able to drift from the copy the merge
         # queue and the CodeRabbit gate both already read.

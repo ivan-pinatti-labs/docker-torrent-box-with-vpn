@@ -306,8 +306,9 @@ What is placed against it instead:
 - **Digest pinning** (`pinDigests`). Every image that names a version is pinned
   to its manifest-list digest, so a republished tag cannot change what runs
   without a pull request saying so.
-- **A pin-only diff assertion** (`scripts/assert-pin-only-diff.py`). Its verdict
-  is published as the `Pin Only` commit status by
+- **A pin-only diff assertion** (the shared check in
+  ivan-pinatti-labs/gh-actions, configured by `.github/pin-only.yml`). Its
+  verdict is published as the `Pin Only` commit status by
   `.github/workflows/coderabbit-gate.yml`, and both `bot-auto-merge.yml`'s
   approval and the `Review Verified` status below read that published result
   rather than each running the script again. The approval is withheld unless

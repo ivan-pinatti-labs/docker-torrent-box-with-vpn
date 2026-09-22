@@ -1,25 +1,50 @@
 ---
 name: CodeRabbit Gate
 
-# Publishes two commit statuses that branch protection can require directly,
-# because neither `CodeRabbit` nor a dependency bump's own author is a fact
-# branch protection can read a decision out of on its own:
+# Calls the organization's shared gate, which publishes the two commit
+# statuses branch protection can require directly, because neither
+# `CodeRabbit` nor a dependency bump's own author is a fact branch protection
+# can read a decision out of on its own:
 #
-#   Pin Only        `scripts/assert-pin-only-diff.py`'s verdict, published
-#                    instead of run inline by bot-auto-merge.yml, so the gate
-#                    below and the approval step both read the one result
-#                    rather than computing it twice. `success` with "not a
-#                    dependency bot pull request" on anything that is not one,
-#                    so requiring it never blocks a human pull request.
-#   Review Verified  `scripts/coderabbit-review-verdict.py`'s verdict. This is
-#                    the fix for #114: `CodeRabbit` reports `success` on a real
-#                    review, a rate limited decline and a skipped draft alike,
-#                    and three pull requests merged unreviewed on 2026-08-19 as
-#                    a direct result. See that script's docstring for the three
-#                    lanes.
+#   Pin Only        whether a dependency bot's diff changes nothing but pins,
+#                   published instead of run inline by bot-auto-merge.yml, so
+#                   the gate and the approval step both read the one result
+#                   rather than computing it twice. `success` with "not a
+#                   dependency bot pull request" on anything that is not one,
+#                   so requiring it never blocks a human pull request.
+#   Review Verified whether CodeRabbit actually reviewed this head. This is
+#                   the fix for #114: `CodeRabbit` reports `success` on a real
+#                   review, a rate limited decline and a skipped draft alike,
+#                   and three pull requests merged unreviewed on 2026-08-19 as
+#                   a direct result.
 #
-# Four triggers, and each one exists for a different failure mode of the
-# others:
+# The grading code used to live here, as a 732 line
+# scripts/assert-pin-only-diff.py and a 149 line
+# scripts/coderabbit-review-verdict.py, alongside five other copies of each
+# across the organization. It lives in ivan-pinatti-labs/gh-actions now, and
+# this repository's own 1,066 line pin-only suite moved there with it: it is
+# the only suite anywhere that exercises the strip grammars below, so it had
+# to travel rather than be deleted.
+#
+# Pinned by SHA, never by tag or branch. The shared workflow reads its own
+# library at that same commit through job.workflow_sha, so pinning this pins
+# the code that grades merges here, with no second pin that could drift. A
+# floating tag would resolve at run time and give that guarantee away.
+#
+# Renovate bumps the pin. Because changing a pinned `uses:` is itself a
+# pin-only diff, `Pin Only` passes and the bot lane merges the bump
+# unattended, so a fix upstream arrives here without anyone doing anything.
+#
+# .github/pin-only.yml says what a bot may change here, and carries the two
+# things that make this repository's grammar unlike every other one: it strips
+# the action SHA and the image digest where the others substitute a
+# placeholder, and inside a workflow's block scalars it keeps the digest and
+# version grammars running and skips only the action ones. It is read from the
+# default branch, never from the pull request being graded, and is deliberately
+# not in its own allowed_paths, so a bot cannot widen its own lane.
+#
+# The triggers stay here, because a called workflow cannot declare its own.
+# Four of them, each for a different failure mode of the others:
 #
 #   pull_request_target  the normal path, firing on the events that change
 #                         what the verdict should be.
@@ -37,26 +62,19 @@ name: CodeRabbit Gate
 #                         temporary commit, not the pull request's head, so
 #                         both statuses have to be republished there too or the
 #                         queue can never see them.
-#
-# Every path re-reads the live combined status and re-derives the verdict from
-# it; none of them trust the event that woke the workflow. That is what stops
-# a slow trigger overwriting a newer verdict with a stale one: whichever run
-# finishes last always reflects the current state, because it always asked
-# for it fresh rather than carrying an answer from whenever it started.
 on:
   # zizmor: ignore[dangerous-triggers]
   #
   # Flagged by default, and the reasoning is the same as bot-auto-merge.yml's:
-  # this never checks out the pull request. The checkout below is pinned to
-  # the base branch, exactly like that file, and the only things read from the
-  # pull request are its number, its metadata and its diff, all as data
-  # fetched through the API.
+  # this never checks out the pull request. The shared workflow pins its
+  # checkout to the default branch and reads the pull request only as API
+  # data: its number, its metadata and its diff.
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   # `status` fires on every commit status this repository receives, including
   # a plain push to `main`, which carries no open pull request at all. The
-  # resolve job below asks the API which open pull requests point at the SHA
-  # and exits cleanly with nothing to grade when there are none, rather than
+  # shared workflow asks the API which open pull requests point at the SHA and
+  # exits cleanly with nothing to grade when there are none, rather than
   # assuming the SHA it was told about is a pull request head.
   status:
   schedule:
@@ -66,284 +84,18 @@ on:
     - cron: "47 * * * *"
   merge_group:
 
-# The floor. Each job widens it for itself.
 permissions:
   contents: read
 
 jobs:
-  resolve:
-    name: Find what to grade
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    # The event-shape filter lives here rather than being restated on every
-    # trigger; `status` is the one that needs it, since it fires for reasons
-    # that have nothing to do with CodeRabbit at all.
-    if: github.event_name != 'status' || github.event.context == 'CodeRabbit'
-    permissions:
-      pull-requests: read
-    outputs:
-      # A JSON array of {pr_number, head_sha, target_sha}. head_sha is where
-      # CodeRabbit's own status lives and is always the pull request's real
-      # head. target_sha is where this workflow publishes its own two
-      # statuses, which is the same commit except on the merge queue, where
-      # required checks are judged against the queue's temporary commit
-      # instead.
-      matrix: ${{ steps.build.outputs.matrix }}
-    steps:
-      - name: Build the list of pull requests to grade
-        id: build
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          EVENT_NAME: ${{ github.event_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          STATUS_SHA: ${{ github.event.sha }}
-          MERGE_GROUP_REF: ${{ github.event.merge_group.head_ref }}
-          MERGE_GROUP_SHA: ${{ github.event.merge_group.head_sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # Every `$name` inside a single-quoted jq program in this script is
-          # a jq variable bound by --arg, not a shell expansion, and is meant
-          # to stay literal.
-          case "$EVENT_NAME" in
-            pull_request_target)
-              # shellcheck disable=SC2016
-              matrix=$(jq -nc --arg n "$PR_NUMBER" --arg s "$PR_HEAD_SHA" \
-                '[{pr_number: ($n | tonumber), head_sha: $s, target_sha: $s}]')
-              ;;
-
-            status)
-              # Zero, one, or in principle more than one open pull request can
-              # share a head SHA (a branch pushed to two pull requests at
-              # once). Grading all of them is no more work than grading one.
-              #
-              # `gh api --jq` takes a single filter string; it has no `--arg`
-              # of its own, so binding a shell variable into the filter needs
-              # the standalone `jq` binary on the receiving end instead.
-              # shellcheck disable=SC2016
-              matrix=$(gh api "repos/$REPO/commits/$STATUS_SHA/pulls" \
-                | jq -c --arg s "$STATUS_SHA" \
-                '[.[] | select(.state == "open") | {pr_number: .number, head_sha: $s, target_sha: $s}]')
-              ;;
-
-            schedule)
-              matrix=$(gh pr list --repo "$REPO" --state open --limit 100 \
-                --json number,headRefOid \
-                --jq '[.[] | {pr_number: .number, head_sha: .headRefOid, target_sha: .headRefOid}]')
-              ;;
-
-            merge_group)
-              # refs/heads/gh-readonly-queue/main/pr-42-<sha>. The number is
-              # the only part trusted from the ref; the head SHA it is graded
-              # against is asked of the API fresh, in case the pull request
-              # moved between being enqueued and this run starting.
-              number=$(printf '%s' "$MERGE_GROUP_REF" | grep -oE 'pr-[0-9]+-' | grep -oE '[0-9]+')
-              if [ -z "$number" ]; then
-                echo "::error::Could not read a pull request number out of '$MERGE_GROUP_REF'."
-                exit 1
-              fi
-              head_sha=$(gh api "repos/$REPO/pulls/$number" --jq '.head.sha')
-              # shellcheck disable=SC2016
-              matrix=$(jq -nc --arg n "$number" --arg h "$head_sha" --arg t "$MERGE_GROUP_SHA" \
-                '[{pr_number: ($n | tonumber), head_sha: $h, target_sha: $t}]')
-              ;;
-
-            *)
-              echo "::error::Unhandled event: $EVENT_NAME"
-              exit 1
-              ;;
-          esac
-
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-          echo "Grading: $matrix"
-
-  grade:
-    name: Grade
-    needs: resolve
-    # An empty array from `status` on a plain push to `main`, or from
-    # `schedule` finding no open pull requests, is not an error: there is
-    # nothing to grade and nothing to publish. `fromJson('[]')` still starts a
-    # matrix with zero jobs, which reports as success on its own with no step
-    # of this job ever running.
-    if: needs.resolve.outputs.matrix != '[]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    strategy:
-      fail-fast: false
-      matrix:
-        entry: ${{ fromJson(needs.resolve.outputs.matrix) }}
-    # Keyed on the commit this run's results land on, not on the workflow run
-    # as a whole, so a schedule tick grading five pull requests does not queue
-    # behind a `pull_request_target` run grading a sixth. Two runs racing to
-    # publish for the *same* commit is exactly what this exists to serialize,
-    # since each one reads the live combined status before deciding, and a
-    # stale read racing a fresh write is how a slow run could otherwise
-    # overwrite a newer verdict with an older one.
-    concurrency:
-      group: coderabbit-gate-${{ matrix.entry.target_sha }}
-      cancel-in-progress: true
+  gate:
+    # A pinned reusable workflow reference is one scalar: the path and the
+    # 40 character SHA cannot be wrapped, and shortening either would mean
+    # giving up the pin. The disable has to sit immediately above the line it
+    # covers, not above this explanation.
+    # yamllint disable-line rule:line-length
+    uses: ivan-pinatti-labs/gh-actions/.github/workflows/reusable-coderabbit-gate.yml@0828ec87b62933769de0c3d0053530f98524f2e1
     permissions:
       contents: read
       pull-requests: read
       statuses: write
-    steps:
-      - name: Check out the default branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          # Explicit, and load bearing on `merge_group` specifically. Leaving
-          # `ref` unset resolves to `github.sha`, which is the base branch's
-          # head under `pull_request_target`, `status` and `schedule`, but is
-          # the queue's own temporary commit under `merge_group`, the one
-          # trigger here that carries a pull request's code on the ref this
-          # job would otherwise default to. This job runs
-          # scripts/assert-pin-only-diff.py and
-          # scripts/coderabbit-review-verdict.py from this checkout with a
-          # `statuses: write` token, and both are exactly the kind of file a
-          # compromised or misconfigured bot could rewrite to approve itself;
-          # an implicit ref would have handed it exactly that opening on the
-          # one trigger built to run its diff.
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
-
-      - name: Read the pull request's metadata
-        id: pr
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ matrix.entry.pr_number }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          # `gh api --jq` takes a single filter string, with no `--arg` of its
-          # own; binding $REPO into the filter needs the standalone `jq`
-          # binary on the receiving end instead.
-          # $repo below is a jq variable bound by --arg, not a shell expansion.
-          # shellcheck disable=SC2016
-          gh api "repos/$REPO/pulls/$PR_NUMBER" | jq -r --arg repo "$REPO" '
-            "is_draft=" + (.draft | tostring),
-            "author=" + .user.login,
-            "is_fork=" + (((.head.repo.full_name // "") != $repo) | tostring)
-          ' >> "$GITHUB_OUTPUT"
-
-      - name: Grade the diff for a pin-only change
-        id: pin_only
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ matrix.entry.pr_number }}
-          AUTHOR: ${{ steps.pr.outputs.author }}
-          IS_FORK: ${{ steps.pr.outputs.is_fork }}
-        # Only a dependency bot's own, non-fork pull request is asked to be
-        # pin-only at all. Everything else passes unconditionally with a
-        # description that says why, which is what keeps requiring this
-        # context from blocking a single human pull request.
-        shell: bash
-        run: |
-          set -euo pipefail
-          is_bot=false
-          case "$AUTHOR" in
-            "renovate[bot]") is_bot=true ;;
-          esac
-
-          if [ "$is_bot" = "true" ] && [ "$IS_FORK" = "false" ]; then
-            output=$(gh pr diff "$PR_NUMBER" | python3 scripts/assert-pin-only-diff.py) && rc=0 || rc=$?
-            first_line=$(printf '%s\n' "$output" | head -1)
-            if [ "$rc" -eq 0 ]; then
-              echo "state=success" >> "$GITHUB_OUTPUT"
-            else
-              echo "state=failure" >> "$GITHUB_OUTPUT"
-            fi
-            echo "description=$first_line" >> "$GITHUB_OUTPUT"
-          else
-            echo "state=success" >> "$GITHUB_OUTPUT"
-            echo "description=not a dependency bot pull request" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Publish Pin Only
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          TARGET_SHA: ${{ matrix.entry.target_sha }}
-          STATE: ${{ steps.pin_only.outputs.state }}
-          # GitHub caps a status description at 140 characters; both sources
-          # here already print a short first line, but the cut is unconditional
-          # rather than trusted to stay that way.
-          DESCRIPTION: ${{ steps.pin_only.outputs.description }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh api --method POST \
-            "repos/$REPO/statuses/$TARGET_SHA" \
-            -f state="$STATE" \
-            -f context="Pin Only" \
-            -f description="${DESCRIPTION:0:140}" \
-            --silent
-
-      - name: Read CodeRabbit's latest status on the real head
-        id: coderabbit
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ matrix.entry.head_sha }}
-        # The list endpoint, not the combined one: the combined
-        # `/commits/{sha}/status` collapses to the newest status per context
-        # but drops each one's `creator`, confirmed live against a real
-        # CodeRabbit status on this repository, and the creator is what proves
-        # this status actually came from CodeRabbit rather than from anything
-        # else with `statuses: write` on this repository choosing to call
-        # itself `CodeRabbit`. `/statuses` keeps `creator`, unlike the combined
-        # endpoint, at the cost of returning every status ever posted to this
-        # commit rather than one per context, 30 to a page, newest first.
-        # `--paginate` walks every page before the filter runs, which matters
-        # here specifically: every push posts three CodeRabbit statuses of its
-        # own ("Review queued", "Review in progress", "Review completed"),
-        # so a handful of pushes is already enough to push a trusted status
-        # off page one and read as absent.
-        shell: bash
-        run: |
-          set -euo pipefail
-          description=$(gh api --paginate "repos/$REPO/commits/$HEAD_SHA/statuses" \
-            | jq -sr '[.[][] | select(.context == "CodeRabbit" and .creator.login == "coderabbitai[bot]")]
-                  | first | .description // ""')
-          echo "description=$description" >> "$GITHUB_OUTPUT"
-
-      - name: Decide Review Verified
-        id: verdict
-        env:
-          IS_DRAFT: ${{ steps.pr.outputs.is_draft }}
-          AUTHOR: ${{ steps.pr.outputs.author }}
-          IS_FORK: ${{ steps.pr.outputs.is_fork }}
-          PIN_ONLY_STATE: ${{ steps.pin_only.outputs.state }}
-          CODERABBIT_DESCRIPTION: ${{ steps.coderabbit.outputs.description }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          payload=$(jq -nc \
-            --argjson is_draft "$IS_DRAFT" \
-            --arg author "$AUTHOR" \
-            --argjson is_fork "$IS_FORK" \
-            --arg pin_only_state "$PIN_ONLY_STATE" \
-            --arg coderabbit_description "$CODERABBIT_DESCRIPTION" \
-            '{is_draft: $is_draft, author: $author, is_fork: $is_fork,
-              pin_only_state: $pin_only_state,
-              coderabbit_description: $coderabbit_description}')
-          printf '%s' "$payload" | python3 scripts/coderabbit-review-verdict.py >> "$GITHUB_OUTPUT"
-
-      - name: Publish Review Verified
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          TARGET_SHA: ${{ matrix.entry.target_sha }}
-          STATE: ${{ steps.verdict.outputs.state }}
-          DESCRIPTION: ${{ steps.verdict.outputs.description }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh api --method POST \
-            "repos/$REPO/statuses/$TARGET_SHA" \
-            -f state="$STATE" \
-            -f context="Review Verified" \
-            -f description="${DESCRIPTION:0:140}" \
-            --silent

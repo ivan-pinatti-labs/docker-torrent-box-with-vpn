@@ -1,0 +1,38 @@
+---
+# What a dependency bot may change here without a person reading the diff.
+# Read by the shared `Pin Only` check in ivan-pinatti-labs/gh-actions, which
+# reads it from the default branch rather than from the pull request being
+# graded. This file is deliberately absent from its own allowed_paths, so a
+# bot cannot widen its own lane.
+#
+# Reproduces the scripts/assert-pin-only-diff.py this replaced, exactly,
+# including the two things that make this repository's grammar unlike every
+# other one in the organization. It strips the action SHA and the image
+# digest where the others substitute a placeholder, and inside a workflow's
+# block scalars it keeps the digest and version grammars running and skips
+# only the action ones, which is what lets a `pip install checkov==X.Y.Z`
+# inside a `run: |` step still grade as a pin.
+allowed_paths:
+  - .env.example
+  - .pre-commit-config.yaml
+  - .github/workflows/
+  - tests/requirements.txt
+
+rules:
+  - path: .github/workflows/
+    grammars:
+      - digest_strip
+      - name: action_sha_strip
+        when: outside_block_scalar
+      - name: bare_action_version_strip
+        when: outside_block_scalar
+      - name: action_ref_version
+        when: outside_block_scalar
+      - version
+
+default_grammars:
+  - digest_strip
+  - action_sha_strip
+  - bare_action_version_strip
+  - action_ref_version
+  - version

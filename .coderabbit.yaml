@@ -32,7 +32,7 @@ reviews:
   # Worth being honest about its reach either way: a version or digest bump has
   # no reviewable content, so on most of these pull requests CodeRabbit has
   # nothing to say and cannot detect a compromised upstream image. What it
-  # covers is the case scripts/assert-pin-only-diff.py is also aimed at, a bump
+  # covers is the case the shared Pin Only check is also aimed at, a bump
   # carrying a change to workflow or hook logic alongside it.
   request_changes_workflow: false
   auto_review:
