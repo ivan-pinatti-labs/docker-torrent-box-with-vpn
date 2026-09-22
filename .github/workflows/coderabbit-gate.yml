@@ -44,7 +44,7 @@ name: CodeRabbit Gate
 # not in its own allowed_paths, so a bot cannot widen its own lane.
 #
 # The triggers stay here, because a called workflow cannot declare its own.
-# Four of them, each for a different failure mode of the others:
+# Five of them, each for a different failure mode of the others:
 #
 #   pull_request_target  the normal path, firing on the events that change
 #                         what the verdict should be.
@@ -58,6 +58,16 @@ name: CodeRabbit Gate
 #                         required, an absent context blocks a pull request
 #                         forever, so an hourly re-grade is what recovers a
 #                         missed or failed run without a person noticing first.
+#   workflow_dispatch     the manual recovery path, for a pull request stuck
+#                         with an absent or stale `Review Verified` and
+#                         nothing coming to re-grade it. New here: this was
+#                         the only repository in the organization without it,
+#                         so a stuck pull request had to wait for the
+#                         schedule. It is also what made this gate the only
+#                         one that could not be exercised before merging,
+#                         since pull_request_target runs the workflow from the
+#                         base branch and so never runs the version under
+#                         review.
 #   merge_group           required checks are evaluated against the queue's own
 #                         temporary commit, not the pull request's head, so
 #                         both statuses have to be republished there too or the
@@ -82,6 +92,23 @@ on:
     # :23, retired on 2026-09-21. Kept so the remaining hourly jobs do
     # not compete for the same GitHub Actions minute for no reason.
     - cron: "47 * * * *"
+  #checkov:skip=CKV_GHA_7:workflow_dispatch itself requires write access to
+  # trigger at all (GitHub platform-level gate, not something this file
+  # controls); pr_number never selects a checkout ref or anything else that
+  # runs. It only ever selects which pull request the shared workflow reads
+  # and re-grades, and the shared workflow matches it against digits before
+  # it reaches an API path. Same skip, same reasoning, as
+  # bot-auto-merge.yml's and pull-request-validation.yml's own
+  # workflow_dispatch inputs.
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: >-
+          Pull request number to re-grade. Leave blank to re-grade every open
+          pull request, which is the useful default for recovering from a
+          missed schedule slot rather than diagnosing one pull request.
+        required: false
+        type: string
   merge_group:
 
 permissions:
@@ -99,3 +126,5 @@ jobs:
       contents: read
       pull-requests: read
       statuses: write
+    with:
+      pr_number: ${{ github.event.inputs.pr_number }}
