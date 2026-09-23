@@ -1,0 +1,13 @@
+ci(gate): let Renovate see the shared pipeline pin
+
+Renovate github-actions manager resolves the current version from the
+trailing comment on a pinned uses:. A bare SHA without one is a dependency it
+cannot version, so it proposes nothing and the pin never moves, which makes
+"Renovate bumps the pin" false for the one pin that gates merges here. Every
+other pinned uses: in this organization already carries the shape.
+
+0828ec8 is the commit ivan-pinatti-labs/gh-actions tagged v0.1.0.
+
+Found by CodeRabbit on ivan-pinatti-labs/.github#22.
+
+Claude-Session: https://claude.ai/code/session_01QXdYT4LUBt3fwtJ4mCoVZ2

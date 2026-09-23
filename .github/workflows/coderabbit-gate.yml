@@ -120,8 +120,14 @@ jobs:
     # 40 character SHA cannot be wrapped, and shortening either would mean
     # giving up the pin. The disable has to sit immediately above the line it
     # covers, not above this explanation.
+    #
+    # The trailing `# v0.1.0` is not decoration. Renovate's github-actions
+    # manager reads the current version out of that comment, and a bare SHA
+    # without one is a dependency it cannot resolve a version for, so it
+    # proposes nothing and the pin never moves. Every other pinned `uses:` in
+    # this organization carries the same shape.
     # yamllint disable-line rule:line-length
-    uses: ivan-pinatti-labs/gh-actions/.github/workflows/reusable-coderabbit-gate.yml@0828ec87b62933769de0c3d0053530f98524f2e1
+    uses: ivan-pinatti-labs/gh-actions/.github/workflows/reusable-coderabbit-gate.yml@0828ec87b62933769de0c3d0053530f98524f2e1 # v0.1.0
     permissions:
       contents: read
       pull-requests: read
