@@ -55,6 +55,38 @@ More than one agent may work in a repository at the same time. Give each task
 its own worktree under `.claude/worktrees/<branch>` (gitignored), and never
 switch branches in a checkout someone else may be using.
 
+### Unattended work runs on a bounded tick
+
+Work left running while nobody is watching is driven by a bounded pass, never
+by a wait for the outcome you want.
+
+A background wait whose only exit is success does not fail, it disappears. A
+pull request sitting in a merge queue is the worked example: a flaky check
+ejects it, which is neither merged nor closed, so a loop waiting for "merged"
+runs forever, nothing notifies, and the session stops. That cost roughly
+sixteen unattended hours here on 2026-09-22, and the giveaway is that silence
+and progress look identical from outside.
+
+So:
+
+- **Cap every pass**, around fifty minutes, and report on exit whether or not
+  anything moved. Time always advances, so no condition can trap it. Say
+  plainly when a pass did nothing, because a quiet pass and a dead session
+  have to look different.
+- **Re-derive state from the API every pass.** Draft status, review verdict,
+  unresolved threads, approval, queue membership. Never carry a belief from
+  the previous pass.
+- **Handle every terminal state, not only the good one.** Released from
+  draft, review declined, approval job timed out, ejected from the queue,
+  merged, closed. A pass that only knows how to recognize success cannot
+  recover anything.
+- **Before arming a wait, ask what would wake you if this failed right now.**
+  If the answer is nothing, widen the condition.
+- **A pass that ends with nothing moved and no reason is a signal to
+  inspect**, not to re-arm the same watch.
+- **Never finish a turn** without either a bounded wait armed or an explicit
+  statement that work has stopped.
+
 ### Writing style
 
 Do not use a hyphen, em dash or en dash as punctuation in prose, code
