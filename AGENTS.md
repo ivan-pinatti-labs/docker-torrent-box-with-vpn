@@ -76,10 +76,12 @@ So:
 - **Re-derive state from the API every pass.** Draft status, review verdict,
   unresolved threads, approval, queue membership. Never carry a belief from
   the previous pass.
-- **Handle every terminal state, not only the good one.** Released from
-  draft, review declined, approval job timed out, ejected from the queue,
-  merged, closed. A pass that only knows how to recognize success cannot
-  recover anything.
+- **Handle every outcome, not only the good one.** Released from draft,
+  review declined, approval job timed out, ejected from the queue, merged,
+  closed. Only the last two are final; the rest are recoverable, and that is
+  exactly why they have to be handled rather than waited through. A pass that
+  only knows how to recognize success cannot recover anything, and treating a
+  recoverable outcome as an ending is the failure this whole section is about.
 - **Before arming a wait, ask what would wake you if this failed right now.**
   If the answer is nothing, widen the condition.
 - **A pass that ends with nothing moved and no reason is a signal to
