@@ -412,7 +412,7 @@ repos:
           bash -c 'runtime=$(command -v docker || command -v podman) || {
           echo "lychee hook needs docker or podman on PATH" >&2; exit 1; };
           exec "$runtime" run --rm -v "$PWD:/src:ro" -w /src
-          lycheeverse/lychee:0.24.2 --no-progress "$0" "$@"'
+          docker.io/lycheeverse/lychee:0.24.2 --no-progress "$0" "$@"'
         language: system
         stages: [pre-push]
         files: '^(README|LICENSE|NOTICE)\.md$|^docs/.*\.md$|^\.github/(ISSUE_TEMPLATE/.*\.md|PULL_REQUEST_TEMPLATE\.md)$'
@@ -471,7 +471,7 @@ repos:
           bash -c 'runtime=$(command -v docker || command -v podman) || {
           echo "trivy hook needs docker or podman on PATH" >&2; exit 1; };
           exec "$runtime" run --rm -v "$PWD:/src:ro"
-          -v trivy-cache:/root/.cache/trivy -w /src aquasec/trivy:0.74.0
+          -v trivy-cache:/root/.cache/trivy -w /src docker.io/aquasec/trivy:0.74.0
           fs --scanners vuln,misconfig --exit-code 1 --skip-version-check
           --ignorefile .trivyignore.yaml
           --skip-dirs ./data --skip-dirs ./storage --skip-dirs ./cache

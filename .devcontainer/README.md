@@ -1,61 +1,50 @@
-# The development container
+# Developing in containers
 
-What it is for, how to start it, and what deliberately does not run in it.
+This repository is developed with
+[devcontainer-airlock](https://github.com/ivan-pinatti-labs/devcontainer-airlock):
+you and the coding agents work in a workbench that holds no GitHub token and
+no ssh key, and the pre-commit hooks run in an L2 container that gets the
+working tree and nothing else. Its
+[docs/LAYERS.md](https://github.com/ivan-pinatti-labs/devcontainer-airlock/blob/main/docs/LAYERS.md)
+explains the layers and the one time setup on the host.
 
-## What it is for
+**The stack does not run in there.** `make start`, the compose files and the
+integration suite run on the host, against the host's own podman, as they
+always have. A workbench is for the editor, the agents, git and the hooks.
 
-Working on this repository: the editor, the Claude Code and Codex CLIs, git,
-`gh`, and the pre-commit hooks. It is built on the organization's shared base
-image, the same one every other `ivan-pinatti-labs` repository uses.
+## Worktrees only
 
-**The stack does not run in here.** `make start`, the compose files and the
-integration suite all run on the host, against the host's own podman. That is
-why this container carries no compose provider and none of the run arguments
-a nested compose network would need.
-
-Until 2026-09-20 this was `mcr.microsoft.com/devcontainers/base:jammy` plus
-devcontainer features. Those features were assembled only by the devcontainer
-CLI, so the container could not be started from an ordinary terminal, and it
-carried none of the organization's own tooling.
-
-## Starting it
-
-From a terminal, with no editor involved:
+The main clone holds the stack's data, which the stack's own containers use.
+A workbench mounts its workspace with a private SELinux label, which would
+take that data away from them, so this repository carries
+`workbench-worktree-only`: work happens in a worktree, and devcontainer-airlock
+refuses to use the main clone as a workspace.
 
 ```shell
-make shell
+git worktree add .claude/worktrees/<name> -b <branch> origin/main
+cd .claude/worktrees/<name>
+make unlock          # the ssh key, for eight hours
+make claude          # Claude Code in this worktree's workbench (or: make codex)
+make claude-shell    # a terminal in it (or: codex-shell)
 ```
 
-That builds the container and drops you into it with the working tree mounted
-at its own path. Or open the repository in an editor that reads
-`.devcontainer/devcontainer.json`.
+The workbench targets come from a devcontainer-airlock clone next to this
+repository's main clone (or wherever `WORKBENCH_HOME` points). The first time
+in a clone, inside a workbench, route the git hooks through L2:
 
-## Why each run argument is there
+```shell
+l2-hooks-install
+```
 
-- `--userns=keep-id:uid=1000,gid=1000` maps the `dev` account to your own
-  host uid, so a bind mounted working tree is readable and writable.
-- `--security-opt label=type:container_engine_t` and `--device /dev/fuse`
-  are what let a nested container run under SELinux. Two pre-commit hooks
-  here call `docker` by name, and the base image's `podman-docker` answers
-  them. See `docs/IMAGES.md` in `ivan-pinatti-labs/devcontainer-images`,
-  under "Running containers inside it".
-- `--secret gh-devcontainer,type=env,target=GH_TOKEN` passes a GitHub token
-  without putting it in the container's configuration, where
-  `podman inspect` would show it. `make shell` uses the same secret when it
-  exists and falls back to `GH_TOKEN` from the environment when it does not.
+## What is in here
 
-SELinux stays enforcing throughout. Nothing here reaches for
-`label=disable`.
-
-## Tools
-
-`pre-commit` and `python3-venv` come from Ubuntu, `gh` from GitHub's own
-signed repository. Everything else (git, make, python3, jq, curl,
-openssh-client, nodejs, rootless podman, and the Claude Code and Codex CLIs)
-comes with the base image.
+| File | What |
+| --- | --- |
+| `l2/Dockerfile` | This repository's L2 image, on the shared one pinned by digest, plus `shfmt`, which the local hooks call by name. |
+| `egress-sets` | What the hooks reach through the egress proxy: Docker Hub for the images they run, trivy's database for the pre-push scan. |
+| `workbench-profile` | `hooks-engine`: the hooks that start containers of their own (trivy, lychee) get the L2 engine. |
+| `workbench-worktree-only` | The marker above. |
 
 Package versions are deliberately unpinned, so rebuilding can give you
-different versions than it did last week, by design. The base image digest
-pins what the container builds on, not what apt resolves on top. See that
-image's `docs/TOOL_SOURCES.md` for where each tool comes from and what
-vouches for it.
+different versions than it did last week, by design. The image digest pins
+what the L2 image builds on, not what apt resolves on top.

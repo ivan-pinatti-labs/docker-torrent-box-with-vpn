@@ -30,6 +30,15 @@ scanner, a debugging tool) runs inside a rootless Podman container, never
 directly on the host. That holds when validating,
 testing, checking a new version and debugging.
 
+It holds one level further in as well. In a
+[devcontainer-airlock](https://github.com/ivan-pinatti-labs/devcontainer-airlock)
+workbench, where the coding agents and their logins live, project code does
+not run in the workbench itself: hooks, tests, package installs and
+unreviewed binaries run through `l2`, in an L2 container that gets the
+working tree and nothing else (no network, no credentials). `l2 --net` adds
+network through the workspace's egress proxy, and `l2 --engine` gives a run
+the L2 engine, for tests that build or start containers of their own.
+
 ```bash
 podman run --rm --network=none \
   -v "<only what it needs>:/work:ro,Z" -w /work \
@@ -47,7 +56,8 @@ podman run --rm --network=none \
   directory and mount that.
 - Podman is the default container runtime: rootless, with no daemon.
 - Exceptions: the hook environments pre-commit builds, and the containers
-  this repository's own `Makefile` or hooks start.
+  this repository's own `Makefile` or hooks start. In a workbench both run in
+  L2 too.
 
 ### Parallel work uses worktrees
 
