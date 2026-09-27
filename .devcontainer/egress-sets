@@ -3,5 +3,3 @@ python
 node
 docker-hub
 trivy
-# Building the L2 image in the engine installs shfmt from Ubuntu's archive.
-ubuntu
