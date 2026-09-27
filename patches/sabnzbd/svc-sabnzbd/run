@@ -15,6 +15,11 @@ FAMILY=::
 # That keeps the protection upstream cares about: nobody can bind 127.0.0.1 and
 # lock themselves out of the web UI.
 #
+# :: is treated as unset too. It is upstream's own default and SABnzbd persists
+# --server into the ini, so almost every existing config holds it. Respecting it
+# would bypass the fallback to 0.0.0.0 below on a machine without IPv6, and
+# SABnzbd would fail to bind.
+#
 # Section tracking rather than a plain grep for `^host`, because the NNTP server
 # entries under [servers] carry their own unindented `host = ...` line. Matching
 # the wrong one would hand a news server's hostname to --server.
@@ -32,7 +37,7 @@ if [[ -z ${LSIO_NON_ROOT_USER} ]]; then
     # would let that fallback clobber a configured host on a machine without
     # IPv6, which is the bug this exists to fix.
     case ${CONFIGURED_HOST} in
-        "" | 127.0.0.1 | ::1 | localhost) ;;
+        "" | :: | 127.0.0.1 | ::1 | localhost) ;;
         *) FAMILY=${CONFIGURED_HOST} ;;
     esac
 
@@ -42,7 +47,7 @@ if [[ -z ${LSIO_NON_ROOT_USER} ]]; then
             --config-file /config --server "$FAMILY"
 else
     case ${CONFIGURED_HOST} in
-        "" | 127.0.0.1 | ::1 | localhost) ;;
+        "" | :: | 127.0.0.1 | ::1 | localhost) ;;
         *) FAMILY=${CONFIGURED_HOST} ;;
     esac
 

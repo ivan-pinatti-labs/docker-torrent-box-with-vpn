@@ -13,7 +13,7 @@ under those terms. See [NOTICE.md](../NOTICE.md).
 | Directory | Upstream project | Upstream license | Contents |
 | --- | --- | --- | --- |
 | `mylar/` | [MylarComics/mylar3](https://github.com/mylarcomics/mylar3) | GPL-3.0-or-later | Five complete source files, modified to add qBittorrent HTTPS support (self-signed certificate handling in the torrent client and its config UI) |
-| `sabnzbd/` | [linuxserver/docker-sabnzbd](https://github.com/linuxserver/docker-sabnzbd) | GPL-3.0 | `svc-sabnzbd/run`, the image's own s6 service script, changed to pass `--server` only when the configured host is missing or loopback. Upstream passes it unconditionally, and it overrides `host` in `sabnzbd.ini` and is persisted back into it, so `host = 0.0.0.0` cannot survive a start |
+| `sabnzbd/` | [linuxserver/docker-sabnzbd](https://github.com/linuxserver/docker-sabnzbd) | GPL-3.0 | `svc-sabnzbd/run`, the image's own s6 service script, changed to pass `--server` only when the configured host is missing, loopback or `::` (the image's own default). Upstream passes it unconditionally, and it overrides `host` in `sabnzbd.ini` and is persisted back into it, so `host = 0.0.0.0` cannot survive a start |
 
 `mylar/mylar/config.py` and `mylar/mylar/webserve.py` carry their original GPL
 headers. Do not strip them. Because these are complete GPL-3.0 files rather
