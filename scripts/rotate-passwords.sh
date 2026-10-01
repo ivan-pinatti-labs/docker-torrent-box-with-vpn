@@ -152,10 +152,6 @@ readonly JDOWNLOADER2_USERNAME="jdownloader2"
 # docker-compose-torrent.yml). See docs/COMPOSE_CONVENTIONS.md.
 readonly JDOWNLOADER2_PASSWORD_SECRET="configs/jdownloader2/secrets/password.txt" # pragma: allowlist secret
 
-# Containers that must restart at the end so rewritten config files take
-# effect (populated by the rotation functions).
-RESTART_NEEDED=()
-
 readonly SONARR_DB="configs/sonarr/config/sonarr.db"
 readonly RADARR_DB="configs/radarr/config/radarr.db"
 readonly LIDARR_DB="configs/lidarr/config/lidarr.db"
@@ -203,11 +199,6 @@ gen_apikey() {
 get_xml_apikey() {
   local xml_file="$1"
   grep -oPm1 '(?<=<ApiKey>)[^<]+' "$xml_file"
-}
-
-mask() {
-  local val="$1"
-  echo "${val:0:4}****"
 }
 
 # Run curl inside the target app's own container, hitting its own loopback
@@ -1487,16 +1478,6 @@ all)
   exit 1
   ;;
 esac
-
-# ---------------------------------------------------------------------------
-# Restart apps whose config files were rewritten on disk
-# ---------------------------------------------------------------------------
-
-if [[ ${#RESTART_NEEDED[@]} -gt 0 ]]; then
-  echo ""
-  echo "Restarting apps to load rewritten configs: ${RESTART_NEEDED[*]}"
-  podman restart "${RESTART_NEEDED[@]}" >/dev/null
-fi
 
 # ---------------------------------------------------------------------------
 # Restart containers that consume rotated secrets, so they stop
