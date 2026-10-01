@@ -1,0 +1,95 @@
+---
+name: SonarQube
+
+# SonarQube Cloud static analysis of everything Sonar has an analyzer for: the
+# shell under scripts/, the Python, the Dockerfiles, the homepage JavaScript,
+# YAML and these workflows, plus secrets detection over text files. Settings,
+# including what is excluded and why, live in sonar-project.properties. It sits
+# next to the pre-commit hooks, it does not replace them: shellcheck, ruff,
+# hadolint and actionlint keep running on every commit, and Sonar's rules are
+# different from theirs, not a superset.
+#
+# Not a required check yet, and codeql.yml keeps running alongside it. A later
+# pull request makes `SonarQube` required and removes codeql.yml; see
+# docs/MERGE_PIPELINE.md.
+#
+# The job fails when the SonarQube Cloud quality gate fails
+# (`sonar.qualitygate.wait=true`), so the `SonarQube` check is the gate verdict
+# itself, reported by GitHub Actions like `Code Check`. SonarQube Cloud's own
+# GitHub App also posts a check on the pull request; that one is informational
+# only, because it is never posted on a merge queue commit.
+#
+# No coverage step yet. Almost every test here needs the full Podman stack and
+# runs behind `/run-tests`, so there is no container free tier to measure in a
+# plain job. A later pull request adds one.
+#
+# Triggers:
+#   pull_request   the analysis a reviewer reads, decorated onto the pull
+#                  request by SonarQube Cloud.
+#   push to main   the baseline every pull request's "new code" is measured
+#                  against. Without it the gate has nothing to compare to.
+#   merge_group    see the "Merge queue" step below.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  merge_group:
+
+permissions: {}
+
+concurrency:
+  group: >-
+    sonarqube-${{ github.event.pull_request.number ||
+    github.event.merge_group.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: SonarQube
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Merge queue
+        # Not analyzed. The queue's commit is main plus a pull request whose
+        # own head was already analyzed and gated here, and SonarQube Cloud has
+        # no pull request to attach a queue commit to, so an analysis there
+        # would be a branch analysis of a throwaway `gh-readonly-queue/...`
+        # branch. The push to main right after the merge analyzes the real
+        # result. The step still has to run and pass, or a required `SonarQube`
+        # check never appears on the queue's commit and the queue stalls.
+        if: github.event_name == 'merge_group'
+        run: echo "Merge queue commit; the pull request head was already analyzed."
+
+      - name: Refuse a fork's pull request
+        # GitHub withholds SONAR_TOKEN from a fork's pull_request run, so the
+        # scan cannot authenticate. Failing says so; passing would read as an
+        # analysis that never happened. A maintainer pushes the contributor's
+        # commits to a branch here and opens a pull request from that.
+        if: >-
+          github.event_name == 'pull_request'
+          && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error::SonarQube cannot analyze a fork's pull request (no SONAR_TOKEN)." \
+            "Push the branch to this repository instead."
+          exit 1
+
+      - name: Checkout
+        if: github.event_name != 'merge_group'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          # Full history: SonarQube Cloud reads blame to decide which lines are
+          # new code, and a shallow clone makes every line look new.
+          fetch-depth: 0
+
+      - name: Scan
+        if: github.event_name != 'merge_group'
+        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >-
+            -Dsonar.qualitygate.wait=true
