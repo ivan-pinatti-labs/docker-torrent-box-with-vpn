@@ -1075,6 +1075,7 @@ COVERAGE_SHELL_SCRIPTS := \
 	scripts/korsync-users.sh \
 	scripts/prune-nginx-cache.sh \
 	scripts/rotate-all.sh \
+	scripts/rotate-api-keys.sh \
 	scripts/rotate-certificate.sh \
 	scripts/rotate-nginx-logs.sh \
 	scripts/schedule-backup.sh \

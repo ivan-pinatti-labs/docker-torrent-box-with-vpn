@@ -132,8 +132,8 @@ repos:
       - id: name-tests-test
         args: ["--pytest-test-first"]
         files: ^tests/.*\.py$
-        # A helper the shell tests run, not a test module.
-        exclude: ^tests/unit/with-tty\.py$
+        # Helpers the shell tests run, not test modules.
+        exclude: ^tests/unit/(with-tty|stack-stub)\.py$
       - id: requirements-txt-fixer
         files: ^tests/requirements\.txt$
       # Commit stage only, deliberately. Its job is to stop a commit landing on

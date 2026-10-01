@@ -366,10 +366,7 @@ update_prowlarr_application() {
   fi
 
   local app_json
-  app_json=$(container_curl prowlarr -sk \
-    -H "X-Api-Key: $prowlarr_key" \
-    "$(prowlarr_url /api/v1/applications)" |
-    jq --arg name "$app_name" 'map(select(.name == $name)) | first')
+  app_json=$(container_curl prowlarr -sk -H "X-Api-Key: $prowlarr_key" "$(prowlarr_url /api/v1/applications)" | jq --arg name "$app_name" 'map(select(.name == $name)) | first')
 
   if [[ -z "$app_json" || "$app_json" == "null" ]]; then
     echo "[Prowlarr] No application entry named '${app_name}', skipping."
@@ -381,8 +378,7 @@ update_prowlarr_application() {
   echo "[Prowlarr] Updating application '${app_name}' (id=${app_id}) with new key..."
 
   local updated
-  updated=$(echo "$app_json" | jq --arg key "$new_key" \
-    '.fields[] |= if .name == "apiKey" then .value = $key else . end')
+  updated=$(echo "$app_json" | jq --arg key "$new_key" '.fields[] |= if .name == "apiKey" then .value = $key else . end')
 
   # forceSave skips Prowlarr's connection validation: the downstream app has
   # not been restarted with the new key yet at this point (restarts happen at
@@ -429,13 +425,7 @@ propagate_prowlarr_key() {
 
   # Scheme/port/UrlBase come from each app's own config.xml (see arr_endpoint),
   # not from .env, so this follows an app that is not serving where .env says.
-  local targets=(
-    "sonarr v3 ${SONARR_XML}"
-    "radarr v3 ${RADARR_XML}"
-    "lidarr v1 ${LIDARR_XML}"
-    "readarr v1 ${READARR_XML}"
-    "whisparr v3 ${WHISPARR_XML}"
-  )
+  local targets=("sonarr v3 ${SONARR_XML}" "radarr v3 ${RADARR_XML}" "lidarr v1 ${LIDARR_XML}" "readarr v1 ${READARR_XML}" "whisparr v3 ${WHISPARR_XML}")
   local entry app scheme port base api_version xml_path app_key indexers
   for entry in "${targets[@]}"; do
     read -r app api_version xml_path <<<"$entry"
@@ -443,16 +433,17 @@ propagate_prowlarr_key() {
     app_key=$(get_xml_apikey "$xml_path") || continue
     [[ -n "$app_key" ]] || continue
     read -r scheme port base <<<"$(arr_endpoint "$xml_path")"
-    indexers=$(container_curl "$app" -sk --fail -H "X-Api-Key: ${app_key}" \
-      "${scheme}://127.0.0.1:${port}${base}/api/${api_version}/indexer" 2>/dev/null) || continue
+    indexers=$(container_curl "$app" -sk --fail -H "X-Api-Key: ${app_key}" "${scheme}://127.0.0.1:${port}${base}/api/${api_version}/indexer" 2>/dev/null) || continue
 
     local rec id name updated
-    while IFS= read -r rec; do
+    # Read through a descriptor opened here rather than `done < <(...)`, a
+    # line kcov never sees run.
+    exec 3< <(echo "$indexers" | jq -c '.[] | select(.fields[]? | .name == "baseUrl" and (.value | test("://prowlarr[:/]")))')
+    while IFS= read -r -u 3 rec; do
       [[ -z "$rec" ]] && continue
       id=$(echo "$rec" | jq -r '.id')
       name=$(echo "$rec" | jq -r '.name')
-      updated=$(echo "$rec" | jq --arg key "$new_key" \
-        '.fields |= map(if .name == "apiKey" then .value = $key else . end)')
+      updated=$(echo "$rec" | jq --arg key "$new_key" '.fields |= map(if .name == "apiKey" then .value = $key else . end)')
       if container_curl "$app" -sk --fail -X PUT -H "X-Api-Key: ${app_key}" \
         -H "Content-Type: application/json" -d "$updated" \
         "${scheme}://127.0.0.1:${port}${base}/api/${api_version}/indexer/${id}?forceSave=true" >/dev/null; then
@@ -460,7 +451,8 @@ propagate_prowlarr_key() {
       else
         echo "[Prowlarr] WARNING: failed to update ${app}'s indexer '${name}' with the new API key."
       fi
-    done < <(echo "$indexers" | jq -c '.[] | select(.fields[]? | .name == "baseUrl" and (.value | test("://prowlarr[:/]")))')
+    done
+    exec 3<&-
   done
 
   # LazyLibrarian stores its own copy of Prowlarr's key too, in whichever
@@ -797,9 +789,7 @@ rotate_jellyfin() {
   # language, remote access): skip with a note rather than aborting the
   # whole rotation run over a step that's inherently manual.
   local base_url="http://127.0.0.1:${JELLYFIN_HTTP_PORT}${JELLYFIN_BASE_URL}"
-  if [[ "$(container_curl jellyfin -s --fail \
-    "${base_url}/System/Info/Public" |
-    jq -r '.StartupWizardCompleted')" != "true" ]]; then
+  if [[ "$(container_curl jellyfin -s --fail "${base_url}/System/Info/Public" | jq -r '.StartupWizardCompleted')" != "true" ]]; then
     echo "[Jellyfin] Setup wizard not completed yet, skipping API key rotation."
     echo "[Jellyfin] Finish it at http://localhost:${JELLYFIN_HTTP_PORT}/, then re-run"
     echo "[Jellyfin] 'make rotate_all SERVICE=jellyfin'."
@@ -814,11 +804,7 @@ rotate_jellyfin() {
     -H "Authorization: MediaBrowser Token=\"${old_key}\"" \
     "${base_url}/Auth/Keys?App=homepage" >/dev/null
 
-  new_key=$(container_curl jellyfin -s --fail \
-    -H "Authorization: MediaBrowser Token=\"${old_key}\"" \
-    "${base_url}/Auth/Keys" |
-    jq -r --arg old "$old_key" \
-      '[.Items[] | select(.AccessToken != $old)] | sort_by(.DateCreated) | last.AccessToken')
+  new_key=$(container_curl jellyfin -s --fail -H "Authorization: MediaBrowser Token=\"${old_key}\"" "${base_url}/Auth/Keys" | jq -r --arg old "$old_key" '[.Items[] | select(.AccessToken != $old)] | sort_by(.DateCreated) | last.AccessToken')
 
   if [[ -z "$new_key" || "$new_key" == "null" ]]; then
     echo "[Jellyfin] ERROR: could not obtain the newly created API key" >&2
@@ -1017,8 +1003,7 @@ bazarr_key_ok() {
 lazylibrarian_key_ok() {
   local body
   # LazyLibrarian serves HTTPS on its port when https_enabled is set
-  body=$(container_curl lazylibrarian -sk \
-    "https://127.0.0.1:${LAZYLIBRARIAN_HTTP_PORT}/lazylibrarian/api?cmd=getVersion&apikey=$1")
+  body=$(container_curl lazylibrarian -sk "https://127.0.0.1:${LAZYLIBRARIAN_HTTP_PORT}/lazylibrarian/api?cmd=getVersion&apikey=$1")
   [[ -n "$body" && "$body" != *"Incorrect API key"* ]]
 }
 
@@ -1051,16 +1036,14 @@ nzbhydra_endpoint() {
 mylar_key_ok() {
   local body scheme port base
   read -r scheme port base <<<"$(mylar_endpoint)"
-  body=$(container_curl mylar -sk \
-    "${scheme}://127.0.0.1:${port}${base}/api?cmd=getVersion&apikey=$1")
+  body=$(container_curl mylar -sk "${scheme}://127.0.0.1:${port}${base}/api?cmd=getVersion&apikey=$1")
   [[ -n "$body" && "$body" != *"Incorrect API key"* && "$body" != *"Invalid apikey"* ]]
 }
 
 nzbhydra_key_ok() {
   local body scheme port base
   read -r scheme port base <<<"$(nzbhydra_endpoint)"
-  body=$(container_curl nzbhydra2 -sk \
-    "${scheme}://127.0.0.1:${port}${base}/api?t=caps&apikey=$1")
+  body=$(container_curl nzbhydra2 -sk "${scheme}://127.0.0.1:${port}${base}/api?t=caps&apikey=$1")
   [[ -n "$body" && "$body" != *"<error"* ]]
 }
 
