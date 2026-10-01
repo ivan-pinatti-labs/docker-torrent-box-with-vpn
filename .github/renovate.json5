@@ -665,11 +665,12 @@
       matchFileNames: ["tests/unit/requirements.txt"],
       enabled: false,
     },
-    // The two images `make coverage` runs, pinned in the Makefile, move by
+    // The images `make coverage` runs, pinned in the Makefile, move by
     // digest only. A tag change is not a pin bump: python 3.14 is the
     // interpreter CI provisions (PYTHON_VERSION in .env.example) and the one
     // sonar-project.properties judges the code against, so it moves with
-    // those by hand, and kcov publishes nothing but `latest`. Grouped under a
+    // those by hand, node 24 is an LTS line that moves by hand to the next
+    // one, and kcov publishes nothing but `latest`. Grouped under a
     // name of their own, after the observability group above, which would
     // otherwise claim docker.io/library/python here too because it matches by
     // package name.

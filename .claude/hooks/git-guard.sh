@@ -49,20 +49,23 @@ fi
 # commit message written as a heredoc that happens to contain "; git reset
 # --hard" reads as a reset. Keep the line carrying the << operator, drop
 # everything up to the terminator.
-strip_heredoc_bodies() {
-  awk '
-    in_body { if ($0 == terminator) { in_body = 0 }; next }
-    {
-      print
-      if (match($0, /<<-?[[:space:]]*[A-Za-z_"'"'"'][A-Za-z0-9_"'"'"']*/)) {
-        terminator = substr($0, RSTART, RLENGTH)
-        sub(/^<<-?[[:space:]]*/, "", terminator)
-        gsub(/["'"'"']/, "", terminator)
-        in_body = 1
-      }
-    }
-  '
+# The program is read from a here document rather than written as a quoted
+# argument: kcov counts every line of a multi-line quoted string as a line of
+# shell that never ran.
+IFS= read -r -d '' STRIP_HEREDOC_BODIES <<'AWK' || true
+in_body { if ($0 == terminator) { in_body = 0 }; next }
+{
+  print
+  if (match($0, /<<-?[[:space:]]*[A-Za-z_"'][A-Za-z0-9_"']*/)) {
+    terminator = substr($0, RSTART, RLENGTH)
+    sub(/^<<-?[[:space:]]*/, "", terminator)
+    gsub(/["']/, "", terminator)
+    in_body = 1
+  }
 }
+AWK
+
+strip_heredoc_bodies() { awk "$STRIP_HEREDOC_BODIES"; }
 
 cmd_bare="$(printf '%s' "$cmd" | strip_heredoc_bodies)"
 
@@ -267,7 +270,7 @@ $session_dir"
   while IFS= read -r candidate; do
     [ -n "$candidate" ] || continue
     case "$candidate" in
-    /*) ;;
+    /*) : already absolute ;;
     *) candidate="$session_dir/$candidate" ;;
     esac
 
@@ -289,7 +292,7 @@ $session_dir"
       hooks_dir="$(git -C "$candidate" rev-parse --git-path hooks 2>/dev/null)"
     fi
     case "$hooks_dir" in
-    /*) ;;
+    /*) : already absolute ;;
     *) hooks_dir="$toplevel/$hooks_dir" ;;
     esac
 

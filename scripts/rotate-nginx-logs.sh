@@ -10,17 +10,10 @@ cd "$repo_root"
 env_value() {
   key="$1"
   [ -f .env ] || return 1
-  value="$(awk -v key="$key" '
-    index($0, key "=") == 1 {
-      sub("^[^=]*=", "")
-      sub(/^"/, "")
-      sub(/"$/, "")
-      sub(/^'\''/, "")
-      sub(/'\''$/, "")
-      print
-      exit
-    }
-  ' .env)"
+  # One line on purpose: kcov reads each line of a multi line awk program as
+  # a shell line that never ran. The program takes the first KEY= line,
+  # drops the key and a leading and a trailing double or single quote.
+  value="$(awk -v key="$key" 'index($0, key "=") == 1 { sub("^[^=]*=", ""); sub(/^"/, ""); sub(/"$/, ""); sub(/^'\''/, ""); sub(/'\''$/, ""); print; exit }' .env)"
   [ -n "$value" ] || return 1
   printf '%s' "$value"
 }

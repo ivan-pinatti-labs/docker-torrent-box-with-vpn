@@ -22,8 +22,9 @@ name: SonarQube
 # Coverage comes from the container free unit tier in tests/unit, not from
 # the integration suite: that one needs the full Podman stack and runs behind
 # `/run-tests`, while this job stands nothing up. `make coverage` measures the
-# Python in scripts/ and the shell scripts listed in the Makefile's
-# COVERAGE_SHELL_SCRIPTS, and holds both at 100%; see docs/TESTING.md, "The
+# Python in scripts/, the shell scripts listed in the Makefile's
+# COVERAGE_SHELL_SCRIPTS and the JavaScript in COVERAGE_JS_SOURCES, and holds
+# all three at 100%; see docs/TESTING.md, "The
 # unit tier".
 #
 # Triggers:
@@ -88,10 +89,10 @@ jobs:
           # new code, and a shallow clone makes every line look new.
           fetch-depth: 0
 
-      # Coverage of the Python and the listed shell scripts, held at 100% (see
-      # the Makefile's `coverage` target). The quality gate also requires 80%
-      # on new code, and with no report every new line would count as
-      # uncovered. Both tools run in podman containers that see the source
+      # Coverage of the Python, the listed shell scripts and the JavaScript,
+      # held at 100% (see the Makefile's `coverage` target). The quality gate
+      # also requires 80% on new code, and with no report every new line would
+      # count as uncovered. The tools run in podman containers that see the source
       # only through a tar stream; the runner ships podman. The step is
       # allowed to fail so SonarQube still gets the report of a run that falls
       # short, and the last step below fails the job on it.

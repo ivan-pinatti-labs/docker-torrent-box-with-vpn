@@ -20,7 +20,10 @@ readonly OVERRIDES_FILE=".env.tests"
   exit 1
 }
 
-while IFS= read -r line; do
+# Read through a descriptor opened here rather than `done <file`, a line kcov
+# never sees run.
+exec 3<"$OVERRIDES_FILE"
+while IFS= read -r -u 3 line; do
   # Skip blank lines and comments, same idiom .env itself uses.
   [[ -z "$line" || "$line" == \#* ]] && continue
   key="${line%%=*}"
@@ -30,7 +33,8 @@ while IFS= read -r line; do
     printf '%s\n' "$line" >>"$ENV_FILE"
   fi
   echo "[${ENV_FILE}] ${line}"
-done <"$OVERRIDES_FILE"
+done
+exec 3<&-
 
 # UID and GID ship as 1000 in .env.example, which is right on a typical bench and
 # wrong anywhere else. Three observability services mount the rootless podman

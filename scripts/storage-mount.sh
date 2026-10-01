@@ -79,9 +79,10 @@ mountpoint_abs="$mountpoint_parent/$(basename "$STORAGE_MOUNTPOINT")"
 # permissions.py refuses manifest paths outside it: compose reads DATA_FOLDER
 # relative to the repository, and a mount somewhere else leaves the apps
 # reading one tree while the permissions manifest manages another. See
-# docs/STORAGE.md, "Keep DATA_FOLDER Repository Relative".
+# docs/STORAGE.md, "Keep DATA_FOLDER Repository Relative". The `:` gives the
+# accepting branch a command, which kcov needs to count that line as run.
 case "$mountpoint_abs" in
-"$repo_root" | "$repo_root"/*) ;;
+"$repo_root" | "$repo_root"/*) : ;;
 *) die "refusing mountpoint outside the repository: $mountpoint_abs (STORAGE_MOUNTPOINT must stay under $repo_root)" ;;
 esac
 
@@ -100,12 +101,16 @@ credentials_abs="$repo_root/${STORAGE_CREDENTIALS_FILE#./}"
 #
 # Comment lines are skipped so the marker itself never counts as an entry, and
 # field 2 is fstab's mountpoint column.
+#
+# The awk programs here are here documents rather than quoted arguments
+# because kcov counts each line of a multi line quoted argument as a
+# command of its own that never runs.
 fstab_has_entry() {
-  awk -v mp="$mountpoint_abs" '
-    /^[[:space:]]*#/ { next }
-    NF >= 2 && $2 == mp { found = 1 }
-    END { exit !found }
-  ' "$FSTAB" 2>/dev/null
+  awk -v mp="$mountpoint_abs" -f /dev/stdin "$FSTAB" 2>/dev/null <<'AWK'
+/^[[:space:]]*#/ { next }
+NF >= 2 && $2 == mp { found = 1 }
+END { exit !found }
+AWK
 }
 
 require_configured() {
@@ -343,13 +348,13 @@ cmd_uninstall_boot() {
   # rather than the one belonging to the clone it was run from.
   local scrubbed
   scrubbed="$(mktemp)" || die "could not create a temporary file."
-  awk -v mp="$mountpoint_abs" -v marker="$FSTAB_MARKER" '
-    $0 == marker { held = $0; next }
-    /^[[:space:]]*#/ { if (held != "") { print held; held = "" } print; next }
-    NF >= 2 && $2 == mp { held = ""; next }
-    { if (held != "") { print held; held = "" } print }
-    END { if (held != "") print held }
-  ' "$FSTAB" >"$scrubbed"
+  awk -v mp="$mountpoint_abs" -v marker="$FSTAB_MARKER" -f /dev/stdin "$FSTAB" >"$scrubbed" <<'AWK'
+$0 == marker { held = $0; next }
+/^[[:space:]]*#/ { if (held != "") { print held; held = "" } print; next }
+NF >= 2 && $2 == mp { held = ""; next }
+{ if (held != "") { print held; held = "" } print }
+END { if (held != "") print held }
+AWK
   $SUDO cp "$scrubbed" "$FSTAB"
   rm -f "$scrubbed"
   # Only the system fstab has a systemd generator behind it; reloading for

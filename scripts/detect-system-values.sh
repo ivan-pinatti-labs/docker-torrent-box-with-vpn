@@ -16,17 +16,21 @@ if [[ $# -ne 1 ]]; then
 fi
 
 readonly ENV_FILE="$1"
+# Where the host's time zone is read from when timedatectl has no answer.
+# Overridable only so the unit tests can point them at a scratch directory.
+readonly TIMEZONE_FILE="${DETECT_TIMEZONE_FILE:-/etc/timezone}"
+readonly LOCALTIME_LINK="${DETECT_LOCALTIME_LINK:-/etc/localtime}"
 
 [[ -f "$ENV_FILE" ]] || exit 0
 
 detected_uid="$(id -u)"
 detected_gid="$(id -g)"
 detected_timezone="$(timedatectl show --property=Timezone --value 2>/dev/null || true)"
-if [[ -z "$detected_timezone" && -f /etc/timezone ]]; then
-  detected_timezone="$(cat /etc/timezone)"
+if [[ -z "$detected_timezone" && -f "$TIMEZONE_FILE" ]]; then
+  detected_timezone="$(cat "$TIMEZONE_FILE")"
 fi
-if [[ -z "$detected_timezone" && -L /etc/localtime ]]; then
-  detected_timezone="$(readlink /etc/localtime | sed 's#.*/zoneinfo/##')"
+if [[ -z "$detected_timezone" && -L "$LOCALTIME_LINK" ]]; then
+  detected_timezone="$(readlink "$LOCALTIME_LINK" | sed 's#.*/zoneinfo/##')"
 fi
 # `|| true` on both lookups: under pipefail a failing ip or hostname (no route,
 # no network yet) fails the assignment, and errexit then ended the script

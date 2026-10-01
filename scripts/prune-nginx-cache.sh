@@ -60,8 +60,9 @@ EOF
 
 printf 'Continue? [y/N] '
 read -r answer
+# `:` rather than an empty branch, which kcov counts as a line that never runs.
 case "$answer" in
-y | Y | yes | YES) ;;
+y | Y | yes | YES) : ;;
 *)
   echo "Aborted."
   exit 0

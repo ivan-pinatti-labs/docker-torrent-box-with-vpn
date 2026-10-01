@@ -75,10 +75,7 @@ print_largest_children() {
   local limit="${2:-10}"
   [ -d "$path" ] || return 0
 
-  find "$path" -mindepth 1 -maxdepth 1 -exec du -sh {} + 2>/dev/null |
-    sort -hr |
-    head -n "$limit" ||
-    true
+  find "$path" -mindepth 1 -maxdepth 1 -exec du -sh {} + 2>/dev/null | sort -hr | head -n "$limit" || true
 }
 
 echo "Disk growth status"

@@ -132,6 +132,8 @@ repos:
       - id: name-tests-test
         args: ["--pytest-test-first"]
         files: ^tests/.*\.py$
+        # A helper the shell tests run, not a test module.
+        exclude: ^tests/unit/with-tty\.py$
       - id: requirements-txt-fixer
         files: ^tests/requirements\.txt$
       # Commit stage only, deliberately. Its job is to stop a commit landing on
@@ -384,10 +386,11 @@ repos:
         always_run: true
 
   # This repository's own coverage gate: 100% of the Python in scripts/
-  # (lines and branches) and of the shell scripts the Makefile lists in
-  # COVERAGE_SHELL_SCRIPTS (lines). `make coverage` runs the unit tier in
+  # (lines and branches), of the shell scripts the Makefile lists in
+  # COVERAGE_SHELL_SCRIPTS (lines) and of the JavaScript in COVERAGE_JS_SOURCES
+  # (lines, branches and functions). `make coverage` runs the unit tier in
   # podman containers that see the source only through a tar stream; see the
-  # Makefile. Pre-push, not pre-commit, because it starts two containers.
+  # Makefile. Pre-push, not pre-commit, because it starts three containers.
   #
   # Code Check runs this file with `--hook-stage pre-push`, which would select
   # this hook too, so pull-request-validation.yml lists it in SKIP beside
@@ -397,11 +400,11 @@ repos:
   - repo: local
     hooks:
       - id: coverage
-        name: Coverage, 100% of scripts/ and the listed shell scripts
+        name: Coverage, 100% of scripts/ and the listed shell and JavaScript
         language: system
         entry: make coverage
         pass_filenames: false
-        files: '^(scripts/|tests/unit/)|^(\.coveragerc|Makefile|pytest\.ini)$'
+        files: '^(scripts/|tests/unit/|configs/[^/]+/custom-cont-init\.d/)|^(\.coveragerc|Makefile|pytest\.ini|\.claude/hooks/git-guard\.sh|configs/homepage/config/custom\.js)$'
         stages: [pre-push]
 
   # Was moved out of MegaLinter when this repository switched to the cupcake
