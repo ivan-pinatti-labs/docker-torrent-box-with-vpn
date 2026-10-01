@@ -61,7 +61,10 @@ done
 #
 # Gated on the runtime rather than on a CI environment variable: the limitation
 # belongs to podman's version, and anyone on a 4.x runtime hits it identically.
-podman_major="$(podman version --format '{{.Client.Version}}' 2>/dev/null | cut -d. -f1)"
+#
+# `|| true` because under pipefail a host without podman (a Docker runtime)
+# failed this assignment, and errexit ended the script before seed-vpn-mock.sh.
+podman_major="$(podman version --format '{{.Client.Version}}' 2>/dev/null | cut -d. -f1 || true)"
 if [[ -n "$podman_major" ]] && ((podman_major < 5)); then
   for key in PODMAN_EXPORTER_PROFILE PODMAN_LIMITS_EXPORTER_PROFILE; do
     sed -i "s|^${key}=.*|${key}=disabled|" "$ENV_FILE"
