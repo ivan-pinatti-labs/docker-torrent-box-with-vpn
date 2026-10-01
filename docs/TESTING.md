@@ -247,9 +247,13 @@ to standard error. kcov also counts lines it can never see run: every line of
 a multi line quoted program handed to awk or another interpreter (use a quoted
 here document), the later lines of a command continued with `\`, the first
 line of an assignment from a command substitution spread over several lines,
-an array literal spread over several, the `done` of a loop that reads from a
-redirection (open the file on a descriptor first), and an empty `case` arm
-(give it a `:`). A test that clears the environment with `env -i`
+an array literal spread over several, the `done` of a loop or the `)` of a
+subshell that carries a redirection (open the file on a descriptor first, or
+make the subshell a function), and an empty `case` arm (give it a `:`).
+Worse, kcov stops reading a script altogether at a here document opened on
+an `if` line (`if python3 - <<EOF; then`), so nothing below it is measured
+and the report still reads 100%: run such a here document from a function
+the `if` calls. A test that clears the environment with `env -i`
 drops the variables kcov traces through, so unset single variables with
 `env -u` instead. A prompt guarded by `[[ -t 0 ]]` is driven on a pseudo
 terminal with `tests/unit/with-tty.py`.

@@ -1078,6 +1078,7 @@ COVERAGE_SHELL_SCRIPTS := \
 	scripts/rotate-api-keys.sh \
 	scripts/rotate-certificate.sh \
 	scripts/rotate-nginx-logs.sh \
+	scripts/rotate-passwords.sh \
 	scripts/schedule-backup.sh \
 	scripts/seed-calibre-library.sh \
 	scripts/seed-configs.sh \
