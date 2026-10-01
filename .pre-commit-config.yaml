@@ -1,5 +1,5 @@
 ---
-default_install_hook_types: [pre-commit, pre-push]
+default_install_hook_types: [pre-commit, pre-push, commit-msg]
 minimum_pre_commit_version: 4.0.1
 
 # Two separate exclude sets, for two unrelated reasons. Keep them apart:
@@ -539,6 +539,15 @@ repos:
   # every pull request. The `no-commit-to-branch` hook above is the one place
   # `stages: [pre-commit]` is correct, and its own comment says why.
   - repo: https://github.com/ivan-pinatti-labs/pre-commit-checklists
-    rev: v2.3.0
+    rev: v3.3.0
     hooks:
       - id: checklist-dev-make
+      # Conventional Commits, and no AI attribution (AGENTS.md), at the
+      # commit-msg stage: CI never sees a commit message, so this is the one
+      # hook here that is meant to run only locally. The filter is unanchored
+      # because a linked worktree hands the hook
+      # .git/worktrees/<name>/COMMIT_EDITMSG.
+      - id: checklist-git-commit-msg
+        args: ["--no-ai-attribution"]
+        stages: [commit-msg]
+        files: COMMIT_EDITMSG$
