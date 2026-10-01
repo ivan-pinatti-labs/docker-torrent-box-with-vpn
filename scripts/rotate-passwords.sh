@@ -1394,16 +1394,34 @@ PARALLEL_ROTATION_FAILURES=()
 # every rotation has genuinely finished. Symptom: `make rotate_passwords`
 # looks hung indefinitely and its final summary (with the actual new
 # passwords) never prints, even though the rotations already succeeded.
+#
+# The rotation runs as a job of its own (parallel_rotation) that this
+# function waits for, not as the left side of `cmd || status=$?`, which is how
+# it ran before. Bash ignores `set -e` for everything run on the left of `||`,
+# so a failing step carried on to the next one (a Grafana that refused the new
+# password still had it written to grafana.ini), and an `exit`
+# (rotate_jellyfin's, for one) ended this function before it wrote the
+# result, so the failure never reached PARALLEL_ROTATION_FAILURES and the run
+# still exited 0. Now the job stops at the first failing step, as the same
+# rotation does when it runs on its own, and writes the result only when it
+# finishes; otherwise this function records its exit status.
 run_parallel_service() {
   local service="$1" func="$2" requires_running="${3:-}"
-  local upper user_var new_var status=0
+  local upper user_var new_var
   upper="$(echo "${service^^}" | tr '-' '_')"
   user_var="SUMMARY_${upper}_USER"
   new_var="SUMMARY_${upper}_NEW"
-  rotate_if_enabled "$service" "$func" "$requires_running" \
-    >"$PARALLEL_TMPDIR/$service.log" 2>&1 || status=$?
-  printf '%s\n%s\n%s\n' "${!user_var}" "${!new_var}" "$status" \
-    >"$PARALLEL_TMPDIR/$service.result"
+  parallel_rotation "$service" "$func" "$requires_running" "$user_var" "$new_var" >"$PARALLEL_TMPDIR/$service.log" 2>&1 &
+  wait "$!" || printf '\n\n%s\n' "$?" >"$PARALLEL_TMPDIR/$service.result"
+}
+
+# The job run_parallel_service waits for: one rotation, then its summary
+# values and a 0 status as the service's result.
+# Args: service_name rotate_function container_required_running user_var new_var
+parallel_rotation() {
+  local service="$1" user_var="$4" new_var="$5"
+  rotate_if_enabled "$service" "$2" "$3"
+  printf '%s\n%s\n0\n' "${!user_var}" "${!new_var}" >"$PARALLEL_TMPDIR/$service.result"
 }
 
 run_parallel_group() {

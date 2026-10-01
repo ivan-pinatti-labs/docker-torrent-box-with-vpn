@@ -323,6 +323,17 @@ rule 'jellyfin curl -s --fail -H \S+ \S+ \S+ \S+/Users$' 0 '[{"Name": "other", "
 run jellyfin
 check "no Jellyfin user stops the rotation" 1 err "[Jellyfin] User 'jellyfin' not found. Aborting Jellyfin rotation."
 
+# Rotations that fail while running alongside the others.
+deployment
+rule 'grafana curl -s --fail -u \S+ -X PUT' 22 ""
+rule 'jellyfin curl -s --fail -H \S+ \S+ \S+ \S+/Users$' 0 '[{"Name": "other", "Id": "u0"}]'
+run all
+check "a parallel rotation that fails fails the run" 1 err "ERROR: rotation failed for: grafana jellyfin"
+check "and says why" 1 out "[jellyfin] [Jellyfin] User 'jellyfin' not found. Aborting Jellyfin rotation."
+check "a refused Grafana password is not written" 1 configs/grafana/config/grafana.ini "admin_password = grafana-old"
+refute "and is not reported as new" out "grafana         admin"
+check "the other rotations carry on" 1 out "$(ok bazarr)"
+
 # qBittorrent that cannot be rotated.
 deployment
 sql configs/sonarr/config/sonarr.db "DELETE FROM DownloadClients"
