@@ -314,6 +314,11 @@ fi
 
 # Jellyfin that cannot be rotated.
 deployment
+rm "${__repo}/configs/jellyfin/secrets/api_key.txt"
+run jellyfin
+check "no Jellyfin API key stops the rotation" 1 err "[Jellyfin] Could not read configs/jellyfin/secrets/api_key.txt. Aborting Jellyfin rotation."
+
+deployment
 rule 'jellyfin curl -s --fail -H \S+ \S+ \S+ \S+/Users$' 0 '[{"Name": "other", "Id": "u0"}]'
 run jellyfin
 check "no Jellyfin user stops the rotation" 1 err "[Jellyfin] User 'jellyfin' not found. Aborting Jellyfin rotation."

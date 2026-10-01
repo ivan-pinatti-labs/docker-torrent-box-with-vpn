@@ -828,7 +828,9 @@ rotate_jellyfin() {
 
   local new_password api_key user_id
   new_password=$(gen_password)
-  api_key=$(cat "$JELLYFIN_API_KEY_SECRET" 2>/dev/null)
+  # `|| true`: a missing file has to reach the message below, rather than
+  # end the run under `set -e` without a word.
+  api_key=$(cat "$JELLYFIN_API_KEY_SECRET" 2>/dev/null || true)
   if [[ -z "$api_key" ]]; then
     echo "[Jellyfin] Could not read ${JELLYFIN_API_KEY_SECRET}. Aborting Jellyfin rotation." >&2
     exit 1
