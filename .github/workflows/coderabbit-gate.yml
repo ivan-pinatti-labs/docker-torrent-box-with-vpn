@@ -121,13 +121,13 @@ jobs:
     # giving up the pin. The disable has to sit immediately above the line it
     # covers, not above this explanation.
     #
-    # The trailing `# v0.1.0` is not decoration. Renovate's github-actions
+    # The trailing `# v0.4.0` is not decoration. Renovate's github-actions
     # manager reads the current version out of that comment, and a bare SHA
     # without one is a dependency it cannot resolve a version for, so it
     # proposes nothing and the pin never moves. Every other pinned `uses:` in
     # this organization carries the same shape.
     # yamllint disable-line rule:line-length
-    uses: ivan-pinatti-labs/gh-actions/.github/workflows/reusable-coderabbit-gate.yml@a100274653186fb76bc8194c3ea250f651db0b08 # v0.2.4
+    uses: ivan-pinatti-labs/gh-actions/.github/workflows/reusable-coderabbit-gate.yml@d990e72fccfe024d8557a983fa5d3a463f3e303b # v0.4.0
     permissions:
       contents: read
       pull-requests: read
