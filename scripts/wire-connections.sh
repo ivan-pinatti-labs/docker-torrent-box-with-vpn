@@ -341,7 +341,10 @@ ensure_jellyfin_setup() {
 ensure_jellyfin_homepage_wiring() {
   local base_url="$1"
   local token
-  token=$(container_curl jellyfin -sS --fail -X POST -H "Content-Type: application/json" -H 'X-Emby-Authorization: MediaBrowser Client="wire-connections", Device="bootstrap", DeviceId="bootstrap", Version="1.0.0"' -d '{"Username":"jellyfin","Pw":"jellyfin"}' "${base_url}/Users/AuthenticateByName" 2>/dev/null | jq -r '.AccessToken // empty')
+  # `|| true`: a rejected login (a 401, which --fail turns into an error) has
+  # to reach the skip below. Without it `set -e` ended this background job
+  # right here, so the note below never printed.
+  token=$(container_curl jellyfin -sS --fail -X POST -H "Content-Type: application/json" -H 'X-Emby-Authorization: MediaBrowser Client="wire-connections", Device="bootstrap", DeviceId="bootstrap", Version="1.0.0"' -d '{"Username":"jellyfin","Pw":"jellyfin"}' "${base_url}/Users/AuthenticateByName" 2>/dev/null | jq -r '.AccessToken // empty') || true
   if [[ -z "$token" ]]; then
     echo "[Jellyfin] Could not authenticate as the placeholder user, skipping API key/BaseUrl check."
     return 0
@@ -428,7 +431,9 @@ ensure_audiobookshelf_api_key() {
   local base_url="$1"
   local login_response token
   local login_payload='{"username":"root","password":"audiobookshelf"}' # pragma: allowlist secret
-  login_response=$(podman exec "$(cname audiobookshelf)" wget -qO- --header='Content-Type: application/json' --post-data="$login_payload" "${base_url}/login" 2>/dev/null)
+  # `|| true`: a rejected login (wget exits non zero on a 401) has to reach
+  # the skip below rather than end this background job under `set -e`.
+  login_response=$(podman exec "$(cname audiobookshelf)" wget -qO- --header='Content-Type: application/json' --post-data="$login_payload" "${base_url}/login" 2>/dev/null) || true
   token=$(echo "$login_response" | jq -r '.user.token // empty')
   if [[ -z "$token" ]]; then
     echo "[Audiobookshelf] Could not authenticate as the placeholder root user, skipping API key check."

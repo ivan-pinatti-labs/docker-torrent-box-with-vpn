@@ -327,7 +327,8 @@ refute "readarr's own failure is not a Jellyfin one" out "[Jellyfin]   - readarr
 deployment
 : >"${__repo}/configs/jellyfin/secrets/api_key.txt"
 calibre_web_db ""
-rule '/login$' 0 '{}'
+# Audiobookshelf refuses the placeholder login: wget exits 8 on a 401.
+rule '/login$' 8 ""
 rule 'jellyfin curl -s http://127.0.0.1:8096/System/Info/Public$' 0 '<html>redirect</html>'
 rule 'exec jellyfin curl .*/jellyfin/System/Info/Public$' 0 '{"StartupWizardCompleted": false}'
 rule 'jellyfin curl -s --fail -X POST .*/Startup/User$' 22 ""
@@ -354,7 +355,8 @@ refute "no Jellyfin failures" out "[Jellyfin]   -"
 deployment
 sed -i 's/^LAN_IP=.*/LAN_IP=192.168.1.50/' "${__repo}/.env"
 containers jellyfin sonarr radarr lidarr whisparr prowlarr lazylibrarian mylar
-rule '/Users/AuthenticateByName$' 0 '{}'
+# Jellyfin refuses the placeholder login: curl --fail exits 22 on a 401.
+rule '/Users/AuthenticateByName$' 22 ""
 for app in sonarr radarr whisparr; do
   rule "exec ${app} curl -sk --fail -H X-Api-Key: \\S+ \\S+/notification\$" 0 '[]'
   rule "exec ${app} curl -sk --fail -H X-Api-Key: \\S+ \\S+/notification/schema\$" 0 '[{"implementation": "MediaBrowser", "fields": []}]'
