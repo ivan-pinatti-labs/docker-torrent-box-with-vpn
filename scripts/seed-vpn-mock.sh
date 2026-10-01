@@ -77,7 +77,7 @@ if ! needs_setup; then
   # protect and they are left exactly as they are.
   echo "[vpn_mock] ${GLUETUN_SECRET} already has a real key; leaving it alone."
   if [[ -f "$GLUETUN_ENV" ]]; then
-    vpn_mock_ip="$(env_value VPN_MOCK_IP)"
+    vpn_mock_ip="$(env_value VPN_MOCK_IP || true)"
     # Empty means the variable is absent from .env, not that the endpoint should
     # be cleared: writing an empty value would leave gluetun with no endpoint at
     # all, which fails later and further away than saying so here.
