@@ -101,6 +101,7 @@ STOP_COMPOSE_FILES := --file docker-compose.yml $(foreach route_file,$(STOP_ROUT
 .PHONY: restart sanity_fast sanity_full start start_library start_observability
 .PHONY: stop stop_all update_containers update_pre_commit test test_ci test_extended test_prerequisites
 .PHONY: test_no_rotate_passwords
+.PHONY: coverage
 
 BACKUP_DIR ?= backup
 # Simply expanded, not ?=. The three archive names below each expand this,
@@ -1015,6 +1016,75 @@ test_no_rotate_passwords: tests/.venv ## Run full test suite except password rot
 # every `make test`. `bootstrap_tests` calls this, not plain `test`.
 test_extended: test ## Run the full suite plus rinse-and-repeat lifecycle cycles
 	@tests/.venv/bin/pytest -m "rinse_and_repeat" $(PYTEST_ARGS)
+
+# Coverage of the code this repository writes, held at 100%: every Python file
+# in scripts/ (lines and branches, .coveragerc) under coverage.py, and the
+# shell scripts in COVERAGE_SHELL_SCRIPTS (lines; kcov reports no branches for
+# bash) under kcov. Both run the container free unit tier in tests/unit, never
+# the stack. Writes the two reports SonarQube Cloud reads,
+# $(COVERAGE_DIR)/coverage.xml and $(COVERAGE_DIR)/shell.xml, and fails if
+# either language is under 100%. .github/workflows/sonarqube.yml runs this,
+# and so does the `coverage` pre-push hook. See docs/TESTING.md, "The unit
+# tier".
+#
+# Both tools run in containers that cannot see this checkout. The files git
+# would commit (tracked, plus new ones not ignored) go in on standard input as
+# a tar stream, so neither .env nor anything under configs/ or data/ that git
+# ignores ever reaches them, and the only host path either container gets is an
+# empty scratch directory for its report. Nothing else is mounted: no home
+# directory, no SSH agent, no token, and no environment variable is passed in.
+# Both drop every capability; kcov also gets no network and a read only root
+# filesystem. The Python container needs the network for its pip install,
+# which is hash locked (tests/unit/requirements.txt). The images are pinned by
+# digest, and Renovate moves the digests.
+#
+# The scratch directory comes from mktemp, so it lands in TMPDIR. In a
+# devcontainer-airlock workbench run this as `l2 --engine --net -- make
+# coverage`: the engine can only mount paths under the TMPDIR it sets.
+#
+# Both reports are written before either verdict is given, so CI can still
+# hand SonarQube the report of a run that falls short.
+#
+# COVERAGE_SHELL_SCRIPTS is the list of shell scripts held at 100%, and it
+# grows a script at a time: each one listed needs a tests/unit/<name>.test.sh
+# that reaches every line of it, with every external command it drives
+# (podman, docker, make, curl and the rest) replaced by a stub on PATH. A
+# script not yet listed is not measured at all. See docs/TESTING.md, "The unit
+# tier".
+COVERAGE_DIR ?= coverage
+COVERAGE_RUNTIME ?= $(if $(CONTAINER_HOST),podman-remote,podman)
+# renovate: datasource=docker depName=docker.io/library/python
+COVERAGE_PYTHON_IMAGE ?= docker.io/library/python:3.14-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
+# renovate: datasource=docker depName=docker.io/kcov/kcov
+COVERAGE_KCOV_IMAGE ?= docker.io/kcov/kcov:latest@sha256:481289ae32e55e5b733019515acd10948a4f76dfed381765577db909664fc603
+COVERAGE_SHELL_SCRIPTS := scripts/auto-start.sh scripts/rotate-all.sh
+
+coverage_sources := git ls-files -z --cached --others --exclude-standard --deduplicate \
+	| tar --create --owner=0 --group=0 --numeric-owner --null --files-from=- \
+		--ignore-failed-read --file=-
+coverage_unpack := set -e; mkdir /tmp/w; tar -x --no-same-owner -C /tmp/w; cd /tmp/w
+coverage_locked := --cap-drop=ALL --security-opt no-new-privileges
+
+coverage:
+	@set -u; out="$$(mktemp -d)"; trap 'rm -rf "$$out"' EXIT; \
+	mkdir "$$out/python" "$$out/shell"; py=0; sh=0; \
+	$(coverage_sources) | $(COVERAGE_RUNTIME) run --rm --interactive $(coverage_locked) \
+		-v "$$out/python:/out:rw,Z" "$(COVERAGE_PYTHON_IMAGE)" sh -c '$(coverage_unpack); \
+			pip install --quiet --disable-pip-version-check --root-user-action=ignore \
+				--require-hashes --only-binary=:all: -r tests/unit/requirements.txt; \
+			coverage run -m pytest tests/unit --confcutdir=tests/unit -p no:cacheprovider -q; \
+			coverage xml -q --fail-under=0 -o /out/coverage.xml; \
+			coverage report' || py=$$?; \
+	$(coverage_sources) | $(COVERAGE_RUNTIME) run --rm --interactive $(coverage_locked) \
+		--network=none --read-only --tmpfs /tmp \
+		-v "$$out/shell:/out:rw,Z" "$(COVERAGE_KCOV_IMAGE)" sh -c '$(coverage_unpack); \
+			kcov --include-path=$(subst $(space),$(comma),$(addprefix /tmp/w/,$(COVERAGE_SHELL_SCRIPTS))) \
+				/out/kcov tests/unit/run-shell-tests.sh $(COVERAGE_SHELL_SCRIPTS); \
+			python3 scripts/convert-kcov-coverage.py /tmp/w /out/kcov/run-shell-tests.sh.*/cobertura.xml \
+				/out/shell.xml $(COVERAGE_SHELL_SCRIPTS)' || sh=$$?; \
+	rm -rf "$(COVERAGE_DIR)"; mkdir -p "$(COVERAGE_DIR)"; \
+	cp "$$out"/python/coverage.xml "$$out"/shell/shell.xml "$(COVERAGE_DIR)"/ 2>/dev/null || true; \
+	test "$$py" -eq 0 && test "$$sh" -eq 0
 
 # The workbench targets (make claude, make codex, make unlock and the rest)
 # come from a devcontainer-airlock clone, by default the one next to this

@@ -182,6 +182,10 @@ these conventions:
 - Each user-facing script has a Makefile wrapper whose target name is the
   snake_case mirror of the script name, for example `rotate_nginx_logs` runs
   `scripts/rotate-nginx-logs.sh`.
+- Every Python script ships with unit tests that reach all of its lines and
+  branches, and a shell script on the Makefile's `COVERAGE_SHELL_SCRIPTS`
+  list ships with tests that reach all of its lines; `make coverage` holds
+  both at 100%. See docs/TESTING.md, "The unit tier".
 - Never commit live application state. Runtime databases and configs the app
   rewrites on shutdown stay gitignored; commit a sanitized `<file>.example`
   seed instead. See docs/HARDENING.md.

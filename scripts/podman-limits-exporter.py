@@ -95,13 +95,19 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(str(exc).encode())
 
 
-if __name__ == "__main__":
+def handle_shutdown(_signum, _frame) -> None:
+    raise SystemExit(0)
 
-    def handle_shutdown(_signum, _frame) -> None:
-        raise SystemExit(0)
 
+# A function rather than the body of the `__main__` block below so the unit
+# tier can drive it with a stand-in server; see tests/unit/.
+def main() -> None:
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
 
     print(f"Serving on :{PORT}/metrics", flush=True)
     HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()

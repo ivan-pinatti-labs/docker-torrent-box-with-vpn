@@ -160,3 +160,9 @@ CLAUDE.local.md
 .claude/settings.local.json
 .claude/agents/local/
 .claude/worktrees/
+
+# `make coverage` reports (coverage.xml for Python, shell.xml for kcov), read
+# by SonarQube Cloud in CI and never committed; .coverage is coverage.py's own
+# data file, for a run outside the container.
+/coverage/
+.coverage

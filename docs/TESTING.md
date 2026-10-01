@@ -182,6 +182,81 @@ exactly like plain `make bootstrap` already does. This is the
 release-validation command: a clean `make bootstrap_tests` run with 0
 failures is the bar every change in this repo is held to before release.
 
+## The unit tier
+
+Everything above tests the stack. `tests/unit` tests the code this repository
+writes, as code: the Python in `scripts/`, and a growing list of the shell
+scripts there, run with every external they drive replaced by a stand in. No
+container, no network, no podman or docker, nothing outside each test's own
+temporary directory, so it runs anywhere and in seconds.
+
+```shell
+make coverage
+```
+
+`make coverage` runs it twice, each time in a podman container that sees only
+the files git would commit, streamed in as a tar archive (no mount of this
+checkout, no `.env`, no credentials):
+
+- The Python half runs under coverage.py and has to reach **100% of the lines
+  and branches of every Python file in `scripts/`** (`.coveragerc`). A new
+  script there is measured from the moment it exists, so it ships with tests.
+- The shell half runs `tests/unit/run-shell-tests.sh` under kcov, which runs
+  `tests/unit/<name>.test.sh` for every script the Makefile lists in
+  `COVERAGE_SHELL_SCRIPTS`, and each listed script has to reach **100% of its
+  lines** (kcov records no branches for bash). The list starts small and grows a
+  script at a time; a script not on it is not measured yet.
+
+It writes `coverage/coverage.xml` and `coverage/shell.xml`, which SonarQube
+Cloud reads (`sonar-project.properties`), and fails when either half falls
+short. The `SonarQube` job runs it on every pull request, and it is a
+`pre-push` hook, so run `pre-commit install` again in an existing clone to pick
+it up. It needs podman on `PATH`; in a devcontainer-airlock workbench run it as
+`l2 --engine --net -- make coverage`.
+
+To iterate on one file without the containers, the integration environment
+already has what the tier needs:
+`tests/.venv/bin/pytest tests/unit --confcutdir=tests/unit`.
+
+How the tier keeps out of the integration suite: `pytest.ini`'s
+`norecursedirs` stops every integration target from collecting `tests/unit`,
+and `--confcutdir=tests/unit` stops the unit tier from loading
+`tests/conftest.py`, which imports the Docker SDK and reads `.env`. Every unit
+test carries the `unit` marker. A script is loaded by path
+(`tests/unit/conftest.py`'s `load_script`), since the hyphenated names cannot
+be imported, and driven through its own functions, with podman, the Podman
+socket, HTTP and the filesystem it manages swapped for stand ins. A shell test
+runs its script as its own `bash` process with stub commands first on `PATH`
+and the stub directory as the only other thing there when the script must not
+find a real one.
+
+To add a shell script to the list, write `tests/unit/<name>.test.sh` (the
+existing two show the pattern), add the script to `COVERAGE_SHELL_SCRIPTS`,
+and run `make coverage`. Two things kcov does that are worth knowing: it
+counts a `: '...'` block comment as code it never saw run, so write those as
+`#` comments, and under kcov a script's `set -x` trace goes to kcov rather than
+to standard error.
+
+### Updating the unit tier's dependencies
+
+`tests/unit/requirements.in` carries exact pins, and
+`tests/unit/requirements.txt` is a lock compiled from it with every hash,
+which `make coverage` installs with `--require-hashes --only-binary=:all:`.
+Renovate's `pip-compile` manager bumps both. To change one by hand, edit the
+`.in` file and regenerate the lock in a container, from `tests/unit`:
+
+```shell
+podman run --rm -v "$PWD:/w:rw,Z" -w /w ghcr.io/astral-sh/uv:python3.14-trixie-slim \
+  uv pip compile --generate-hashes --python-version=3.14 --exclude-newer=P7D \
+  --output-file=requirements.txt requirements.in
+```
+
+That is the command in the lock's own header, which Renovate replays.
+`--exclude-newer=P7D` leaves out anything released in the last seven days,
+dependencies of dependencies included. Keep pytest and pyyaml equal to their
+pins in `tests/requirements.txt`, the integration suite's own environment,
+which is not a lock and is unchanged.
+
 ## Adding a test
 
 Register a new marker in `pytest.ini` before using it (an unregistered

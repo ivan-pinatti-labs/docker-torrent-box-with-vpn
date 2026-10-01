@@ -1,0 +1,15 @@
+# The unit tier's dependencies, exact pins, compiled into the hash lock
+# tests/unit/requirements.txt next to this file. Regenerate that lock with the
+# command in its own header (see docs/TESTING.md, "The unit tier"), never by
+# hand. Renovate's pip-compile manager bumps a pin here and replays the same
+# command.
+#
+# Separate from tests/requirements.txt, which is the integration suite's
+# environment and drags in the Docker SDK, testinfra and the HTTP clients the
+# stack tests need. The unit tier needs none of that: pytest to run it,
+# coverage to measure it, and pyyaml because permissions.py and
+# generate-homepage-services.py import it. Keep pytest and pyyaml equal to the
+# integration pins.
+coverage==7.16.1
+pytest==9.1.1
+pyyaml==6.0.3

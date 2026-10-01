@@ -101,7 +101,9 @@ failure mode: absent reads as waiting, not as passed.
 `.github/workflows/sonarqube.yml`, and fails when the SonarQube Cloud quality
 gate fails. It is not a required context yet, so a red `SonarQube` does not
 block a merge today. It becomes required in a later pull request, which also
-removes `codeql.yml`, the analysis it replaces. What it scans and what it
+removes `codeql.yml`, the analysis it replaces. It also runs `make coverage`
+(the unit tier, see [docs/TESTING.md](TESTING.md#the-unit-tier)) and fails
+below 100% coverage, after handing SonarQube the report. What it scans and what it
 leaves out is in `sonar-project.properties`.
 
 ## `Review Verified`, and the bug it exists to fix
