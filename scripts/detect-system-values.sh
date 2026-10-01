@@ -28,9 +28,12 @@ fi
 if [[ -z "$detected_timezone" && -L /etc/localtime ]]; then
   detected_timezone="$(readlink /etc/localtime | sed 's#.*/zoneinfo/##')"
 fi
-detected_lan_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i=="src") print $(i+1)}')"
+# `|| true` on both lookups: under pipefail a failing ip or hostname (no route,
+# no network yet) fails the assignment, and errexit then ended the script
+# before the hostname -I fallback or any of the other values were written.
+detected_lan_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i=="src") print $(i+1)}' || true)"
 if [[ -z "$detected_lan_ip" ]]; then
-  detected_lan_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  detected_lan_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
 fi
 
 if [[ "$detected_uid" != "1000" ]] && grep -qx "UID=1000" "$ENV_FILE"; then
