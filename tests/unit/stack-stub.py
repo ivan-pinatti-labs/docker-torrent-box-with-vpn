@@ -456,7 +456,7 @@ def jq(args: list[str]) -> int:
     if exit_status:
         if not results:
             return 4
-        return 1 if results[-1] in (None, False) else 0
+        return 1 if results[-1] is None or results[-1] is False else 0
     return 0
 
 

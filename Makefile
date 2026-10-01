@@ -1085,7 +1085,8 @@ COVERAGE_SHELL_SCRIPTS := \
 	scripts/seed-nginx-ports.sh \
 	scripts/seed-secrets.sh \
 	scripts/seed-vpn-mock.sh \
-	scripts/storage-mount.sh
+	scripts/storage-mount.sh \
+	scripts/wire-connections.sh
 # The JavaScript this repository writes, each tested by a tests/unit/*.test.js.
 COVERAGE_JS_SOURCES := configs/homepage/config/custom.js
 

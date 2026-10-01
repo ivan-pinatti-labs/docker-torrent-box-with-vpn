@@ -341,11 +341,7 @@ ensure_jellyfin_setup() {
 ensure_jellyfin_homepage_wiring() {
   local base_url="$1"
   local token
-  token=$(container_curl jellyfin -sS --fail -X POST \
-    -H "Content-Type: application/json" \
-    -H 'X-Emby-Authorization: MediaBrowser Client="wire-connections", Device="bootstrap", DeviceId="bootstrap", Version="1.0.0"' \
-    -d '{"Username":"jellyfin","Pw":"jellyfin"}' \
-    "${base_url}/Users/AuthenticateByName" 2>/dev/null | jq -r '.AccessToken // empty')
+  token=$(container_curl jellyfin -sS --fail -X POST -H "Content-Type: application/json" -H 'X-Emby-Authorization: MediaBrowser Client="wire-connections", Device="bootstrap", DeviceId="bootstrap", Version="1.0.0"' -d '{"Username":"jellyfin","Pw":"jellyfin"}' "${base_url}/Users/AuthenticateByName" 2>/dev/null | jq -r '.AccessToken // empty')
   if [[ -z "$token" ]]; then
     echo "[Jellyfin] Could not authenticate as the placeholder user, skipping API key/BaseUrl check."
     return 0
@@ -358,16 +354,14 @@ ensure_jellyfin_homepage_wiring() {
   # confirmed live. Checking it against Jellyfin's own live key list is the
   # only way to tell a real, working key from a leftover placeholder.
   local existing_keys current_key
-  existing_keys=$(container_curl jellyfin -sS --fail -H "Authorization: MediaBrowser Token=\"${token}\"" \
-    "${base_url}/Auth/Keys" | jq -r '.Items[].AccessToken')
+  existing_keys=$(container_curl jellyfin -sS --fail -H "Authorization: MediaBrowser Token=\"${token}\"" "${base_url}/Auth/Keys" | jq -r '.Items[].AccessToken')
   current_key=$(cat "$JELLYFIN_API_KEY_FILE" 2>/dev/null || true)
   if ! grep -qxF "$current_key" <<<"$existing_keys"; then
     echo "[Jellyfin] Creating initial API key..."
     container_curl jellyfin -sS --fail -X POST -H "Authorization: MediaBrowser Token=\"${token}\"" \
       "${base_url}/Auth/Keys?App=homepage" >/dev/null
     local api_key
-    api_key=$(container_curl jellyfin -sS --fail -H "Authorization: MediaBrowser Token=\"${token}\"" \
-      "${base_url}/Auth/Keys" | jq -r '.Items | sort_by(.DateCreated) | last.AccessToken')
+    api_key=$(container_curl jellyfin -sS --fail -H "Authorization: MediaBrowser Token=\"${token}\"" "${base_url}/Auth/Keys" | jq -r '.Items | sort_by(.DateCreated) | last.AccessToken')
     printf '%s' "$api_key" >"$JELLYFIN_API_KEY_FILE"
     chmod 644 "$JELLYFIN_API_KEY_FILE"
   fi
@@ -380,8 +374,7 @@ ensure_jellyfin_homepage_wiring() {
   # confirmed live down to the exact reported URL. BaseUrl only takes
   # effect after a restart.
   local network_config
-  network_config=$(container_curl jellyfin -sS --fail -H "Authorization: MediaBrowser Token=\"${token}\"" \
-    "${base_url}/System/Configuration/network")
+  network_config=$(container_curl jellyfin -sS --fail -H "Authorization: MediaBrowser Token=\"${token}\"" "${base_url}/System/Configuration/network")
   if [[ "$(echo "$network_config" | jq -r '.BaseUrl')" != "$JELLYFIN_BASE_URL" ]]; then
     echo "[Jellyfin] Setting BaseUrl to ${JELLYFIN_BASE_URL}..."
     local updated_network_config
@@ -435,8 +428,7 @@ ensure_audiobookshelf_api_key() {
   local base_url="$1"
   local login_response token
   local login_payload='{"username":"root","password":"audiobookshelf"}' # pragma: allowlist secret
-  login_response=$(podman exec "$(cname audiobookshelf)" wget -qO- --header='Content-Type: application/json' \
-    --post-data="$login_payload" "${base_url}/login" 2>/dev/null)
+  login_response=$(podman exec "$(cname audiobookshelf)" wget -qO- --header='Content-Type: application/json' --post-data="$login_payload" "${base_url}/login" 2>/dev/null)
   token=$(echo "$login_response" | jq -r '.user.token // empty')
   if [[ -z "$token" ]]; then
     echo "[Audiobookshelf] Could not authenticate as the placeholder root user, skipping API key check."
@@ -457,10 +449,7 @@ ensure_audiobookshelf_api_key() {
   local user_id
   user_id=$(echo "$login_response" | jq -r '.user.id')
   local key_response
-  key_response=$(podman exec "$(cname audiobookshelf)" wget -qO- --header="Authorization: Bearer ${token}" \
-    --header='Content-Type: application/json' \
-    --post-data="$(jq -n --arg userId "$user_id" '{name: "wire-connections", userId: $userId, isActive: true}')" \
-    "${base_url}/api/api-keys")
+  key_response=$(podman exec "$(cname audiobookshelf)" wget -qO- --header="Authorization: Bearer ${token}" --header='Content-Type: application/json' --post-data="$(jq -n --arg userId "$user_id" '{name: "wire-connections", userId: $userId, isActive: true}')" "${base_url}/api/api-keys")
   local api_key
   api_key=$(echo "$key_response" | jq -r '.apiKey.apiKey')
   printf '%s' "$api_key" >"$AUDIOBOOKSHELF_API_KEY_FILE"
@@ -537,6 +526,15 @@ PYEOF
 # scratch path, so the exact column defaults/hashing match what a genuine
 # first boot would have produced) and copying those rows into the real
 # app.db in place of whatever (typically nothing) is there now.
+fresh_calibre_web_db_py() {
+  cat <<'PY'
+import sys
+sys.path.insert(0, '/app/calibre-web')
+from cps import ub
+ub.init_db('/scratch/fresh_app.db')
+PY
+}
+
 ensure_calibre_web_users() {
   if [[ "$(calibre_web_user_count)" -gt 0 ]]; then
     return 0
@@ -544,13 +542,7 @@ ensure_calibre_web_users() {
   echo "[Calibre-Web] app.db has no users (never seeded or lost mid-init), repairing..."
   local scratch
   scratch=$(mktemp -d)
-  podman run --rm -v "${scratch}:/scratch:z" --entrypoint python3 \
-    "docker.io/linuxserver/calibre-web:${CALIBREWEB_VERSION}" -c "
-import sys
-sys.path.insert(0, '/app/calibre-web')
-from cps import ub
-ub.init_db('/scratch/fresh_app.db')
-" >/dev/null
+  podman run --rm -v "${scratch}:/scratch:z" --entrypoint python3 "docker.io/linuxserver/calibre-web:${CALIBREWEB_VERSION}" -c "$(fresh_calibre_web_db_py)" >/dev/null
   python3 - <<PYEOF
 import sqlite3
 fresh = sqlite3.connect('${scratch}/fresh_app.db')
@@ -569,6 +561,16 @@ PYEOF
   echo "[Calibre-Web] Restored the default admin/Guest users."
 }
 
+calibre_web_configured() {
+  python3 - <<PYEOF
+import sqlite3
+conn = sqlite3.connect('$CALIBREWEB_DB')
+row = conn.execute('SELECT config_calibre_dir FROM settings WHERE id = 1').fetchone()
+conn.close()
+print('yes' if row and row[0] else 'no')
+PYEOF
+}
+
 ensure_calibre_web_setup() {
   if ! podman container exists "$(cname calibre-web)" 2>/dev/null; then
     echo "[Calibre-Web] Container doesn't exist, skipping."
@@ -583,15 +585,7 @@ ensure_calibre_web_setup() {
   fi
 
   local configured
-  configured=$(
-    python3 - <<PYEOF
-import sqlite3
-conn = sqlite3.connect('$CALIBREWEB_DB')
-row = conn.execute('SELECT config_calibre_dir FROM settings WHERE id = 1').fetchone()
-conn.close()
-print('yes' if row and row[0] else 'no')
-PYEOF
-  )
+  configured=$(calibre_web_configured)
   if [[ "$configured" == "yes" && "$(calibre_web_user_count)" -gt 0 ]]; then
     echo "[Calibre-Web] Already configured, skipping."
     return 0
@@ -645,19 +639,21 @@ PYEOF
 # budget on a container whose webserver has not opened its port yet, and
 # reports a 500 (issue #130). Every other widget's backing container had
 # that same startup delay behind it long before the test suite ever ran.
+mylar_comic_count() {
+  python3 - <<PYEOF
+import sqlite3
+conn = sqlite3.connect('$MYLAR_DB')
+print(conn.execute("SELECT COUNT(*) FROM comics").fetchone()[0])
+PYEOF
+}
+
 ensure_mylar_placeholder_comic() {
   if ! podman container exists "$(cname mylar)" 2>/dev/null; then
     echo "[Mylar] Container doesn't exist, skipping."
     return 0
   fi
   local count
-  count=$(
-    python3 - <<PYEOF
-import sqlite3
-conn = sqlite3.connect('$MYLAR_DB')
-print(conn.execute("SELECT COUNT(*) FROM comics").fetchone()[0])
-PYEOF
-  )
+  count=$(mylar_comic_count)
   if [[ "$count" -gt 0 ]]; then
     echo "[Mylar] Already has comics, skipping placeholder."
     return 0
@@ -708,8 +704,7 @@ PYEOF
   # otherwise put a bound on.
   mylar_answering() {
     local status
-    status=$(timeout 15 podman exec "$(cname mylar)" curl -sk --max-time 10 -o /dev/null \
-      -w '%{http_code}' "https://127.0.0.1:${MYLAR_HTTPS_PORT}/mylar/") || return 1
+    status=$(timeout 15 podman exec "$(cname mylar)" curl -sk --max-time 10 -o /dev/null -w '%{http_code}' "https://127.0.0.1:${MYLAR_HTTPS_PORT}/mylar/") || return 1
     [[ "$status" == "200" || "$status" == "303" || "$status" == "401" ]]
   }
   # A hand rolled wait rather than the shared `retry` above: that helper
@@ -767,10 +762,7 @@ ensure_arr_host_prereqs() {
   echo "[$app_name] Setting up initial WebUI login and relaxing certificate validation for internal addresses..."
   local id updated
   id=$(echo "$current" | jq -r '.id')
-  updated=$(echo "$current" | jq \
-    --arg cred "$app_name" \
-    '.username = $cred | .password = $cred | .passwordConfirmation = $cred |
-    .certificateValidation = "disabledForLocalAddresses"')
+  updated=$(echo "$current" | jq --arg cred "$app_name" '.username = $cred | .password = $cred | .passwordConfirmation = $cred | .certificateValidation = "disabledForLocalAddresses"')
 
   container_curl "$container" -sk --fail -X PUT \
     -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" \
@@ -806,9 +798,7 @@ ensure_readarr_metadata_source() {
   updated=$(echo "$current" | jq --arg source "$target" '.metadataSource = $source')
 
   local response
-  if ! response=$(container_curl "$container" -sk --fail -X PUT \
-    -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" \
-    -d "$updated" "${base_url}/${id}" 2>&1); then
+  if ! response=$(container_curl "$container" -sk --fail -X PUT -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" -d "$updated" "${base_url}/${id}" 2>&1); then
     echo "[Readarr] WARNING: failed to set metadata provider source: ${response:0:300}"
     return 1
   fi
@@ -855,14 +845,56 @@ ensure_readarr_metadata_source() {
 # to abort Readarr's other, unrelated wiring steps.
 # ---------------------------------------------------------------------------
 
+# The jq programs the download client, Jellyfin connection and Prowlarr
+# application payloads are built with. Each is a quoted here document in a
+# function of its own rather than a multi line quoted argument, which kcov
+# would count as shell lines that never run.
+
+# Points an existing download client's host and port fields at new values.
+host_port_jq() {
+  cat <<'JQ'
+.fields |= map(
+  if .name == "host" then .value = $host
+  elif .name == "port" then .value = ($port | tonumber)
+  else . end)
+JQ
+}
+
+qbittorrent_client_jq() {
+  cat <<'JQ'
+.name = "QBittorrent" | .enable = true |
+.fields |= map(
+  if .name == "host" then .value = $host
+  elif .name == "port" then .value = ($port | tonumber)
+  elif .name == "useSsl" then .value = true
+  elif .name == "username" then .value = $username
+  elif .name == "password" then .value = $password
+  elif (.name | test("Category$")) and ((.name | test("Imported")) | not) then .value = $category
+  else . end)
+JQ
+}
+
+sabnzbd_client_jq() {
+  cat <<'JQ'
+.name = "SABnzbd" | .enable = true |
+.fields |= map(
+  if .name == "host" then .value = $host
+  elif .name == "port" then .value = ($port | tonumber)
+  elif .name == "useSsl" then .value = false
+  elif .name == "urlBase" then .value = $urlBase
+  elif .name == "apiKey" then .value = $apiKey
+  elif (.name | test("Category$")) and ((.name | test("Imported")) | not) then .value = $category
+  else . end)
+JQ
+}
+
 # Args: app_name container scheme port api_ver api_key category
 ensure_qbittorrent_client() {
   local app_name="$1" container="$2" scheme="$3" port="$4" api_ver="$5" api_key="$6" category="$7"
   local base_url="${scheme}://127.0.0.1:${port}/${app_name}/api/${api_ver}/downloadclient"
 
   local existing
-  existing=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "$base_url" |
-    jq 'map(select(.implementation == "QBittorrent")) | first')
+  existing=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "$base_url" | jq 'map(select(.implementation == "QBittorrent")) | first')
   if [[ -n "$existing" && "$existing" != "null" ]]; then
     # Found is not the same as correct: the host, and the port since it is
     # set from config at creation the same way, can drift out from under an
@@ -884,18 +916,10 @@ ensure_qbittorrent_client() {
     echo "[$app_name] qBittorrent download client host/port stale (${existing_host}:${existing_port}), correcting to ${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}..."
     local id payload
     id=$(jq -r '.id' <<<"$existing")
-    payload=$(jq \
-      --arg host "$GLUETUN_SERVICES_IP" \
-      --arg port "$QBITTORRENT_HTTPS_PORT" \
-      '.fields |= map(
-        if .name == "host" then .value = $host
-        elif .name == "port" then .value = ($port | tonumber)
-        else . end)' <<<"$existing")
+    payload=$(jq --arg host "$GLUETUN_SERVICES_IP" --arg port "$QBITTORRENT_HTTPS_PORT" "$(host_port_jq)" <<<"$existing")
 
     local response
-    if ! response=$(container_curl "$container" -sk --fail -X PUT \
-      -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" \
-      -d "$payload" "${base_url}/${id}" 2>&1); then
+    if ! response=$(container_curl "$container" -sk --fail -X PUT -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" -d "$payload" "${base_url}/${id}" 2>&1); then
       echo "[$app_name] WARNING: failed to update qBittorrent download client host: ${response:0:300}"
       return 1
     fi
@@ -909,25 +933,10 @@ ensure_qbittorrent_client() {
 
   echo "[$app_name] Creating qBittorrent download client..."
   local schema
-  schema=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "${base_url}/schema" |
-    jq 'map(select(.implementation == "QBittorrent")) | first')
+  schema=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "${base_url}/schema" | jq 'map(select(.implementation == "QBittorrent")) | first')
 
   local payload
-  payload=$(echo "$schema" | jq \
-    --arg host "$GLUETUN_SERVICES_IP" \
-    --arg port "$QBITTORRENT_HTTPS_PORT" \
-    --arg username "$username" \
-    --arg password "$password" \
-    --arg category "$category" \
-    '.name = "QBittorrent" | .enable = true |
-    .fields |= map(
-      if .name == "host" then .value = $host
-      elif .name == "port" then .value = ($port | tonumber)
-      elif .name == "useSsl" then .value = true
-      elif .name == "username" then .value = $username
-      elif .name == "password" then .value = $password
-      elif (.name | test("Category$")) and ((.name | test("Imported")) | not) then .value = $category
-      else . end)')
+  payload=$(echo "$schema" | jq --arg host "$GLUETUN_SERVICES_IP" --arg port "$QBITTORRENT_HTTPS_PORT" --arg username "$username" --arg password "$password" --arg category "$category" "$(qbittorrent_client_jq)")
 
   # Caught explicitly rather than left to a bare --fail under this script's
   # set -e: a caller that isolates a failure here with `cmd || warn` does
@@ -937,9 +946,7 @@ ensure_qbittorrent_client() {
   # here would otherwise fall through to the unconditional "Created." line
   # below despite nothing having been created.
   local response
-  if ! response=$(container_curl "$container" -sk --fail -X POST \
-    -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" \
-    -d "$payload" "$base_url" 2>&1); then # pragma: allowlist secret
+  if ! response=$(container_curl "$container" -sk --fail -X POST -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" -d "$payload" "$base_url" 2>&1); then # pragma: allowlist secret
     echo "[$app_name] WARNING: failed to create qBittorrent download client: ${response:0:300}"
     return 1
   fi
@@ -952,8 +959,7 @@ ensure_sabnzbd_client() {
   local base_url="${scheme}://127.0.0.1:${port}/${app_name}/api/${api_ver}/downloadclient"
 
   local existing
-  existing=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "$base_url" |
-    jq 'map(select(.implementation == "Sabnzbd")) | first')
+  existing=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "$base_url" | jq 'map(select(.implementation == "Sabnzbd")) | first')
   if [[ -n "$existing" && "$existing" != "null" ]]; then
     # See ensure_qbittorrent_client's matching comment: same drift, same
     # reasoning for reconciling conditionally and for basing the update
@@ -970,18 +976,10 @@ ensure_sabnzbd_client() {
     echo "[$app_name] SABnzbd download client host/port stale (${existing_host}:${existing_port}), correcting to ${GLUETUN_SERVICES_IP}:${SABNZBD_HTTP_PORT}..."
     local id payload
     id=$(jq -r '.id' <<<"$existing")
-    payload=$(jq \
-      --arg host "$GLUETUN_SERVICES_IP" \
-      --arg port "$SABNZBD_HTTP_PORT" \
-      '.fields |= map(
-        if .name == "host" then .value = $host
-        elif .name == "port" then .value = ($port | tonumber)
-        else . end)' <<<"$existing")
+    payload=$(jq --arg host "$GLUETUN_SERVICES_IP" --arg port "$SABNZBD_HTTP_PORT" "$(host_port_jq)" <<<"$existing")
 
     local response
-    if ! response=$(container_curl "$container" -sk --fail -X PUT \
-      -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" \
-      -d "$payload" "${base_url}/${id}" 2>&1); then # pragma: allowlist secret
+    if ! response=$(container_curl "$container" -sk --fail -X PUT -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" -d "$payload" "${base_url}/${id}" 2>&1); then # pragma: allowlist secret
       echo "[$app_name] WARNING: failed to update SABnzbd download client host: ${response:0:300}"
       return 1
     fi
@@ -994,25 +992,10 @@ ensure_sabnzbd_client() {
 
   echo "[$app_name] Creating SABnzbd download client..."
   local schema
-  schema=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "${base_url}/schema" |
-    jq 'map(select(.implementation == "Sabnzbd")) | first')
+  schema=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "${base_url}/schema" | jq 'map(select(.implementation == "Sabnzbd")) | first')
 
   local payload
-  payload=$(echo "$schema" | jq \
-    --arg host "$GLUETUN_SERVICES_IP" \
-    --arg port "$SABNZBD_HTTP_PORT" \
-    --arg urlBase "/sabnzbd" \
-    --arg apiKey "$sab_api_key" \
-    --arg category "$category" \
-    '.name = "SABnzbd" | .enable = true |
-    .fields |= map(
-      if .name == "host" then .value = $host
-      elif .name == "port" then .value = ($port | tonumber)
-      elif .name == "useSsl" then .value = false
-      elif .name == "urlBase" then .value = $urlBase
-      elif .name == "apiKey" then .value = $apiKey
-      elif (.name | test("Category$")) and ((.name | test("Imported")) | not) then .value = $category
-      else . end)')
+  payload=$(echo "$schema" | jq --arg host "$GLUETUN_SERVICES_IP" --arg port "$SABNZBD_HTTP_PORT" --arg urlBase "/sabnzbd" --arg apiKey "$sab_api_key" --arg category "$category" "$(sabnzbd_client_jq)")
 
   # See ensure_qbittorrent_client's matching comment: this is caught
   # explicitly, not left to a bare --fail, since a caller-side `|| warn`
@@ -1020,9 +1003,7 @@ ensure_sabnzbd_client() {
   # exit-on-failure semantics being suppressed for everything on the left
   # of that ||.
   local response
-  if ! response=$(container_curl "$container" -sk --fail -X POST \
-    -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" \
-    -d "$payload" "$base_url" 2>&1); then # pragma: allowlist secret
+  if ! response=$(container_curl "$container" -sk --fail -X POST -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" -d "$payload" "$base_url" 2>&1); then # pragma: allowlist secret
     echo "[$app_name] WARNING: failed to create SABnzbd download client: ${response:0:300}"
     return 1
   fi
@@ -1109,6 +1090,25 @@ readonly ARR_JOB_STATUS_BASE=100
 readonly ARR_JOB_JELLYFIN_FAILED_BIT=1
 readonly ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT=2
 
+jellyfin_connection_jq() {
+  cat <<'JQ'
+.name = "Emby / Jellyfin" |
+.fields |= map(
+  if .name == "host" then .value = $host
+  elif .name == "port" then .value = ($port | tonumber)
+  elif .name == "useSsl" then .value = false
+  elif .name == "urlBase" then .value = $url_base
+  elif .name == "apiKey" then .value = $key
+  elif .name == "updateLibrary" then .value = true
+  else . end) |
+(if .supportsOnDownload then .onDownload = true else . end) |
+(if .supportsOnImportComplete then .onImportComplete = true else . end) |
+(if .supportsOnReleaseImport then .onReleaseImport = true else . end) |
+(if .supportsOnUpgrade then .onUpgrade = true else . end) |
+(if .supportsOnRename then .onRename = true else . end)
+JQ
+}
+
 # Tells Jellyfin to rescan when an import, upgrade or rename changes the
 # library. Without it Jellyfin only notices on its own scheduled scan, so a
 # finished download can sit there invisible for hours.
@@ -1133,8 +1133,7 @@ ensure_jellyfin_connection() {
   # failure. `set -o pipefail` at the top of this file is what makes the
   # curl half of each pipeline count, not just jq's status.
   local existing
-  if ! existing=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "$base_url" |
-    jq 'map(select(.implementation == "MediaBrowser")) | first'); then
+  if ! existing=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "$base_url" | jq 'map(select(.implementation == "MediaBrowser")) | first'); then
     echo "[$app_name] WARNING: could not read its notification list; skipping its Jellyfin connection."
     return 1
   fi
@@ -1144,8 +1143,7 @@ ensure_jellyfin_connection() {
   fi
 
   local schema
-  if ! schema=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "${base_url}/schema" |
-    jq 'map(select(.implementation == "MediaBrowser")) | first'); then
+  if ! schema=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "${base_url}/schema" | jq 'map(select(.implementation == "MediaBrowser")) | first'); then
     echo "[$app_name] WARNING: could not read its notification schema; skipping its Jellyfin connection."
     return 1
   fi
@@ -1193,33 +1191,13 @@ ensure_jellyfin_connection() {
   # app what it supports is the only version-proof way to enable the ones that
   # mean "the library changed on disk".
   local payload
-  payload=$(echo "$schema" | jq \
-    --arg host "$jellyfin_host" \
-    --arg port "$JELLYFIN_HTTP_PORT" \
-    --arg url_base "$JELLYFIN_BASE_URL" \
-    --arg key "$(cat "$JELLYFIN_API_KEY_FILE")" \
-    '.name = "Emby / Jellyfin" |
-    .fields |= map(
-      if .name == "host" then .value = $host
-      elif .name == "port" then .value = ($port | tonumber)
-      elif .name == "useSsl" then .value = false
-      elif .name == "urlBase" then .value = $url_base
-      elif .name == "apiKey" then .value = $key
-      elif .name == "updateLibrary" then .value = true
-      else . end) |
-    (if .supportsOnDownload then .onDownload = true else . end) |
-    (if .supportsOnImportComplete then .onImportComplete = true else . end) |
-    (if .supportsOnReleaseImport then .onReleaseImport = true else . end) |
-    (if .supportsOnUpgrade then .onUpgrade = true else . end) |
-    (if .supportsOnRename then .onRename = true else . end)')
+  payload=$(echo "$schema" | jq --arg host "$jellyfin_host" --arg port "$JELLYFIN_HTTP_PORT" --arg url_base "$JELLYFIN_BASE_URL" --arg key "$(cat "$JELLYFIN_API_KEY_FILE")" "$(jellyfin_connection_jq)")
 
   # Same reasoning as ensure_qbittorrent_client: caught here rather than left
   # to --fail under set -e, which stops applying inside a function the caller
   # guarded with `|| warn`.
   local response
-  if ! response=$(container_curl "$container" -sk --fail -X POST \
-    -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" \
-    -d "$payload" "$base_url" 2>&1); then
+  if ! response=$(container_curl "$container" -sk --fail -X POST -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" -d "$payload" "$base_url" 2>&1); then
     echo "[$app_name] WARNING: failed to create the Jellyfin connection: ${response:0:300}"
     return 1
   fi
@@ -1444,8 +1422,7 @@ ensure_prowlarr_indexer_proxy() {
   fi
 
   local existing
-  existing=$(container_curl prowlarr -sk --fail -H "X-Api-Key: ${prowlarr_api_key}" "$base_url" |
-    jq 'map(select(.implementation == "FlareSolverr")) | first')
+  existing=$(container_curl prowlarr -sk --fail -H "X-Api-Key: ${prowlarr_api_key}" "$base_url" | jq 'map(select(.implementation == "FlareSolverr")) | first')
   if [[ -n "$existing" && "$existing" != "null" ]]; then
     if [[ -n "$tag_id" ]] && ! echo "$existing" | jq -e --argjson t "$tag_id" '.tags | index($t)' >/dev/null; then
       echo "[Prowlarr] FlareSolverr indexer proxy exists but isn't tagged, adding the tag..."
@@ -1466,22 +1443,15 @@ ensure_prowlarr_indexer_proxy() {
 
   echo "[Prowlarr] Adding FlareSolverr indexer proxy..."
   local schema
-  schema=$(container_curl prowlarr -sk --fail -H "X-Api-Key: ${prowlarr_api_key}" "${base_url}/schema" |
-    jq 'map(select(.implementation == "FlareSolverr")) | first')
+  schema=$(container_curl prowlarr -sk --fail -H "X-Api-Key: ${prowlarr_api_key}" "${base_url}/schema" | jq 'map(select(.implementation == "FlareSolverr")) | first')
 
   local payload
-  payload=$(echo "$schema" | jq \
-    --arg host "http://flaresolverr:${FLARESOLVERR_HTTP_PORT}" \
-    --argjson tags "$([[ -n "$tag_id" ]] && echo "[$tag_id]" || echo "[]")" \
-    '.name = "FlareSolverr" | .tags = $tags |
-    .fields |= map(if .name == "host" then .value = $host else . end)')
+  payload=$(echo "$schema" | jq --arg host "http://flaresolverr:${FLARESOLVERR_HTTP_PORT}" --argjson tags "$([[ -n "$tag_id" ]] && echo "[$tag_id]" || echo "[]")" '.name = "FlareSolverr" | .tags = $tags | .fields |= map(if .name == "host" then .value = $host else . end)')
 
   # See ensure_qbittorrent_client's matching comment on why this is caught
   # explicitly rather than left to a bare --fail.
   local response
-  if ! response=$(container_curl prowlarr -sk --fail -X POST \
-    -H "X-Api-Key: ${prowlarr_api_key}" -H "Content-Type: application/json" \
-    -d "$payload" "$base_url" 2>&1); then
+  if ! response=$(container_curl prowlarr -sk --fail -X POST -H "X-Api-Key: ${prowlarr_api_key}" -H "Content-Type: application/json" -d "$payload" "$base_url" 2>&1); then
     echo "[Prowlarr] WARNING: failed to add FlareSolverr indexer proxy: ${response:0:300}"
     return 1
   fi
@@ -1494,8 +1464,7 @@ ensure_prowlarr_indexer() {
   local indexer_url="https://127.0.0.1:${PROWLARR_HTTPS_PORT}/prowlarr/api/v1/indexer"
 
   local existing
-  existing=$(container_curl prowlarr -sk --fail -H "X-Api-Key: ${prowlarr_api_key}" "$indexer_url" |
-    jq --arg name "$display_name" 'map(select(.name == $name)) | first')
+  existing=$(container_curl prowlarr -sk --fail -H "X-Api-Key: ${prowlarr_api_key}" "$indexer_url" | jq --arg name "$display_name" 'map(select(.name == $name)) | first')
   if [[ -n "$existing" && "$existing" != "null" ]]; then
     echo "[Prowlarr] Indexer '${display_name}' already exists, skipping."
     return 0
@@ -1503,8 +1472,7 @@ ensure_prowlarr_indexer() {
 
   echo "[Prowlarr] Adding indexer '${display_name}'..."
   local schema
-  schema=$(container_curl prowlarr -sk --fail -H "X-Api-Key: ${prowlarr_api_key}" "${indexer_url}/schema" |
-    jq --arg def "$definition_name" 'map(select(.definitionName == $def)) | first')
+  schema=$(container_curl prowlarr -sk --fail -H "X-Api-Key: ${prowlarr_api_key}" "${indexer_url}/schema" | jq --arg def "$definition_name" 'map(select(.definitionName == $def)) | first')
 
   # Created disabled first, then enabled, and both halves matter.
   #
@@ -1521,15 +1489,10 @@ ensure_prowlarr_indexer() {
   # indexer reliably ends up present and enabled. Whether it exists is a
   # local database write; it should not hinge on a third party's rate limiter.
   local payload
-  payload=$(echo "$schema" | jq \
-    --arg baseUrl "$base_url" \
-    '.appProfileId = 1 | .enable = false |
-    .fields |= (map(select(.name != "baseUrl")) + [{"name": "baseUrl", "value": $baseUrl}])')
+  payload=$(echo "$schema" | jq --arg baseUrl "$base_url" '.appProfileId = 1 | .enable = false | .fields |= (map(select(.name != "baseUrl")) + [{"name": "baseUrl", "value": $baseUrl}])')
 
   local created new_id
-  created=$(container_curl prowlarr -sk --fail -X POST \
-    -H "X-Api-Key: ${prowlarr_api_key}" -H "Content-Type: application/json" \
-    -d "$payload" "$indexer_url" 2>/dev/null) || true
+  created=$(container_curl prowlarr -sk --fail -X POST -H "X-Api-Key: ${prowlarr_api_key}" -H "Content-Type: application/json" -d "$payload" "$indexer_url" 2>/dev/null) || true
   new_id=$(echo "$created" | jq -r '.id // empty' 2>/dev/null)
 
   if [[ -n "$new_id" ]]; then
@@ -1560,8 +1523,7 @@ ensure_prowlarr_indexer() {
 prowlarr_indexers_healthy() {
   local prowlarr_api_key="$1"
   local count
-  count=$(container_curl prowlarr -sk --fail -H "X-Api-Key: ${prowlarr_api_key}" \
-    "https://127.0.0.1:${PROWLARR_HTTPS_PORT}/prowlarr/api/v1/indexerstatus" | jq 'length')
+  count=$(container_curl prowlarr -sk --fail -H "X-Api-Key: ${prowlarr_api_key}" "https://127.0.0.1:${PROWLARR_HTTPS_PORT}/prowlarr/api/v1/indexerstatus" | jq 'length')
   [[ "$count" == "0" ]]
 }
 
@@ -1570,8 +1532,7 @@ prowlarr_indexers_healthy() {
 arr_has_indexer() {
   local app="$1" scheme="$2" port="$3" api_version="$4" api_key="$5"
   local count
-  count=$(container_curl "$app" -sk --fail -H "X-Api-Key: ${api_key}" \
-    "${scheme}://127.0.0.1:${port}/${app}/api/${api_version}/indexer" 2>/dev/null | jq 'length' 2>/dev/null)
+  count=$(container_curl "$app" -sk --fail -H "X-Api-Key: ${api_key}" "${scheme}://127.0.0.1:${port}/${app}/api/${api_version}/indexer" 2>/dev/null | jq 'length' 2>/dev/null)
   [[ -n "$count" && "$count" != "null" && "$count" -gt 0 ]]
 }
 
@@ -1608,12 +1569,7 @@ sync_prowlarr_indexers() {
   # wire_prowlarr_apps() above is still Whisparr's real success signal; an
   # indexer actually appears once the user adds one that serves that
   # category.
-  local targets=(
-    "lidarr https ${LIDARR_HTTPS_PORT} v1"
-    "radarr https ${RADARR_HTTPS_PORT} v3"
-    "readarr https ${READARR_HTTPS_PORT} v1"
-    "sonarr http ${SONARR_HTTP_PORT} v3"
-  )
+  local targets=("lidarr https ${LIDARR_HTTPS_PORT} v1" "radarr https ${RADARR_HTTPS_PORT} v3" "readarr https ${READARR_HTTPS_PORT} v1" "sonarr http ${SONARR_HTTP_PORT} v3")
 
   local attempt
   for attempt in 1 2 3; do
@@ -1642,6 +1598,17 @@ sync_prowlarr_indexers() {
 
   echo "[Prowlarr] WARNING: some arr apps still have no indexer (${missing[*]})."
   echo "[Prowlarr] Prowlarr re-syncs on its own schedule; or re-run 'make wire_connections'."
+}
+
+prowlarr_application_jq() {
+  cat <<'JQ'
+.name = $name | .syncLevel = "fullSync" |
+.fields |= map(
+  if .name == "prowlarrUrl" then .value = $prowlarrUrl
+  elif .name == "baseUrl" then .value = $baseUrl
+  elif .name == "apiKey" then .value = $apiKey
+  else . end)
+JQ
 }
 
 # Args: container display_name implementation config_contract app_url app_api_key prowlarr_api_key
@@ -1676,8 +1643,7 @@ ensure_prowlarr_application() {
   fi
 
   local existing
-  existing=$(container_curl prowlarr -sk --fail -H "X-Api-Key: ${prowlarr_api_key}" "$base_url" |
-    jq --arg name "$display_name" 'map(select(.name == $name)) | first')
+  existing=$(container_curl prowlarr -sk --fail -H "X-Api-Key: ${prowlarr_api_key}" "$base_url" | jq --arg name "$display_name" 'map(select(.name == $name)) | first')
   if [[ -n "$existing" && "$existing" != "null" ]]; then
     echo "[Prowlarr] Application '${display_name}' already exists, skipping."
     return 0
@@ -1703,21 +1669,10 @@ ensure_prowlarr_application() {
 
   echo "[Prowlarr] Registering application '${display_name}'..."
   local schema
-  schema=$(container_curl prowlarr -sk --fail -H "X-Api-Key: ${prowlarr_api_key}" "${base_url}/schema" |
-    jq --arg impl "$implementation" 'map(select(.implementation == $impl)) | first')
+  schema=$(container_curl prowlarr -sk --fail -H "X-Api-Key: ${prowlarr_api_key}" "${base_url}/schema" | jq --arg impl "$implementation" 'map(select(.implementation == $impl)) | first')
 
   local payload
-  payload=$(echo "$schema" | jq \
-    --arg name "$display_name" \
-    --arg prowlarrUrl "${prowlarr_url_override:-https://prowlarr:${PROWLARR_HTTPS_PORT}/prowlarr}" \
-    --arg baseUrl "$app_url" \
-    --arg apiKey "$app_api_key" \
-    '.name = $name | .syncLevel = "fullSync" |
-    .fields |= map(
-      if .name == "prowlarrUrl" then .value = $prowlarrUrl
-      elif .name == "baseUrl" then .value = $baseUrl
-      elif .name == "apiKey" then .value = $apiKey
-      else . end)')
+  payload=$(echo "$schema" | jq --arg name "$display_name" --arg prowlarrUrl "${prowlarr_url_override:-https://prowlarr:${PROWLARR_HTTPS_PORT}/prowlarr}" --arg baseUrl "$app_url" --arg apiKey "$app_api_key" "$(prowlarr_application_jq)")
 
   # Deliberately not fatal. Every entry in wire_prowlarr_apps runs in one
   # function inside one background job, so under `set -e` a single failing
@@ -1746,9 +1701,7 @@ ensure_prowlarr_application() {
   # succeeded immediately.
   local response attempt
   for attempt in 1 2 3; do
-    if response=$(container_curl prowlarr -skS --fail -X POST \
-      -H "X-Api-Key: ${prowlarr_api_key}" -H "Content-Type: application/json" \
-      -d "$payload" "$base_url" 2>&1); then # pragma: allowlist secret
+    if response=$(container_curl prowlarr -skS --fail -X POST -H "X-Api-Key: ${prowlarr_api_key}" -H "Content-Type: application/json" -d "$payload" "$base_url" 2>&1); then # pragma: allowlist secret
       echo "[Prowlarr] Registered."
       return 0
     fi
