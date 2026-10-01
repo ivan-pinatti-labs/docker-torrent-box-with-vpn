@@ -346,8 +346,7 @@ rotate_arr_password() {
 
   echo "[$app_name] Fetching current host config..."
   local config
-  config=$(container_curl "$container_name" -sk -H "X-Api-Key: $api_key" \
-    "${scheme}://127.0.0.1:${port}/${url_base}/api/${api_ver}/config/host")
+  config=$(container_curl "$container_name" -sk -H "X-Api-Key: $api_key" "${scheme}://127.0.0.1:${port}/${url_base}/api/${api_ver}/config/host")
 
   echo "[$app_name] Setting new password..."
   # The username has to go up with the password. These apps keep credentials
@@ -361,11 +360,7 @@ rotate_arr_password() {
   # An existing username is preserved; only a missing one is filled in, using
   # the container name, which is what the login validation below expects.
   local updated
-  updated=$(echo "$config" | jq \
-    --arg pw "$new_password" \
-    --arg user "$container_name" \
-    '.username = (if ((.username // "") | length) == 0 then $user else .username end)
-    | .password = $pw | .passwordConfirmation = $pw')
+  updated=$(echo "$config" | jq --arg pw "$new_password" --arg user "$container_name" '.username = (if ((.username // "") | length) == 0 then $user else .username end) | .password = $pw | .passwordConfirmation = $pw')
 
   container_curl "$container_name" -sk -X PUT \
     -H "X-Api-Key: $api_key" \
@@ -375,18 +370,16 @@ rotate_arr_password() {
     >/dev/null
 }
 
-# Update qBittorrent password in one arr app's DownloadClients SQLite table.
-# A disabled arr app has never started and so has no DownloadClients table
-# (or, if it's the very first table access, sqlite3.connect() will have
-# just created an empty 0-byte file for it): skip with a note rather than
-# crash the whole rotation over an app that was never wired up.
-# Args: app_name db_path new_password
-update_arr_qbt_password() {
-  local app_name="$1"
-  local db_path="$2"
-  local new_password="$3"
-
-  if ! python3 - <<PYEOF; then
+# The Python run as the condition of an `if` in this file is a function of
+# its own, like this one, rather than a here document opened on the `if`
+# line itself: kcov stops reading a script at that line, so it would
+# measure nothing below it.
+#
+# Sets the qBittorrent password in one arr app's DownloadClients table, for
+# update_arr_qbt_password. Args: db_path new_password
+write_arr_qbt_password() {
+  local db_path="$1" new_password="$2"
+  python3 - <<PYEOF
 import sqlite3, json
 conn = sqlite3.connect('$db_path')
 try:
@@ -403,20 +396,29 @@ except sqlite3.OperationalError:
 finally:
     conn.close()
 PYEOF
+}
+
+# Update qBittorrent password in one arr app's DownloadClients SQLite table.
+# A disabled arr app has never started and so has no DownloadClients table
+# (or, if it's the very first table access, sqlite3.connect() will have
+# just created an empty 0-byte file for it): skip with a note rather than
+# crash the whole rotation over an app that was never wired up.
+# Args: app_name db_path new_password
+update_arr_qbt_password() {
+  local app_name="$1"
+  local db_path="$2"
+  local new_password="$3"
+
+  if ! write_arr_qbt_password "$db_path" "$new_password"; then
     echo "[$app_name DB] No DownloadClients table yet (app never started), skipping."
   fi
 }
 
-# Update SABnzbd credentials in one arr app's DownloadClients SQLite table.
-# Same disabled-app caveat as update_arr_qbt_password() above.
-# Args: app_name db_path new_password new_api_key
-update_arr_sabnzbd_credentials() {
-  local app_name="$1"
-  local db_path="$2"
-  local new_password="$3"
-  local new_api_key="$4"
-
-  if ! python3 - <<PYEOF; then
+# Sets the SABnzbd credentials in one arr app's DownloadClients table, for
+# update_arr_sabnzbd_credentials. Args: db_path new_password new_api_key
+write_arr_sabnzbd_credentials() {
+  local db_path="$1" new_password="$2" new_api_key="$3"
+  python3 - <<PYEOF
 import json
 import sqlite3
 conn = sqlite3.connect('$db_path')
@@ -435,6 +437,18 @@ except sqlite3.OperationalError:
 finally:
     conn.close()
 PYEOF
+}
+
+# Update SABnzbd credentials in one arr app's DownloadClients SQLite table.
+# Same disabled-app caveat as update_arr_qbt_password() above.
+# Args: app_name db_path new_password new_api_key
+update_arr_sabnzbd_credentials() {
+  local app_name="$1"
+  local db_path="$2"
+  local new_password="$3"
+  local new_api_key="$4"
+
+  if ! write_arr_sabnzbd_credentials "$db_path" "$new_password" "$new_api_key"; then
     echo "[$app_name DB] No DownloadClients table yet (app never started), skipping."
   fi
 }
@@ -485,30 +499,21 @@ VERIFY_SABNZBD_KEY=""
 # Per-app rotation functions (alphabetical by service)
 # ---------------------------------------------------------------------------
 
-rotate_audiobookshelf() {
-  # Audiobookshelf has no password rotation API without the current password;
-  # the bcrypt hash is written directly to the users table in absdatabase.sqlite
-  # while the app is stopped. Homepage talks to it with a JWT API token, not
-  # the password, so no consumer cascade is needed.
-  local new_password new_hash
-  new_password=$(gen_password)
-  new_hash=$(
-    python3 - <<PYEOF
+# A bcrypt hash of the given password. Args: password
+bcrypt_hash() {
+  local new_password="$1"
+  python3 - <<PYEOF
 import bcrypt
 
 print(bcrypt.hashpw('$new_password'.encode(), bcrypt.gensalt()).decode())
 PYEOF
-  )
+}
 
-  echo "[Audiobookshelf] Stopping container to update absdatabase.sqlite..."
-  stop_container audiobookshelf
-
-  # The users table only gets its 'root' row once Audiobookshelf's own
-  # first-run setup wizard has been completed: nothing in this stack
-  # automates that, so skip with a note rather than silently updating zero
-  # rows and reporting a password that was never actually written anywhere.
-  echo "[Audiobookshelf] Writing new password hash for user '${AUDIOBOOKSHELF_USER}'..."
-  if python3 - <<PYEOF; then
+# Writes the root user's new hash to absdatabase.sqlite, failing when there
+# is no such user yet. Args: new_hash
+write_audiobookshelf_hash() {
+  local new_hash="$1"
+  python3 - <<PYEOF
 import sqlite3
 
 conn = sqlite3.connect('$AUDIOBOOKSHELF_DB')
@@ -522,6 +527,26 @@ finally:
     conn.close()
 raise SystemExit(0 if updated else 1)
 PYEOF
+}
+
+rotate_audiobookshelf() {
+  # Audiobookshelf has no password rotation API without the current password;
+  # the bcrypt hash is written directly to the users table in absdatabase.sqlite
+  # while the app is stopped. Homepage talks to it with a JWT API token, not
+  # the password, so no consumer cascade is needed.
+  local new_password new_hash
+  new_password=$(gen_password)
+  new_hash=$(bcrypt_hash "$new_password")
+
+  echo "[Audiobookshelf] Stopping container to update absdatabase.sqlite..."
+  stop_container audiobookshelf
+
+  # The users table only gets its 'root' row once Audiobookshelf's own
+  # first-run setup wizard has been completed: nothing in this stack
+  # automates that, so skip with a note rather than silently updating zero
+  # rows and reporting a password that was never actually written anywhere.
+  echo "[Audiobookshelf] Writing new password hash for user '${AUDIOBOOKSHELF_USER}'..."
+  if write_audiobookshelf_hash "$new_hash"; then
     podman start "$(cname audiobookshelf)" >/dev/null
     # Audiobookshelf has no other host-readable record of its own password
     # (its bcrypt hash lives only in absdatabase.sqlite): persist it the same
@@ -560,6 +585,26 @@ rotate_bazarr() {
   SUMMARY_BAZARR_NEW="$new_password"
 }
 
+# Writes the content server user's new password to server-users.sqlite,
+# failing when there is no such user yet. Args: new_password
+write_calibre_server_password() {
+  local new_password="$1"
+  python3 - <<PYEOF
+import sqlite3
+
+conn = sqlite3.connect('$CALIBRE_USERS_DB')
+try:
+    cur = conn.execute("UPDATE users SET pw = ? WHERE name = ?", ('$new_password', '$CALIBRE_USER'))
+    conn.commit()
+    updated = cur.rowcount > 0
+except sqlite3.OperationalError:
+    updated = False
+finally:
+    conn.close()
+raise SystemExit(0 if updated else 1)
+PYEOF
+}
+
 rotate_calibre() {
   # Calibre has two independent logins that share the same password here for
   # simplicity: the content server (users in server-users.sqlite, read at
@@ -583,20 +628,7 @@ rotate_calibre() {
   # created through Calibre's own flow at least once: nothing in this
   # stack automates that first-run step, so skip with a note here rather
   # than crash the whole rotation over an app that hasn't been used yet.
-  if python3 - <<PYEOF; then
-import sqlite3
-
-conn = sqlite3.connect('$CALIBRE_USERS_DB')
-try:
-    cur = conn.execute("UPDATE users SET pw = ? WHERE name = ?", ('$new_password', '$CALIBRE_USER'))
-    conn.commit()
-    updated = cur.rowcount > 0
-except sqlite3.OperationalError:
-    updated = False
-finally:
-    conn.close()
-raise SystemExit(0 if updated else 1)
-PYEOF
+  if write_calibre_server_password "$new_password"; then
     echo "[Calibre] Wrote new password for content server user '${CALIBRE_USER}' to server-users.sqlite."
   else
     echo "[Calibre] No content server user '${CALIBRE_USER}' in server-users.sqlite yet, skipping."
@@ -648,27 +680,11 @@ except Exception:
 PYEOF
 }
 
-rotate_calibre_web() {
-  # Calibre-Web has no password API; the hash is written directly to app.db
-  # (werkzeug pbkdf2 format) while the app is stopped, then Homepage's
-  # credential is updated.
-  local new_password
-  new_password=$(gen_password)
-
-  local CALIBREWEB_USER
-  CALIBREWEB_USER=$(calibre_web_admin_user)
-  CALIBREWEB_USER="${CALIBREWEB_USER:-$CALIBREWEB_DEFAULT_USER}"
-
-  echo "[Calibre-Web] Stopping container to update app.db..."
-  stop_container calibre-web
-
-  # The 'admin' row has been observed to disappear from Calibre-Web's own
-  # user table sometime after its first real library gets configured and
-  # the app runs a while, for a reason not identified in the time
-  # available (see docs/ROTATION.md): check rowcount rather than silently
-  # claiming success when the UPDATE matched nothing.
-  echo "[Calibre-Web] Writing new password hash for user '${CALIBREWEB_USER}'..."
-  if python3 - <<PYEOF; then
+# Writes the admin's new password hash to Calibre-Web's app.db, failing when
+# there is no such user. Args: new_password user
+write_calibre_web_hash() {
+  local new_password="$1" CALIBREWEB_USER="$2"
+  python3 - <<PYEOF
 import hashlib
 import secrets
 import sqlite3
@@ -690,6 +706,29 @@ finally:
     conn.close()
 raise SystemExit(0 if updated else 1)
 PYEOF
+}
+
+rotate_calibre_web() {
+  # Calibre-Web has no password API; the hash is written directly to app.db
+  # (werkzeug pbkdf2 format) while the app is stopped, then Homepage's
+  # credential is updated.
+  local new_password
+  new_password=$(gen_password)
+
+  local CALIBREWEB_USER
+  CALIBREWEB_USER=$(calibre_web_admin_user)
+  CALIBREWEB_USER="${CALIBREWEB_USER:-$CALIBREWEB_DEFAULT_USER}"
+
+  echo "[Calibre-Web] Stopping container to update app.db..."
+  stop_container calibre-web
+
+  # The 'admin' row has been observed to disappear from Calibre-Web's own
+  # user table sometime after its first real library gets configured and
+  # the app runs a while, for a reason not identified in the time
+  # available (see docs/ROTATION.md): check rowcount rather than silently
+  # claiming success when the UPDATE matched nothing.
+  echo "[Calibre-Web] Writing new password hash for user '${CALIBREWEB_USER}'..."
+  if write_calibre_web_hash "$new_password" "$CALIBREWEB_USER"; then
     podman start "$(cname calibre-web)" >/dev/null
 
     python3 - <<PYEOF
@@ -789,9 +828,7 @@ rotate_jellyfin() {
   # metadata language, remote access): skip with a note rather than
   # aborting, mirroring rotate-api-keys.sh's rotate_jellyfin().
   local base_url="http://127.0.0.1:${JELLYFIN_HTTP_PORT}${JELLYFIN_BASE_URL}"
-  if [[ "$(container_curl jellyfin -s --fail \
-    "${base_url}/System/Info/Public" |
-    jq -r '.StartupWizardCompleted')" != "true" ]]; then
+  if [[ "$(container_curl jellyfin -s --fail "${base_url}/System/Info/Public" | jq -r '.StartupWizardCompleted')" != "true" ]]; then
     echo "[Jellyfin] Setup wizard not completed yet, skipping password rotation."
     echo "[Jellyfin] Finish it at http://localhost:${JELLYFIN_HTTP_PORT}/, then re-run"
     echo "[Jellyfin] 'make rotate_all SERVICE=jellyfin'."
@@ -807,10 +844,7 @@ rotate_jellyfin() {
   fi
 
   echo "[Jellyfin] Looking up the '${JELLYFIN_USERNAME}' user id..."
-  user_id=$(container_curl jellyfin -s --fail \
-    -H "Authorization: MediaBrowser Token=\"${api_key}\"" \
-    "${base_url}/Users" |
-    jq -r --arg name "$JELLYFIN_USERNAME" '.[] | select(.Name == $name) | .Id')
+  user_id=$(container_curl jellyfin -s --fail -H "Authorization: MediaBrowser Token=\"${api_key}\"" "${base_url}/Users" | jq -r --arg name "$JELLYFIN_USERNAME" '.[] | select(.Name == $name) | .Id')
   if [[ -z "$user_id" ]]; then
     echo "[Jellyfin] User '${JELLYFIN_USERNAME}' not found. Aborting Jellyfin rotation." >&2
     exit 1
@@ -885,13 +919,7 @@ rotate_nzbhydra2() {
   # {bcrypt} prefix and reads them at startup.
   local new_password new_hash
   new_password=$(gen_password)
-  new_hash=$(
-    python3 - <<PYEOF
-import bcrypt
-
-print(bcrypt.hashpw('$new_password'.encode(), bcrypt.gensalt()).decode())
-PYEOF
-  )
+  new_hash=$(bcrypt_hash "$new_password")
 
   # NZBHydra2 persists its config on shutdown; stop, edit, start.
   echo "[NZBHydra2] Stopping container and writing new bcrypt password hash..."
@@ -913,14 +941,9 @@ rotate_prowlarr() {
   SUMMARY_PROWLARR_NEW="$new_password"
 }
 
-rotate_qbittorrent() {
-  local new_password
-  new_password=$(gen_password)
-
-  # Read the current plain-text password from Sonarr's DownloadClients table.
-  local current_password
-  current_password=$(
-    python3 - <<PYEOF
+# The qBittorrent password Sonarr holds, which is the current one.
+sonarr_qbt_password() {
+  python3 - <<PYEOF
 import sqlite3, json
 conn = sqlite3.connect('$SONARR_DB')
 cur = conn.cursor()
@@ -931,7 +954,15 @@ if row:
     print(s.get('password', ''))
 conn.close()
 PYEOF
-  )
+}
+
+rotate_qbittorrent() {
+  local new_password
+  new_password=$(gen_password)
+
+  # Read the current plain-text password from Sonarr's DownloadClients table.
+  local current_password
+  current_password=$(sonarr_qbt_password)
 
   if [[ -z "$current_password" ]]; then
     echo "[qBittorrent] Could not read current password from Sonarr DB. Aborting qBittorrent rotation." >&2
@@ -969,10 +1000,7 @@ PYEOF
 
   echo "[qBittorrent] Setting new WebUI password..."
   local set_code
-  set_code=$(container_curl qbittorrent -sk -b /tmp/qbt_cookies.txt -o /dev/null \
-    -w '%{http_code}' \
-    --data-urlencode "json={\"web_ui_password\":\"${new_password}\"}" \
-    "https://${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}/api/v2/app/setPreferences")
+  set_code=$(container_curl qbittorrent -sk -b /tmp/qbt_cookies.txt -o /dev/null -w '%{http_code}' --data-urlencode "json={\"web_ui_password\":\"${new_password}\"}" "https://${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}/api/v2/app/setPreferences")
   if [[ "$set_code" != 2* ]]; then
     podman exec "$(cname qbittorrent)" rm -f /tmp/qbt_cookies.txt
     echo "[qBittorrent] setPreferences answered HTTP ${set_code}, so the new password was not applied. Aborting rotation." >&2
@@ -1612,24 +1640,29 @@ arr_login_ok() {
   # credentials are right or wrong; only the redirect target differs
   # (back to /login?...loginFailed=true on failure). Checking the status
   # code alone always reports success, so check the Location header instead.
-  location=$(container_curl "$app" -sk -D - -o /dev/null \
-    -d "username=${app}&password=${password}" \
-    "${scheme}://127.0.0.1:${port}/${base}/login" | tr -d '\r' | grep -i '^location:')
+  location=$(container_curl "$app" -sk -D - -o /dev/null -d "username=${app}&password=${password}" "${scheme}://127.0.0.1:${port}/${base}/login" | tr -d '\r' | grep -i '^location:')
   [[ -n "$location" && "$location" != *"loginFailed=true"* ]]
 }
 
 # The audiobookshelf image ships no curl, but it is a node image with global
 # fetch; the login check runs node inside the container instead.
+# The program is a quoted here document in a function of its own rather than
+# a multi line quoted argument, which kcov would count as shell lines that
+# never run.
+audiobookshelf_login_js() {
+  cat <<'JS'
+const [port, username, password] = process.argv.slice(1);
+fetch(`http://127.0.0.1:${port}/audiobookshelf/login`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ username, password }),
+}).then((res) => process.exit(res.status === 200 ? 0 : 1),
+        () => process.exit(1));
+JS
+}
+
 audiobookshelf_login_ok() {
-  podman exec "$(cname audiobookshelf)" node -e '
-    const [port, username, password] = process.argv.slice(1);
-    fetch(`http://127.0.0.1:${port}/audiobookshelf/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    }).then((res) => process.exit(res.status === 200 ? 0 : 1),
-            () => process.exit(1));
-  ' "$AUDIOBOOKSHELF_HTTP_PORT" "$AUDIOBOOKSHELF_USER" "$1"
+  podman exec "$(cname audiobookshelf)" node -e "$(audiobookshelf_login_js)" "$AUDIOBOOKSHELF_HTTP_PORT" "$AUDIOBOOKSHELF_USER" "$1"
 }
 
 # Bazarr's /bazarr/login route only accepts GET (POST returns 405); the real
@@ -1637,9 +1670,7 @@ audiobookshelf_login_ok() {
 # on a wrong password.
 bazarr_login_ok() {
   local code
-  code=$(container_curl bazarr -s -o /dev/null -w '%{http_code}' \
-    -X POST -d "username=bazarr&password=$1" \
-    "http://127.0.0.1:${BAZARR_HTTP_PORT}/bazarr/api/system/account?action=login")
+  code=$(container_curl bazarr -s -o /dev/null -w '%{http_code}' -X POST -d "username=bazarr&password=$1" "http://127.0.0.1:${BAZARR_HTTP_PORT}/bazarr/api/system/account?action=login")
   [[ "$code" == "204" ]]
 }
 
@@ -1648,9 +1679,7 @@ bazarr_login_ok() {
 # (basic auth over HTTPS with a self-signed certificate).
 calibre_login_ok() {
   local code
-  code=$(container_curl calibre -sk -o /dev/null -w '%{http_code}' \
-    -u "${CALIBRE_USER}:$1" \
-    "https://127.0.0.1:${CALIBRE_DESKTOP_HTTPS_PORT}/")
+  code=$(container_curl calibre -sk -o /dev/null -w '%{http_code}' -u "${CALIBRE_USER}:$1" "https://127.0.0.1:${CALIBRE_DESKTOP_HTTPS_PORT}/")
   [[ "$code" == "200" ]]
 }
 
@@ -1663,9 +1692,7 @@ calibre_login_ok() {
 # already confirms).
 calibre_content_server_ok() {
   local code
-  code=$(container_curl calibre -s -o /dev/null -w '%{http_code}' \
-    -u "${CALIBRE_USER}:$1" \
-    "http://127.0.0.1:${CALIBRE_GUI_WEB_HTTP_PORT}/ajax/library-info")
+  code=$(container_curl calibre -s -o /dev/null -w '%{http_code}' -u "${CALIBRE_USER}:$1" "http://127.0.0.1:${CALIBRE_GUI_WEB_HTTP_PORT}/ajax/library-info")
   [[ "$code" == "200" ]]
 }
 
@@ -1673,15 +1700,10 @@ calibre_web_login_ok() {
   # Whatever rotate_calibre_web() actually wrote to, which is not necessarily
   # the image default; fall back the same way it does so this still resolves
   # if the rotation was skipped.
-  local user="${SUMMARY_CALIBRE_WEB_USER:-}"
-  if [[ -z "$user" ]]; then
-    user=$(calibre_web_admin_user)
-    user="${user:-$CALIBREWEB_DEFAULT_USER}"
-  fi
+  local user="${SUMMARY_CALIBRE_WEB_USER:-$(calibre_web_admin_user)}"
+  user="${user:-$CALIBREWEB_DEFAULT_USER}"
   local code
-  code=$(container_curl calibre-web -s -o /dev/null -w '%{http_code}' \
-    -u "${user}:$1" \
-    "http://127.0.0.1:${CALIBRE_WEB_CONTAINER_HTTP_PORT}/opds/stats")
+  code=$(container_curl calibre-web -s -o /dev/null -w '%{http_code}' -u "${user}:$1" "http://127.0.0.1:${CALIBRE_WEB_CONTAINER_HTTP_PORT}/opds/stats")
   [[ "$code" == "200" ]]
 }
 
@@ -1718,26 +1740,29 @@ grafana_login_ok() {
 # requests: prime cookies, POST the login form, then confirm the root page
 # no longer redirects to /login/. Runs as a single in-container shell script
 # since container_curl only wraps one curl call.
+# The script, with the port, username and password (its argument) written
+# in, is a here document in a function of its own rather than a multi line
+# quoted argument, which kcov would count as shell lines that never run.
+jdownloader2_login_sh() {
+  cat <<EOF
+jar=\$(mktemp)
+curl -sk -c "\$jar" -o /dev/null "https://127.0.0.1:${JDOWNLOADER2_HTTP_PORT}/"
+curl -sk -b "\$jar" -c "\$jar" -o /dev/null \\
+  -d "username=${JDOWNLOADER2_USERNAME}&password=$1" \\
+  "https://127.0.0.1:${JDOWNLOADER2_HTTP_PORT}/login/login"
+code=\$(curl -sk -b "\$jar" -o /dev/null -w "%{http_code}" "https://127.0.0.1:${JDOWNLOADER2_HTTP_PORT}/")
+rm -f "\$jar"
+[ "\$code" = "200" ]
+EOF
+}
+
 jdownloader2_login_ok() {
-  podman exec "$(cname jdownloader2)" sh -c '
-    jar=$(mktemp)
-    curl -sk -c "$jar" -o /dev/null "https://127.0.0.1:'"${JDOWNLOADER2_HTTP_PORT}"'/"
-    curl -sk -b "$jar" -c "$jar" -o /dev/null \
-      -d "username='"${JDOWNLOADER2_USERNAME}"'&password='"$1"'" \
-      "https://127.0.0.1:'"${JDOWNLOADER2_HTTP_PORT}"'/login/login"
-    code=$(curl -sk -b "$jar" -o /dev/null -w "%{http_code}" "https://127.0.0.1:'"${JDOWNLOADER2_HTTP_PORT}"'/")
-    rm -f "$jar"
-    [ "$code" = "200" ]
-  '
+  podman exec "$(cname jdownloader2)" sh -c "$(jdownloader2_login_sh "$1")"
 }
 
 jellyfin_login_ok() {
   local code
-  code=$(container_curl jellyfin -s -o /dev/null -w '%{http_code}' -X POST \
-    -H 'Authorization: MediaBrowser Client="rotate-passwords", Device="script", DeviceId="rotate-passwords", Version="1.0"' \
-    -H "Content-Type: application/json" \
-    -d "{\"Username\":\"${JELLYFIN_USERNAME}\",\"Pw\":\"$1\"}" \
-    "http://127.0.0.1:${JELLYFIN_HTTP_PORT}${JELLYFIN_BASE_URL}/Users/AuthenticateByName")
+  code=$(container_curl jellyfin -s -o /dev/null -w '%{http_code}' -X POST -H 'Authorization: MediaBrowser Client="rotate-passwords", Device="script", DeviceId="rotate-passwords", Version="1.0"' -H "Content-Type: application/json" -d "{\"Username\":\"${JELLYFIN_USERNAME}\",\"Pw\":\"$1\"}" "http://127.0.0.1:${JELLYFIN_HTTP_PORT}${JELLYFIN_BASE_URL}/Users/AuthenticateByName")
   [[ "$code" == "200" ]]
 }
 
@@ -1748,9 +1773,7 @@ nzbhydra_login_ok() {
   # this check, it drives real failed-login attempts at NZBHydra2's own
   # brute-force IP blocking, which then locks out subsequent correct
   # attempts too until the retry loop's timeout is exhausted.
-  out=$(container_curl nzbhydra2 -sk -o /dev/null -w '%{http_code} %{redirect_url}' \
-    -d "username=admin&password=$1" \
-    "https://127.0.0.1:${NZBHYDRA2_HTTPS_PORT}/nzbhydra2/login")
+  out=$(container_curl nzbhydra2 -sk -o /dev/null -w '%{http_code} %{redirect_url}' -d "username=admin&password=$1" "https://127.0.0.1:${NZBHYDRA2_HTTPS_PORT}/nzbhydra2/login")
   [[ "$out" == 302* && "$out" != *"login?error"* ]]
 }
 
@@ -1766,9 +1789,7 @@ qbittorrent_api_ok() {
   # SID on 5.1.4 and a port suffixed QBT_SID_<port> on 5.2.2, hence the
   # substring match rather than one literal name.
   local response code
-  response=$(container_curl qbittorrent -sk -o /dev/null -D - -w '\n%{http_code}' \
-    "https://${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}/api/v2/auth/login" \
-    -d "username=qbittorrent&password=$1")
+  response=$(container_curl qbittorrent -sk -o /dev/null -D - -w '\n%{http_code}' "https://${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}/api/v2/auth/login" -d "username=qbittorrent&password=$1")
   code="${response##*$'\n'}"
   [[ "$code" == 2* ]] || return 1
   grep -qiE '^set-cookie:[[:space:]]*[^=]*SID[^=]*=..*' <<<"$response"
@@ -1776,8 +1797,7 @@ qbittorrent_api_ok() {
 
 sabnzbd_key_ok() {
   local body
-  body=$(container_curl sabnzbd -sk \
-    "https://127.0.0.1:${SABNZBD_HTTPS_PORT}/sabnzbd/api?mode=queue&output=json&apikey=$1")
+  body=$(container_curl sabnzbd -sk "https://127.0.0.1:${SABNZBD_HTTPS_PORT}/sabnzbd/api?mode=queue&output=json&apikey=$1")
   [[ "$body" == *'"queue"'* ]]
 }
 
