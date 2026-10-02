@@ -1091,17 +1091,23 @@ COVERAGE_SHELL_SCRIPTS := \
 # The JavaScript this repository writes, each tested by a tests/unit/*.test.js.
 COVERAGE_JS_SOURCES := configs/homepage/config/custom.js
 
+# Builds $$out/src.tar: the files git would commit (tracked, plus new ones
+# not ignored), minus any deleted in the working tree, each step checked,
+# so the containers never measure a partial tree.
 coverage_sources := git ls-files -z --cached --others --exclude-standard --deduplicate \
-	| tar --create --owner=0 --group=0 --numeric-owner --null --files-from=- \
-		--ignore-failed-read --file=-
+		>"$$out/all" || exit 1; \
+	xargs -0 sh -c 'for f do if [ -e "$$f" ] || [ -L "$$f" ]; then printf "%s\0" "$$f"; fi; done' sh \
+		<"$$out/all" >"$$out/list" || exit 1; \
+	tar --create --owner=0 --group=0 --numeric-owner --null --files-from="$$out/list" --file="$$out/src.tar" || exit 1
 coverage_unpack := set -e; mkdir /tmp/w; tar -x --no-same-owner -C /tmp/w; cd /tmp/w
 coverage_locked := --cap-drop=ALL --security-opt no-new-privileges
 coverage_sealed := $(coverage_locked) --network=none --read-only --tmpfs /tmp
 
 coverage:
 	@set -u; out="$$(mktemp -d)"; trap 'rm -rf "$$out"' EXIT; \
+	$(coverage_sources); \
 	mkdir "$$out/python" "$$out/shell" "$$out/js"; py=0; sh=0; js=0; \
-	$(coverage_sources) | $(COVERAGE_RUNTIME) run --rm --interactive $(coverage_locked) \
+	$(COVERAGE_RUNTIME) run <"$$out/src.tar" --rm --interactive $(coverage_locked) \
 		-v "$$out/python:/out:rw,Z" "$(COVERAGE_PYTHON_IMAGE)" sh -c '$(coverage_unpack); \
 			pip install --quiet --disable-pip-version-check --root-user-action=ignore \
 				--require-hashes --only-binary=:all: -r tests/unit/requirements.txt; \
@@ -1110,7 +1116,7 @@ coverage:
 			coverage xml -q --fail-under=0 -o /out/coverage.xml || status=1; \
 			coverage report || status=1; \
 			exit $$status' || py=$$?; \
-	$(coverage_sources) | $(COVERAGE_RUNTIME) run --rm --interactive $(coverage_sealed) \
+	$(COVERAGE_RUNTIME) run <"$$out/src.tar" --rm --interactive $(coverage_sealed) \
 		-v "$$out/shell:/out:rw,Z" "$(COVERAGE_KCOV_IMAGE)" sh -c '$(coverage_unpack); \
 			status=0; \
 			kcov --include-path=$(subst $(space),$(comma),$(addprefix /tmp/w/,$(COVERAGE_SHELL_SCRIPTS))) \
@@ -1118,7 +1124,7 @@ coverage:
 			python3 scripts/convert-kcov-coverage.py /tmp/w /out/kcov/run-shell-tests.sh.*/cobertura.xml \
 				/out/shell.xml $(COVERAGE_SHELL_SCRIPTS) || status=1; \
 			exit $$status' || sh=$$?; \
-	$(coverage_sources) | $(COVERAGE_RUNTIME) run --rm --interactive $(coverage_sealed) \
+	$(COVERAGE_RUNTIME) run <"$$out/src.tar" --rm --interactive $(coverage_sealed) \
 		-v "$$out/js:/out:rw,Z" "$(COVERAGE_NODE_IMAGE)" sh -c '$(coverage_unpack); \
 			status=0; node --test --experimental-test-coverage \
 				$(addprefix --test-coverage-include=,$(COVERAGE_JS_SOURCES)) \
