@@ -1,0 +1,11 @@
+{
+  "comment": [
+    "Buy Me a Coffee answers markdown-link-check with 403 on every run,",
+    "though the page is live: it refuses automated requests."
+  ],
+  "ignorePatterns": [
+    {
+      "pattern": "^https://www\\.buymeacoffee\\.com/"
+    }
+  ]
+}
