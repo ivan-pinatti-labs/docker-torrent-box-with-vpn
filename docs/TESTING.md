@@ -292,19 +292,25 @@ which is not a lock and is unchanged.
 The seven day window also holds back a security release, and Renovate
 cannot make an exception: it replays the header's command as written, so its
 pull request for a vulnerability alert fails to regenerate the lock and says
-so. Update that one package by hand, letting it past the window, in the same
-container, from `tests/unit`:
+so. Update that one package by hand, in the same container and from the
+lock's directory, letting it past the window and asking for its newest
+release (`--upgrade-package`; without it, uv keeps the version already in the
+lock, so a vulnerable dependency of a dependency would not move):
 
-```shell
-uv pip compile --generate-hashes --python-version=3.14 --exclude-newer=P7D \
+```bash
+podman run --rm -v "$PWD:/w:rw,Z" -w /w ghcr.io/astral-sh/uv:python3.14-trixie-slim \
+  uv pip compile --generate-hashes --python-version=3.14 --exclude-newer=P7D \
   --exclude-newer-package "<package>=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --upgrade-package "<package>" \
   --output-file=requirements.txt requirements.in
 ```
 
-Then edit the lock's header back to the standard command above, by hand.
-Left in, the per package date is fixed, so it would hold that package at
-today's releases for good. The lock itself does not change, and the next
-Renovate update replays the standard command once the fix is past the window.
+Then edit the lock's header back to the standard command above, by hand,
+removing `--exclude-newer-package` (uv does not record `--upgrade-package`
+there). Left in, the per package date is fixed, so it would hold that
+package at today's releases for good. The rest of the lock does not change,
+and the next Renovate update replays the standard command once the fix is
+past the window.
 
 ## Adding a test
 
