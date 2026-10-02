@@ -38,6 +38,19 @@ STORAGE_FOLDER="${STORAGE_FOLDER:-$(env_value STORAGE_FOLDER || printf './storag
 DOWNLOADS_WARN_GB="${DOWNLOADS_WARN_GB:-$(env_value DOWNLOADS_WARN_GB || printf '500')}"
 DOWNLOADS_CRIT_GB="${DOWNLOADS_CRIT_GB:-$(env_value DOWNLOADS_CRIT_GB || printf '750')}"
 
+# Validated rather than trusted. Compared against a value that is not a whole
+# number, the threshold test below prints "integer expression expected" and
+# reads as false, so a typo in either one fell through to the OK line whatever
+# the downloads weighed.
+for threshold in DOWNLOADS_WARN_GB DOWNLOADS_CRIT_GB; do
+  case "${!threshold}" in
+  '' | *[!0-9]*)
+    echo "ERROR: ${threshold} must be a whole number of gigabytes, got '${!threshold}'." >&2
+    exit 1
+    ;;
+  esac
+done
+
 bytes_for() {
   local path="$1"
   local output

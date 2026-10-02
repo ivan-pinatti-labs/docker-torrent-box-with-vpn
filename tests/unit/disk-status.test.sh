@@ -43,8 +43,8 @@ run() {
 }
 
 check() {
-  local name="${1}" want="${2}"
-  if [[ "${__status}" -ne 0 ]]; then
+  local name="${1}" want="${2}" status="${3:-0}"
+  if [[ "${__status}" -ne "${status}" ]]; then
     echo "FAIL ${name}: exit ${__status}" >&2
     cat "${__scratch}/out" >&2
     __failures=$((__failures + 1))
@@ -76,6 +76,11 @@ check "lists the largest log folders" "./logs/app$"
 printf 'DOWNLOADS_CRIT_GB=0\n' >"${repo}/.env"
 run
 check "is critical at the critical threshold" "^CRITICAL: downloads are 0G, at or above 0G.$"
+
+printf 'DOWNLOADS_WARN_GB=lots\n' >"${repo}/.env"
+run
+check "refuses a threshold that is not a whole number" \
+  "^ERROR: DOWNLOADS_WARN_GB must be a whole number of gigabytes, got 'lots'.$" 1
 
 if [[ "${__failures}" -gt 0 ]]; then
   echo "${__failures} failed" >&2
