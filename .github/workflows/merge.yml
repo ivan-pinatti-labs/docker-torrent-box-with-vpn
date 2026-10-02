@@ -34,15 +34,21 @@ jobs:
     steps:
       - name: Create Tag
         id: tag_version
-        uses: mathieudutour/github-tag-action@a22cf08638b34d5badda920f9daf6e72c477b07b # v6.2
+        uses: mathieudutour/github-tag-action@af99e60ce8132224b8e6ebab5023449fe256ed46 # v7.0.0
         with:
           dry_run: false
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          release_branches: .*
+          # v7 matches the whole branch name, and this workflow runs only on a
+          # push to main, so that is the one branch named.
+          release_branches: main
 
   create_release:
     name: Create Release
     needs: [create_tag]
+    # v7 calculates no tag when no commit since the last one is eligible (all
+    # marked [no-release], say, or a re-run with nothing new). There is then
+    # nothing to release.
+    if: needs.create_tag.outputs.new_tag != ''
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
