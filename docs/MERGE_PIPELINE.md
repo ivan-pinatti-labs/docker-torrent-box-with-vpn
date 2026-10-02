@@ -97,6 +97,13 @@ successful, which would let an untested pull request merge. A status that a
 workflow chooses whether to write, and what to write, does not have that
 failure mode: absent reads as waiting, not as passed.
 
+`SonarQube` also runs on every pull request, from
+`.github/workflows/sonarqube.yml`, and fails when the SonarQube Cloud quality
+gate fails. It is not a required context yet, so a red `SonarQube` does not
+block a merge today. It becomes required in a later pull request, which also
+removes `codeql.yml`, the analysis it replaces. What it scans and what it
+leaves out is in `sonar-project.properties`.
+
 ## `Review Verified`, and the bug it exists to fix
 
 A green `CodeRabbit` check does not mean a review happened. CodeRabbit posts
