@@ -633,6 +633,33 @@
       groupSlug: "test-dependencies",
       addLabels: ["python"],
     },
+    // The development container's base image, pinned by digest in
+    // .devcontainer/Dockerfile since #211. This rule was missed when that
+    // landed, which meant the digest could never move: GHCR returns no release
+    // timestamp for a digest, and under Renovate's default
+    // minimumReleaseAgeBehaviour (timestamp-required) the repository wide seven
+    // day minimumReleaseAge treats a release it cannot date as one that has not
+    // aged yet. The bump was therefore held forever rather than refused
+    // loudly, which is the quiet direction to fail in: the container would
+    // simply have stayed on whichever digest #211 happened to pin.
+    //
+    // timestamp-optional lets the update be offered. The seven day window is
+    // not lost, it is applied upstream: ivan-pinatti-labs/devcontainer-images
+    // ages its own inputs through the same window, sends Ubuntu minor and
+    // major moves to a person, and publishes only from a reviewed merge to
+    // main, so a digest arriving here has already passed that gate. `Pin Only`
+    // grades the `ARG BASE_IMAGE=<image>@sha256:<digest>` line, so the ordinary
+    // bot lane approves it.
+    //
+    // Matches the rule the other five consumers of this image already carry.
+    {
+      matchManagers: ["dockerfile"],
+      matchFileNames: [".devcontainer/Dockerfile"],
+      groupName: "development container base image",
+      groupSlug: "devcontainer-base",
+      addLabels: ["tooling"],
+      minimumReleaseAgeBehaviour: "timestamp-optional",
+    },
   ],
 
   customManagers: [
