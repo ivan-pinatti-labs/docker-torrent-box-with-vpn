@@ -20,6 +20,9 @@
 # packageRules keep their tags fixed, so only the digest ever moves). The
 # rules are matched in order and none of the three is a suffix pattern, so
 # tests/requirements.txt, which is not a lock, keeps the default grammars.
+# scripts/requirements.in and its lock, the pyyaml integration-tests.yml
+# installs before seeding the stack, are graded the same way as the unit
+# tier's pair.
 allowed_paths:
   - .env.example
   - .pre-commit-config.yaml
@@ -27,6 +30,8 @@ allowed_paths:
   - tests/requirements.txt
   - tests/unit/requirements.in
   - tests/unit/requirements.txt
+  - scripts/requirements.in
+  - scripts/requirements.txt
   - Makefile
 
 rules:
@@ -36,6 +41,10 @@ rules:
   - path: tests/unit/requirements.txt
     grammars: [hash_locked_requirements]
   - path: tests/unit/requirements.in
+    grammars: [requirement_line]
+  - path: scripts/requirements.txt
+    grammars: [hash_locked_requirements]
+  - path: scripts/requirements.in
     grammars: [requirement_line]
   - path: Makefile
     grammars: [digest]

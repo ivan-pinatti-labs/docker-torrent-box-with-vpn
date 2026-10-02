@@ -1,0 +1,11 @@
+# What the Python scripts in this directory import beyond the standard
+# library, exact pins, compiled into the hash lock scripts/requirements.txt
+# next to this file. Regenerate that lock with the command in its own header,
+# never by hand. Renovate's pip-compile manager bumps a pin here and replays
+# the same command.
+#
+# integration-tests.yml installs it before seeding the stack, because
+# seed_all runs scripts/permissions.py with the system Python rather than
+# tests/.venv. Keep pyyaml equal to the pins in tests/requirements.txt and
+# tests/unit/requirements.in.
+pyyaml==6.0.3

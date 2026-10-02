@@ -9,7 +9,7 @@ cd "$repo_root"
 env_value() {
   local key="$1"
   local value
-  [ -f .env ] || return 1
+  [[ -f .env ]] || return 1
   value="$(
     awk -v key="$key" '
       index($0, key "=") == 1 {
@@ -23,7 +23,7 @@ env_value() {
       }
     ' .env
   )"
-  [ -n "$value" ] || return 1
+  [[ -n "$value" ]] || return 1
   printf '%s' "$value"
 }
 

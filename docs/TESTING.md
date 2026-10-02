@@ -287,6 +287,11 @@ dependencies of dependencies included. Keep pytest and pyyaml equal to their
 pins in `tests/requirements.txt`, the integration suite's own environment,
 which is not a lock and is unchanged.
 
+`scripts/requirements.in` and its lock `scripts/requirements.txt` work the
+same way, from `scripts`. They hold the pyyaml that `integration-tests.yml`
+installs before seeding the stack, since `scripts/permissions.py` runs there
+with the system Python rather than `tests/.venv`.
+
 #### A security fix younger than seven days
 
 The seven day window also holds back a security release, and Renovate

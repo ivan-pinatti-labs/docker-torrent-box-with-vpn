@@ -111,6 +111,11 @@ STACK_START_TIMEOUT=5 run "${bin}"
 check "gives up at the timeout" 1 err "1 of 2 enabled services are not running after 5s:"
 check "names the missing service" 1 err "  sonarr"
 
+# A leading zero is decimal, as it always was. Read as octal, 012 would be
+# ten seconds and the run would give up after 10s, not 15s.
+STACK_START_TIMEOUT=012 run "${bin}"
+check "reads a timeout with a leading zero as decimal" 1 err "after 15s:"
+
 true &
 dead=$!
 wait "${dead}"

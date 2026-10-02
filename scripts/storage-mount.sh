@@ -24,7 +24,7 @@ FSTAB_MARKER="# docker-torrent-box-with-vpn external storage"
 # fails outright. Same approach as scripts/disk-status.sh.
 env_value() {
   local key="$1" value
-  [ -f .env ] || return 1
+  [[ -f .env ]] || return 1
   value="$(
     awk -v key="$key" '
       index($0, key "=") == 1 {
@@ -36,7 +36,7 @@ env_value() {
       }
     ' .env
   )"
-  [ -n "$value" ] || return 1
+  [[ -n "$value" ]] || return 1
   printf '%s' "$value"
 }
 
@@ -71,7 +71,7 @@ die() {
 # the root of the filesystem, and install-boot would write it to /etc/fstab.
 # Resolve the parent explicitly and refuse if it is not there.
 mountpoint_parent="$(cd "$(dirname "$STORAGE_MOUNTPOINT")" 2>/dev/null && pwd || true)"
-[ -n "$mountpoint_parent" ] ||
+[[ -n "$mountpoint_parent" ]] ||
   die "cannot resolve $STORAGE_MOUNTPOINT: $(dirname "$STORAGE_MOUNTPOINT") does not exist. Create it, or fix STORAGE_MOUNTPOINT in .env."
 mountpoint_abs="$mountpoint_parent/$(basename "$STORAGE_MOUNTPOINT")"
 
@@ -114,8 +114,8 @@ AWK
 }
 
 require_configured() {
-  [ -n "$STORAGE_REMOTE" ] || die "STORAGE_REMOTE is empty in .env; external storage is not configured."
-  [ -f "$credentials_abs" ] || die "credentials file not found: $credentials_abs (copy .smbcredentials.example and fill it in)"
+  [[ -n "$STORAGE_REMOTE" ]] || die "STORAGE_REMOTE is empty in .env; external storage is not configured."
+  [[ -f "$credentials_abs" ]] || die "credentials file not found: $credentials_abs (copy .smbcredentials.example and fill it in)"
 }
 
 # Present in the mount table *and* actually usable. A CIFS session can die and
@@ -149,15 +149,15 @@ mount_options() {
   opts="${opts},dir_mode=$(env_value STORAGE_CIFS_DIR_MODE || printf '0775')"
   local extra context
   extra="$(env_value STORAGE_CIFS_EXTRA_OPTIONS || printf '')"
-  [ -n "$extra" ] && opts="${opts},${extra}"
+  [[ -n "$extra" ]] && opts="${opts},${extra}"
   context="$(env_value STORAGE_SELINUX_CONTEXT || printf '')"
-  [ -n "$context" ] && opts="${opts},context=${context}"
+  [[ -n "$context" ]] && opts="${opts},context=${context}"
   printf '%s' "$opts"
 }
 
 stack_containers_running() {
   command -v podman >/dev/null 2>&1 || return 1
-  [ -n "$(podman ps --filter "label=com.docker.compose.project=$(basename "$repo_root")" --format '{{.Names}}' 2>/dev/null)" ]
+  [[ -n "$(podman ps --filter "label=com.docker.compose.project=$(basename "$repo_root")" --format '{{.Names}}' 2>/dev/null)" ]]
 }
 
 verify_mount() {
@@ -173,14 +173,14 @@ verify_mount() {
   # a fixed name is one the share might already have, in which case the probe
   # would take somebody else's data with it.
   probe="$(mktemp -d "$mountpoint_abs/.storage-probe.XXXXXX" 2>/dev/null || true)"
-  if [ -z "$probe" ]; then
+  if [[ -z "$probe" ]]; then
     log "WARNING: could not create a probe directory on the share; skipping the hardlink check."
     return 0
   fi
   if mkdir -p "$probe/a" "$probe/b" 2>/dev/null &&
     : >"$probe/a/f" 2>/dev/null &&
     ln "$probe/a/f" "$probe/b/f" 2>/dev/null &&
-    [ "$(stat -c %h "$probe/a/f" 2>/dev/null)" = "2" ]; then
+    [[ "$(stat -c %h "$probe/a/f" 2>/dev/null)" = "2" ]]; then
     log "hardlinks: OK (link count 2 across subdirectories)"
   else
     log "WARNING: hardlink probe failed; imports will copy instead of link."
@@ -198,7 +198,7 @@ cmd_mount() {
   # The check that matters most. A mount that silently fails leaves the apps
   # writing into the local directory underneath, which looks completely normal
   # until the share comes back and that data is nowhere to be seen.
-  if [ -n "$(ls -A "$mountpoint_abs" 2>/dev/null)" ]; then
+  if [[ -n "$(ls -A "$mountpoint_abs" 2>/dev/null)" ]]; then
     die "$mountpoint_abs is not empty. Refusing to mount over existing data; move it aside first."
   fi
   log "mounting $STORAGE_REMOTE -> $mountpoint_abs"
@@ -227,7 +227,7 @@ cmd_unmount() {
 cmd_status() {
   log "remote:     ${STORAGE_REMOTE:-<not configured>}"
   log "mountpoint: $mountpoint_abs"
-  if [ -z "$STORAGE_REMOTE" ]; then
+  if [[ -z "$STORAGE_REMOTE" ]]; then
     log "state:      external storage not configured"
     return 0
   fi
@@ -257,7 +257,7 @@ cmd_status() {
   else
     log "boot:       no fstab entry (run: make storage_install_boot)"
   fi
-  [ "$mounted" = 1 ] || return 1
+  [[ "$mounted" = 1 ]] || return 1
 }
 
 fstab_line() {
@@ -292,7 +292,7 @@ cmd_install_boot() {
   log "A malformed fstab entry can affect boot. $FSTAB will be backed up first."
   printf 'Type yes to continue: '
   read -r reply
-  [ "$reply" = "yes" ] || die "aborted."
+  [[ "$reply" = "yes" ]] || die "aborted."
   local backup="${FSTAB}.$(date +%Y-%m-%d-%H%M%S).bak"
   $SUDO cp -a "$FSTAB" "$backup"
   log "backed up $FSTAB -> $backup"
@@ -310,7 +310,7 @@ cmd_install_boot() {
   candidate="$(mktemp)" || die "could not create a temporary file."
   entry_only="$(mktemp)" || die "could not create a temporary file."
   cat "$FSTAB" >"$candidate"
-  if [ -s "$candidate" ] && [ -n "$(tail -c 1 "$candidate")" ]; then
+  if [[ -s "$candidate" ]] && [[ -n "$(tail -c 1 "$candidate")" ]]; then
     printf '\n' >>"$candidate"
   fi
   printf '%s\n%s\n' "$FSTAB_MARKER" "$(fstab_line)" >>"$candidate"
@@ -329,7 +329,7 @@ cmd_install_boot() {
   rm -f "$candidate" "$entry_only"
   # Only the system fstab has a systemd generator behind it; reloading for
   # any other file would be a no-op that still stalls on polkit.
-  [ "$FSTAB" = /etc/fstab ] && { $SUDO systemctl daemon-reload 2>/dev/null || true; }
+  [[ "$FSTAB" = /etc/fstab ]] && { $SUDO systemctl daemon-reload 2>/dev/null || true; }
   log "installed. The share will mount at boot, once the network is up."
 }
 
@@ -359,7 +359,7 @@ AWK
   rm -f "$scrubbed"
   # Only the system fstab has a systemd generator behind it; reloading for
   # any other file would be a no-op that still stalls on polkit.
-  [ "$FSTAB" = /etc/fstab ] && { $SUDO systemctl daemon-reload 2>/dev/null || true; }
+  [[ "$FSTAB" = /etc/fstab ]] && { $SUDO systemctl daemon-reload 2>/dev/null || true; }
   log "removed."
 }
 

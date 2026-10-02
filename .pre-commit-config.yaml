@@ -361,9 +361,10 @@ repos:
         # `description` field, since JSON cannot carry a comment and check-json
         # validates that file.
         #
-        # tests/unit/requirements.txt is a generated hash lock: nothing in it
-        # is prose, and its hashes would read as a run of unknown words.
-        exclude: '^patches/|^configs/.*/config/|^configs/.*/custom-(cont-init|services)\.d/|^\.gitleaksignore$|^tests/unit/requirements\.txt$'
+        # tests/unit/requirements.txt and scripts/requirements.txt are
+        # generated hash locks: nothing in them is prose, and their hashes
+        # would read as a run of unknown words.
+        exclude: '^patches/|^configs/.*/config/|^configs/.*/custom-(cont-init|services)\.d/|^\.gitleaksignore$|^(tests/unit|scripts)/requirements\.txt$'
 
   # CI runs `pre-commit run --all-files`, while the commit-stage hooks only ever
   # see staged files and the push-stage ones only the range being pushed. A

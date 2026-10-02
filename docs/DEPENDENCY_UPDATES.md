@@ -20,6 +20,7 @@ manifest of their own.
 | GitHub Actions | native, `github-actions` | Workflow `uses:` versions under `.github/workflows/` |
 | pip, test suite | native, `pip_requirements` | `tests/requirements.txt` |
 | pip, unit tier | native, `pip-compile` | `tests/unit/requirements.in`, and the hash lock `tests/unit/requirements.txt` compiled from it |
+| pip, the scripts' pyyaml | native, `pip-compile` | `scripts/requirements.in`, and the hash lock `scripts/requirements.txt` compiled from it |
 | Docker image versions | custom | `.env.example`, behind a `# renovate: depName=...` annotation |
 | pip, inline in a workflow | custom | A `pip install pkg==x` line, behind a `# renovate:` annotation |
 | Go module and pypi pins in pre-commit | custom | `additional_dependencies` in `.pre-commit-config.yaml` |

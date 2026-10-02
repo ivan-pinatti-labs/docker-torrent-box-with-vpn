@@ -42,7 +42,7 @@ if ! cmd="$(printf '%s' "$payload" | jq -er '.tool_input.command // ""' 2>/dev/n
   deny_without_jq "The git guard could not parse the hook payload, so it cannot tell whether this command is safe. Refusing rather than allowing it unchecked."
 fi
 
-[ -n "$cmd" ] || exit 0
+[[ -n "$cmd" ]] || exit 0
 
 # Heredoc bodies come off first. They are data, but unlike a quoted span they run
 # across lines and each line can look exactly like a command of its own, so a
@@ -165,7 +165,7 @@ if matches_verbs "${AT_COMMAND}${WRAPPERS}${GIT}${GIT_OPTIONS}[[:space:]]+commit
   command -v git >/dev/null 2>&1 || exit 0
 
   session_dir="$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null)"
-  [ -n "$session_dir" ] || session_dir="${CLAUDE_PROJECT_DIR:-$PWD}"
+  [[ -n "$session_dir" ]] || session_dir="${CLAUDE_PROJECT_DIR:-$PWD}"
 
   # Only a `cd` that runs *before* the commit can decide where it lands. Taking
   # the first one anywhere in the string let `git commit -m x && cd /hooked`
@@ -215,11 +215,11 @@ if matches_verbs "${AT_COMMAND}${WRAPPERS}${GIT}${GIT_OPTIONS}[[:space:]]+commit
     fi
     ;;
   esac
-  if [ "$session_is_candidate" = yes ]; then
+  if [[ "$session_is_candidate" = yes ]]; then
     candidates="$candidates
 $session_dir"
   fi
-  [ -n "$candidates" ] || candidates="$session_dir"
+  [[ -n "$candidates" ]] || candidates="$session_dir"
 
   # `git -c core.hooksPath=<dir> commit` applies to that one command, so asking
   # the repository where its hooks live answers about a different directory than
@@ -263,12 +263,12 @@ $session_dir"
       grep -oE "${AT_COMMAND}${WRAPPERS}${GIT}${GIT_OPTIONS}[[:space:]]+commit([[:space:]]|\$)" |
       grep -c .
   )"
-  if [ -n "$hooks_override" ] && [ "${commit_count:-0}" -gt 1 ]; then
+  if [[ -n "$hooks_override" ]] && [[ "${commit_count:-0}" -gt 1 ]]; then
     deny "This command carries a command-scoped core.hooksPath and more than one git commit, so there is no way to tell which commit the override belongs to. Run the commits as separate commands."
   fi
 
   while IFS= read -r candidate; do
-    [ -n "$candidate" ] || continue
+    [[ -n "$candidate" ]] || continue
     case "$candidate" in
     /*) : already absolute ;;
     *) candidate="$session_dir/$candidate" ;;
@@ -281,9 +281,9 @@ $session_dir"
     # Only repositories that actually configure pre-commit are held to this.
     # Without the check, every unrelated repository this agent ever commits in
     # would be refused for missing a hook it never wanted.
-    [ -n "$toplevel" ] && [ -f "$toplevel/.pre-commit-config.yaml" ] || continue
+    [[ -n "$toplevel" ]] && [[ -f "$toplevel/.pre-commit-config.yaml" ]] || continue
 
-    if [ -n "$hooks_override" ]; then
+    if [[ -n "$hooks_override" ]]; then
       hooks_dir="$hooks_override"
     else
       # --git-path rather than a hardcoded .git/hooks: it resolves core.hooksPath
@@ -296,7 +296,7 @@ $session_dir"
     *) hooks_dir="$toplevel/$hooks_dir" ;;
     esac
 
-    if [ ! -x "$hooks_dir/pre-commit" ]; then
+    if [[ ! -x "$hooks_dir/pre-commit" ]]; then
       deny "This repository configures pre-commit, but ${hooks_dir}/pre-commit does not exist, so this commit would run no hooks at all and still report success. That is how two commits left an unhooked clone on 2026-08-12 and failed CI on findings the hooks catch, and the same gap would let an unscanned secret through. Run 'pre-commit install' in ${toplevel} first, then repeat this command."
     fi
   done <<EOF
@@ -314,12 +314,12 @@ if matches_verbs "${AT_COMMAND}${WRAPPERS}${GIT}${GIT_OPTIONS}[[:space:]]+${WORK
   # it finds no containers and this guard quietly passes everything.
   root="${CLAUDE_PROJECT_DIR:-$PWD}"
   project="${COMPOSE_PROJECT_NAME:-}"
-  if [ -z "$project" ] && [ -f "$root/.env" ]; then
+  if [[ -z "$project" ]] && [[ -f "$root/.env" ]]; then
     project="$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' "$root/.env" | head -1 | tr -d '"'"'"'')"
   fi
-  [ -n "$project" ] || project="$(basename "$root")"
+  [[ -n "$project" ]] || project="$(basename "$root")"
   running="$(podman ps --filter "label=com.docker.compose.project=${project}" --format '{{.Names}}' 2>/dev/null)"
-  if [ -n "$running" ]; then
+  if [[ -n "$running" ]]; then
     deny "The stack is running, so this would rewrite a working tree the containers are actively writing to. pre-commit stashes the tree, and on 2026-07-07 that rewrote tracked runtime files mid-flight and corrupted live SQLite databases. Run 'make stop_all' first, then repeat this command. Do not reach for --no-verify: that skips the secret scanning and is refused separately."
   fi
 fi

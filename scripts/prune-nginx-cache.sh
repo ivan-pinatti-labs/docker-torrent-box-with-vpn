@@ -9,7 +9,7 @@ cd "$repo_root"
 env_value() {
   local key="$1"
   local value
-  [ -f .env ] || return 1
+  [[ -f .env ]] || return 1
   value="$(
     awk -v key="$key" '
       index($0, key "=") == 1 {
@@ -23,7 +23,7 @@ env_value() {
       }
     ' .env
   )"
-  [ -n "$value" ] || return 1
+  [[ -n "$value" ]] || return 1
   printf '%s' "$value"
 }
 
@@ -36,7 +36,7 @@ if ! command -v "$CONTAINER_RUNTIME" >/dev/null 2>&1; then
   exit 1
 fi
 
-if [ ! -d "$NGINX_CACHE_DIR" ]; then
+if [[ ! -d "$NGINX_CACHE_DIR" ]]; then
   echo "No nginx cache directory found at ${NGINX_CACHE_DIR}."
   exit 0
 fi
@@ -69,7 +69,7 @@ y | Y | yes | YES) : ;;
   ;;
 esac
 
-if [ "$nginx_was_running" = true ]; then
+if [[ "$nginx_was_running" = true ]]; then
   echo "Stopping nginx..."
   "$CONTAINER_RUNTIME" stop nginx
 fi
@@ -78,7 +78,7 @@ find "$NGINX_CACHE_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 mkdir -p "$NGINX_CACHE_DIR"
 echo "Pruned nginx cache under ${NGINX_CACHE_DIR}."
 
-if [ "$nginx_was_running" = true ]; then
+if [[ "$nginx_was_running" = true ]]; then
   echo "Starting nginx..."
   "$CONTAINER_RUNTIME" start nginx
 fi

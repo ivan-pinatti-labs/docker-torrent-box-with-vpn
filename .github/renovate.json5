@@ -11,7 +11,8 @@
   // enabled by default except `pre-commit`, switched on below, and
   // `pip_requirements` needed the `ignorePaths` override below it to actually
   // reach tests/requirements.txt at all. A fourth native manager,
-  // `pip-compile`, reads the unit tier's hash lock, tests/unit/requirements.txt;
+  // `pip-compile`, reads the two hash locks, the unit tier's
+  // tests/unit/requirements.txt and the scripts' scripts/requirements.txt;
   // see the `"pip-compile"` block below.
   //
   // What remains a customManager, and why: Docker image versions pinned in
@@ -61,12 +62,17 @@
   // tests/requirements.txt, which is not a lock. `--exclude-newer=P7D` in the
   // header is a rolling window, so a replay never resolves a release younger
   // than seven days, transitive ones included, matching minimumReleaseAge.
-  // This manager ships with no file pattern of its own, so this one path is
+  // This manager ships with no file pattern of its own, so these paths are
   // all it reads; that is also why tests/requirements.txt, which has no
   // compile header, never reaches it. The ignorePaths override above is what
-  // lets it see a file under tests/ at all.
+  // lets it see a file under tests/ at all. scripts/requirements.txt is the
+  // same kind of lock, for the pyyaml integration-tests.yml installs before
+  // seeding the stack.
   "pip-compile": {
-    managerFilePatterns: ["/^tests/unit/requirements\\.txt$/"],
+    managerFilePatterns: [
+      "/^tests/unit/requirements\\.txt$/",
+      "/^scripts/requirements\\.txt$/",
+    ],
   },
 
   // Kept on for its warnings, not for the overview of pending updates. Two
@@ -645,11 +651,12 @@
       groupSlug: "github-actions",
       addLabels: ["github-actions"],
     },
-    // Both test environments in one pull request: tests/requirements.txt
-    // (pip_requirements) for the integration suite and the unit tier's
-    // tests/unit/requirements.txt lock (pip-compile). pytest and pyyaml are
-    // pinned in both and have to stay equal, which a shared group keeps true
-    // without anyone remembering to.
+    // Every Python environment in one pull request: tests/requirements.txt
+    // (pip_requirements) for the integration suite, and the two locks
+    // (pip-compile), the unit tier's tests/unit/requirements.txt and
+    // scripts/requirements.txt. pyyaml is pinned in all three and pytest in
+    // the first two, and they have to stay equal, which a shared group keeps
+    // true without anyone remembering to.
     {
       matchManagers: ["pip_requirements", "pip-compile"],
       groupName: "test dependencies",
@@ -657,12 +664,12 @@
       addLabels: ["python"],
     },
     // pip_requirements' own default pattern matches any requirements.txt,
-    // the unit tier's lock included, where it would bump a version line and
-    // leave that package's hashes stale, so the next `make coverage` fails
-    // its hash check. pip-compile owns that file; see `"pip-compile"` above.
+    // both locks included, where it would bump a version line and leave that
+    // package's hashes stale, so the next install fails its hash check.
+    // pip-compile owns those files; see `"pip-compile"` above.
     {
       matchManagers: ["pip_requirements"],
-      matchFileNames: ["tests/unit/requirements.txt"],
+      matchFileNames: ["tests/unit/requirements.txt", "scripts/requirements.txt"],
       enabled: false,
     },
     // The images `make coverage` runs, pinned in the Makefile, move by

@@ -77,6 +77,16 @@ printf 'DOWNLOADS_CRIT_GB=0\n' >"${repo}/.env"
 run
 check "is critical at the critical threshold" "^CRITICAL: downloads are 0G, at or above 0G.$"
 
+# A leading zero is decimal, as it always was. Nine gigabytes of downloads,
+# as a sparse file (du -b counts its apparent size), sit between a warning
+# threshold of 08 and a critical one of 010, which read as octal would be 8 and
+# make this critical.
+truncate -s 9G "${repo}/media/torrents/big/file"
+printf 'DATA_FOLDER=./media\nDOWNLOADS_WARN_GB=08\nDOWNLOADS_CRIT_GB=010\n' >"${repo}/.env"
+run
+check "reads a threshold with a leading zero as decimal" "^WARNING: downloads are 9G, at or above 08G.$"
+rm "${repo}/media/torrents/big/file"
+
 printf 'DOWNLOADS_WARN_GB=lots\n' >"${repo}/.env"
 run
 check "refuses a threshold that is not a whole number" \

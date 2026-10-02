@@ -4,14 +4,17 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
+# Nothing at the workflow level: only the two jobs that write a tag or a
+# release get a token that can write.
+permissions: {}
 
 jobs:
   checkout:
     name: Checkout
     runs-on: ubuntu-latest
     timeout-minutes: 1
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -25,6 +28,9 @@ jobs:
     needs: [checkout]
     runs-on: ubuntu-latest
     timeout-minutes: 3
+    # The tag action pushes the new tag through the API.
+    permissions:
+      contents: write
     outputs:
       previous_tag: ${{ steps.tag_version.outputs.previous_tag }}
       previous_version: ${{ steps.tag_version.outputs.previous_version }}
@@ -51,6 +57,8 @@ jobs:
     if: needs.create_tag.outputs.new_tag != ''
     runs-on: ubuntu-latest
     timeout-minutes: 3
+    permissions:
+      contents: write
     steps:
       # ncipollo/release-action wrapped exactly this: a release with a given
       # body plus GitHub's own generated notes appended, nothing this
