@@ -19,10 +19,13 @@ manifest of their own.
 | pre-commit hook revisions | native, `pre-commit` | `.pre-commit-config.yaml`, the `rev:` of each hook repo |
 | GitHub Actions | native, `github-actions` | Workflow `uses:` versions under `.github/workflows/` |
 | pip, test suite | native, `pip_requirements` | `tests/requirements.txt` |
+| pip, unit tier | native, `pip-compile` | `tests/unit/requirements.in`, and the hash lock `tests/unit/requirements.txt` compiled from it |
+| pip, the scripts' pyyaml | native, `pip-compile` | `scripts/requirements.in`, and the hash lock `scripts/requirements.txt` compiled from it |
 | Docker image versions | custom | `.env.example`, behind a `# renovate: depName=...` annotation |
 | pip, inline in a workflow | custom | A `pip install pkg==x` line, behind a `# renovate:` annotation |
 | Go module and pypi pins in pre-commit | custom | `additional_dependencies` in `.pre-commit-config.yaml` |
 | Docker images pinned inside a hook `entry:` | custom | `.pre-commit-config.yaml` and the workflow SARIF job |
+| `make coverage` images | custom | The `Makefile`, behind a `# renovate:` annotation; digest only |
 
 The first three used to be Dependabot's, reading the same three files it did; only the tool
 reading them changed; see "Retiring Dependabot" below. `pre-commit` is Renovate's own name for
@@ -30,16 +33,16 @@ its native manager and ships disabled upstream ("not supported by the pre-commit
 community" per its own warning, a statement about where bug reports go rather than a reason to
 leave hook revisions unwatched), switched on in `.github/renovate.json5`.
 
-The last four stay `customManagers` because none of them has a manifest file a native manager
+The last five stay `customManagers` because none of them has a manifest file a native manager
 could read: a bare regex is what covers an annotation sitting in the middle of a line other
-tooling owns, whether that line is `.env.example`, a workflow's `run:` step, or a pre-commit
-hook's `entry:`. The split is now entirely about manifest versus inline pin, not about which
-bot is reading which half. It exists because Renovate's own `pip_requirements` manager only
-reads requirements files. It would never see `pip install podman-compose==1.6.0` sitting inside
-a workflow's `run:` step, so a pin left unwatched there rots silently, which is exactly how CI
-once ended up installing whatever version of `podman-compose` happened to be current. The
-`# renovate:` annotations are the seam that covers those inline pins, and the reasoning is
-spelled out in the header comment of
+tooling owns, whether that line is `.env.example`, a workflow's `run:` step, a pre-commit
+hook's `entry:` or a Makefile variable. The split is now entirely about manifest versus inline
+pin, not about which bot is reading which half. It exists because Renovate's own
+`pip_requirements` manager only reads requirements files. It would never see
+`pip install podman-compose==1.6.0` sitting inside a workflow's `run:` step, so a pin left
+unwatched there rots silently, which is exactly how CI once ended up installing whatever
+version of `podman-compose` happened to be current. The `# renovate:` annotations are the seam
+that covers those inline pins, and the reasoning is spelled out in the header comment of
 [`.github/renovate.json5`](../.github/renovate.json5); this page reuses that reasoning rather
 than restating it differently.
 

@@ -86,7 +86,10 @@ def read_env(env_file: Path) -> dict[str, str]:
         else:
             # Only an unquoted value can carry a trailing comment, and only when
             # the # is preceded by whitespace: a bare # is legal inside a value.
-            value = re.split(r"\s+#", value, maxsplit=1)[0].strip()
+            # One whitespace character, not a run of them: the comment starts at
+            # the same #, strip() drops the rest of the run, and `\s+#` had to
+            # try every space of a long run from every position before failing.
+            value = re.split(r"\s#", value, maxsplit=1)[0].strip()
         values[m.group(1)] = value
     return values
 
@@ -133,10 +136,11 @@ def is_enabled(name: str, profiles: dict[str, bool]) -> bool:
     return profiles.get(var, True)
 
 
-def main() -> int:
+def main() -> None:
+    """Write OUTPUT_FILE. A failure raises SystemExit; reaching the end is success."""
     if not ENV_FILE.is_file():
         print(f"{ENV_FILE} does not exist yet, skipping.", file=sys.stderr)
-        return 0
+        return
 
     profiles = read_profiles(ENV_FILE)
     sections = yaml.safe_load(expand(TEMPLATE_FILE.read_text(), read_env(ENV_FILE)))
@@ -176,8 +180,6 @@ def main() -> int:
     except PermissionError:
         pass
 
-    return 0
-
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

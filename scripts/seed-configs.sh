@@ -35,11 +35,14 @@ fi
 
 echo ""
 echo "[$LIVE] already exists."
-select choice in "Skip (keep existing)" "Review diff" "Replace with $(basename "$EXAMPLE")"; do
+# Computed once rather than inside the case pattern below, where kcov cannot
+# see the command substitution run and reports the pattern line as uncovered.
+replace="Replace with $(basename "$EXAMPLE")"
+select choice in "Skip (keep existing)" "Review diff" "$replace"; do
   case "$choice" in
   "Skip (keep existing)") break ;;
   "Review diff") diff -u "$LIVE" "$EXAMPLE" || true ;;
-  "Replace with $(basename "$EXAMPLE")")
+  "$replace")
     cp "$EXAMPLE" "$LIVE"
     echo "[$LIVE] Replaced."
     break

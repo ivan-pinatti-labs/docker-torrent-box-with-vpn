@@ -40,12 +40,8 @@ on:
   # integration-tests.yml's suite job has to.
   merge_group:
 
-permissions:
-  contents: read
-  # dorny/paths-filter reads the PR's changed files through the REST API on
-  # pull_request events rather than diffing locally, so the changes job cannot
-  # publish its output without this.
-  pull-requests: read
+# Nothing at the workflow level: each job states what its own token may do.
+permissions: {}
 
 # A push supersedes whatever is still running for the same PR, so a rapid
 # series of pushes does not leave several full validations racing each other
@@ -68,6 +64,8 @@ jobs:
     # never enough even ignoring that.
     timeout-minutes: 8
     if: github.event_name != 'workflow_dispatch' || inputs.job_scope != 'tests'
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -85,7 +83,7 @@ jobs:
         # Python/Node-based hooks do. ubuntu-latest doesn't ship it.
         shell: bash
         run: |
-          curl -sSL -o shfmt \
+          curl -sSL --proto '=https' -o shfmt \
             https://github.com/mvdan/sh/releases/download/v3.11.0/shfmt_v3.11.0_linux_amd64
           echo "1904ec6bac715c1d05cd7f6612eec8f67a625c3749cb327e5bfb4127d09035ff  shfmt" | sha256sum --check
           chmod +x shfmt
@@ -161,18 +159,24 @@ jobs:
       # all-files-sweep is skipped because it *is* `pre-commit run --all-files`.
       # It exists to give a local push the whole-repository view CI gets for
       # free here, and running it would recurse into the work already in flight.
+      #
+      # coverage is skipped because it is `make coverage`, which the SonarQube
+      # job (sonarqube.yml) already runs on every pull request and reports to
+      # SonarQube Cloud. It is a pre-push hook so a local push finds out first.
       - name: Pre-commit Run
         uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
         with:
           extra_args: --all-files --hook-stage pre-push
         env:
-          SKIP: all-files-sweep
+          SKIP: all-files-sweep,coverage
 
   prerequisites:
     name: Prerequisite Checks
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: github.event_name != 'workflow_dispatch' || inputs.job_scope != 'checks'
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -210,7 +214,7 @@ jobs:
           # through the annotation below; see the customManager in
           # .github/renovate.json5.
           # renovate: datasource=pypi depName=podman-compose
-          pip install podman-compose==1.6.0
+          pip install podman-compose==1.6.0 --only-binary=:all:
 
       - name: Create .env file
         shell: bash
@@ -300,7 +304,7 @@ jobs:
         continue-on-error: true
         run: |
           # renovate: datasource=pypi depName=checkov
-          pip install checkov==3.3.19
+          pip install checkov==3.3.19 --only-binary=:all:
           checkov --quiet --compact --skip-check CKV_DOCKER_2 \
             --skip-framework secrets \
             --skip-path configs --skip-path data --skip-path storage \
@@ -341,7 +345,7 @@ jobs:
         continue-on-error: true
         run: |
           # renovate: datasource=pypi depName=zizmor
-          pip install zizmor==1.30.1
+          pip install zizmor==1.30.1 --only-binary=:all:
           zizmor --no-progress --format sarif .github/workflows/ \
             > sarif/zizmor.sarif || true
 
@@ -424,6 +428,12 @@ jobs:
     name: Detect Changed Paths
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      # dorny/paths-filter reads the PR's changed files through the REST API on
+      # pull_request events rather than diffing locally, so this job cannot
+      # publish its output without this.
+      pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
       renovate: ${{ steps.filter.outputs.renovate }}
@@ -467,8 +477,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: [changes]
-    # Narrower than the workflow default, which also grants pull-requests:
-    # read for dorny/paths-filter in the changes job. This job runs Renovate
+    # Unlike the changes job, no pull-requests: read. This job runs Renovate
     # through npx and has no reason to hold a token that can read PRs.
     permissions:
       contents: read
@@ -497,7 +506,7 @@ jobs:
         # a WARN by default and the command still exits 0, so without it this
         # job would pass on exactly the drift it exists to catch. Confirmed
         # against the pre-migration file: exit 1 with --strict, 0 without.
-        run: npx --yes --package renovate@42.99.0 renovate-config-validator --strict
+        run: npx --yes --ignore-scripts --package renovate@42.99.0 renovate-config-validator --strict
 
   docs_only_waiver:
     name: Docs Only Waiver

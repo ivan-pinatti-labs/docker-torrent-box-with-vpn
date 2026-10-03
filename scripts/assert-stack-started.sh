@@ -36,10 +36,10 @@ set -uo pipefail
 readonly TIMEOUT="${STACK_START_TIMEOUT:-300}"
 readonly INTERVAL=5
 
-# Validated rather than trusted, because a non-numeric value fails quietly in the
-# worst direction. This script runs under `set -uo pipefail` and deliberately not
-# `set -e`, so `[ "$elapsed" -ge "$TIMEOUT" ]` against a non-number prints
-# "integer expression expected" and returns non-zero, the bound never triggers,
+# Validated rather than trusted, because a non-numeric value fails quietly in
+# the worst direction. This script runs under `set -uo pipefail` and
+# deliberately not `set -e`, so the timeout comparison below, given a
+# non-number, prints an error and returns non-zero, the bound never triggers,
 # and the loop runs until `compose up` happens to exit. A typo in the variable
 # would therefore remove the timeout instead of reporting itself. Zero stays
 # valid: it means check once and report what is already running.
@@ -63,13 +63,13 @@ else
 fi
 
 project="${COMPOSE_PROJECT_NAME:-}"
-if [ -z "$project" ] && [ -f .env ]; then
+if [[ -z "$project" ]] && [[ -f .env ]]; then
   project="$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' .env | head -1 | tr -d '"')"
 fi
-[ -n "$project" ] || project="$(basename "$PWD")"
+[[ -n "$project" ]] || project="$(basename "$PWD")"
 
 expected="$("${COMPOSE[@]}" "$@" --profile enabled config --services 2>/dev/null | sort -u)"
-if [ -z "$expected" ]; then
+if [[ -z "$expected" ]]; then
   echo "ERROR: could not determine which services should be running." >&2
   echo "'${COMPOSE[*]} ... --profile enabled config --services' returned nothing," >&2
   echo "so there is no list to check the stack against. Refusing to report success." >&2
@@ -96,17 +96,19 @@ elapsed=0
 grace=0
 while :; do
   missing="$(comm -23 <(printf '%s\n' "$expected") <(running_services))"
-  [ -z "$missing" ] && break
-  if [ -n "$up_pid" ] && ! kill -0 "$up_pid" 2>/dev/null; then
-    [ "$grace" -ge 1 ] && break
+  [[ -z "$missing" ]] && break
+  if [[ -n "$up_pid" ]] && ! kill -0 "$up_pid" 2>/dev/null; then
+    [[ "$grace" -ge 1 ]] && break
     grace=$((grace + 1))
   fi
-  [ "$elapsed" -ge "$TIMEOUT" ] && break
+  # 10# because [[ ]] reads its operands as arithmetic, where a leading zero
+  # means octal: 012 would be ten seconds rather than the twelve it means.
+  [[ "$elapsed" -ge "10#$TIMEOUT" ]] && break
   sleep "$INTERVAL"
   elapsed=$((elapsed + INTERVAL))
 done
 
-if [ -n "$missing" ]; then
+if [[ -n "$missing" ]]; then
   echo "ERROR: $(printf '%s\n' "$missing" | wc -l) of ${expected_count} enabled services are not running after ${elapsed}s:" >&2
   printf '  %s\n' $missing >&2
   echo >&2

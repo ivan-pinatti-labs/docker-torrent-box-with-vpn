@@ -12,13 +12,42 @@
 # block scalars it keeps the digest and version grammars running and skips
 # only the action ones, which is what lets a `pip install checkov==X.Y.Z`
 # inside a `run: |` step still grade as a pin.
+#
+# The unit tier added three more surfaces, graded by grammars of their own
+# rather than the repository default, which none of them fit: the exact pins
+# in tests/unit/requirements.in, the hash lock compiled from them, and the two
+# images `make coverage` runs, pinned by digest in the Makefile (Renovate's
+# packageRules keep their tags fixed, so only the digest ever moves). The
+# rules are matched in order and none of the three is a suffix pattern, so
+# tests/requirements.txt, which is not a lock, keeps the default grammars.
+# scripts/requirements.in and its lock, the pyyaml integration-tests.yml
+# installs before seeding the stack, are graded the same way as the unit
+# tier's pair.
 allowed_paths:
   - .env.example
   - .pre-commit-config.yaml
   - .github/workflows/
   - tests/requirements.txt
+  - tests/unit/requirements.in
+  - tests/unit/requirements.txt
+  - scripts/requirements.in
+  - scripts/requirements.txt
+  - Makefile
 
 rules:
+  # Same packages, only versions and hashes moved, and every new hash one PyPI
+  # publishes for that release. A bump that pulls in a new package waits for a
+  # person.
+  - path: tests/unit/requirements.txt
+    grammars: [hash_locked_requirements]
+  - path: tests/unit/requirements.in
+    grammars: [requirement_line]
+  - path: scripts/requirements.txt
+    grammars: [hash_locked_requirements]
+  - path: scripts/requirements.in
+    grammars: [requirement_line]
+  - path: Makefile
+    grammars: [digest]
   - path: .github/workflows/
     grammars:
       - digest_strip

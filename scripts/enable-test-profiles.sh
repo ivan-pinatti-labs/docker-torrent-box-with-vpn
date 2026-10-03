@@ -20,7 +20,10 @@ readonly OVERRIDES_FILE=".env.tests"
   exit 1
 }
 
-while IFS= read -r line; do
+# Read through a descriptor opened here rather than `done <file`, a line kcov
+# never sees run.
+exec 3<"$OVERRIDES_FILE"
+while IFS= read -r -u 3 line; do
   # Skip blank lines and comments, same idiom .env itself uses.
   [[ -z "$line" || "$line" == \#* ]] && continue
   key="${line%%=*}"
@@ -30,7 +33,8 @@ while IFS= read -r line; do
     printf '%s\n' "$line" >>"$ENV_FILE"
   fi
   echo "[${ENV_FILE}] ${line}"
-done <"$OVERRIDES_FILE"
+done
+exec 3<&-
 
 # UID and GID ship as 1000 in .env.example, which is right on a typical bench and
 # wrong anywhere else. Three observability services mount the rootless podman
@@ -61,7 +65,10 @@ done
 #
 # Gated on the runtime rather than on a CI environment variable: the limitation
 # belongs to podman's version, and anyone on a 4.x runtime hits it identically.
-podman_major="$(podman version --format '{{.Client.Version}}' 2>/dev/null | cut -d. -f1)"
+#
+# `|| true` because under pipefail a host without podman (a Docker runtime)
+# failed this assignment, and errexit ended the script before seed-vpn-mock.sh.
+podman_major="$(podman version --format '{{.Client.Version}}' 2>/dev/null | cut -d. -f1 || true)"
 if [[ -n "$podman_major" ]] && ((podman_major < 5)); then
   for key in PODMAN_EXPORTER_PROFILE PODMAN_LIMITS_EXPORTER_PROFILE; do
     sed -i "s|^${key}=.*|${key}=disabled|" "$ENV_FILE"

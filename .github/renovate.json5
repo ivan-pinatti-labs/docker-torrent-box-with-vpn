@@ -10,7 +10,10 @@
   // and `pip_requirements` reads tests/requirements.txt. All three ship
   // enabled by default except `pre-commit`, switched on below, and
   // `pip_requirements` needed the `ignorePaths` override below it to actually
-  // reach tests/requirements.txt at all.
+  // reach tests/requirements.txt at all. A fourth native manager,
+  // `pip-compile`, reads the two hash locks, the unit tier's
+  // tests/unit/requirements.txt and the scripts' scripts/requirements.txt;
+  // see the `"pip-compile"` block below.
   //
   // What remains a customManager, and why: Docker image versions pinned in
   // .env.example behind a `# renovate: depName=...` annotation, Python
@@ -47,6 +50,30 @@
   // Renovate's own bare default (node_modules, bower_components), which
   // this repository has no use for either but which costs nothing to keep.
   ignorePaths: ["**/node_modules/**", "**/bower_components/**"],
+
+  // The unit tier's dependencies (`make coverage`) are a hash lock,
+  // tests/unit/requirements.txt, compiled from the exact pins in
+  // tests/unit/requirements.in with `uv pip compile --generate-hashes`.
+  // pip-compile reads the lock's header, bumps the pin in the .in file and
+  // replays that command, so the hashes move with the version.
+  // pip_requirements, which edits a requirements file line by line and would
+  // leave the hashes behind, is kept off the lock by a packageRule below and
+  // keeps reading the integration suite's plain pinned
+  // tests/requirements.txt, which is not a lock. `--exclude-newer=P7D` in the
+  // header is a rolling window, so a replay never resolves a release younger
+  // than seven days, transitive ones included, matching minimumReleaseAge.
+  // This manager ships with no file pattern of its own, so these paths are
+  // all it reads; that is also why tests/requirements.txt, which has no
+  // compile header, never reaches it. The ignorePaths override above is what
+  // lets it see a file under tests/ at all. scripts/requirements.txt is the
+  // same kind of lock, for the pyyaml integration-tests.yml installs before
+  // seeding the stack.
+  "pip-compile": {
+    managerFilePatterns: [
+      "/^tests/unit/requirements\\.txt$/",
+      "/^scripts/requirements\\.txt$/",
+    ],
+  },
 
   // Kept on for its warnings, not for the overview of pending updates. Two
   // lookup failures sat unseen on Mend's hosted dashboard for weeks: nothing
@@ -624,14 +651,47 @@
       groupSlug: "github-actions",
       addLabels: ["github-actions"],
     },
-    // tests/requirements.txt is the only file this manager reads in this
-    // repository, so scoping the rule to the manager alone, rather than
-    // pairing it with a file match, is enough to mean the same thing.
+    // Every Python environment in one pull request: tests/requirements.txt
+    // (pip_requirements) for the integration suite, and the two locks
+    // (pip-compile), the unit tier's tests/unit/requirements.txt and
+    // scripts/requirements.txt. pyyaml is pinned in all three and pytest in
+    // the first two, and they have to stay equal, which a shared group keeps
+    // true without anyone remembering to.
     {
-      matchManagers: ["pip_requirements"],
+      matchManagers: ["pip_requirements", "pip-compile"],
       groupName: "test dependencies",
       groupSlug: "test-dependencies",
       addLabels: ["python"],
+    },
+    // pip_requirements' own default pattern matches any requirements.txt,
+    // both locks included, where it would bump a version line and leave that
+    // package's hashes stale, so the next install fails its hash check.
+    // pip-compile owns those files; see `"pip-compile"` above.
+    {
+      matchManagers: ["pip_requirements"],
+      matchFileNames: ["tests/unit/requirements.txt", "scripts/requirements.txt"],
+      enabled: false,
+    },
+    // The images `make coverage` runs, pinned in the Makefile, move by
+    // digest only. A tag change is not a pin bump: python 3.14 is the
+    // interpreter CI provisions (PYTHON_VERSION in .env.example) and the one
+    // sonar-project.properties judges the code against, so it moves with
+    // those by hand, node 24 is an LTS line that moves by hand to the next
+    // one, and kcov publishes nothing but `latest`. Grouped under a
+    // name of their own, after the observability group above, which would
+    // otherwise claim docker.io/library/python here too because it matches by
+    // package name.
+    {
+      matchManagers: ["custom.regex"],
+      matchFileNames: ["Makefile"],
+      groupName: "coverage images",
+      groupSlug: "coverage-images",
+    },
+    {
+      matchManagers: ["custom.regex"],
+      matchFileNames: ["Makefile"],
+      matchUpdateTypes: ["major", "minor", "patch"],
+      enabled: false,
     },
   ],
 
@@ -747,6 +807,17 @@
         "# renovate: datasource=docker depName=(?<depName>lycheeverse/lychee)[\\s\\S]{0,900}?lycheeverse/lychee:(?<currentValue>v?\\d[\\w.\\-]*)",
       ],
       datasourceTemplate: "docker",
+    },
+    {
+      customType: "regex",
+      // The container images `make coverage` runs, each annotated in the
+      // Makefile the way Renovate documents for a regex manager:
+      //   # renovate: datasource=docker depName=<image>
+      //   NAME ?= <image>:<tag>@sha256:<digest>
+      managerFilePatterns: ["/^Makefile$/"],
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+[A-Z_]+ \\?= \\S+?:(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})",
+      ],
     },
   ],
 

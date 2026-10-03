@@ -17,6 +17,8 @@ set -euo pipefail
 readonly ENV_FILE=".env"
 readonly DEFAULT_HTTP_PORT="8080"
 readonly DEFAULT_HTTPS_PORT="8443"
+# Overridable only so the unit tests can stand in for the kernel's value.
+readonly PORT_START_FILE="${UNPRIVILEGED_PORT_START_FILE:-/proc/sys/net/ipv4/ip_unprivileged_port_start}"
 
 [[ -f "$ENV_FILE" ]] || exit 0
 
@@ -34,15 +36,16 @@ echo "rootless-ports note). Switch to the standard 80/443 instead? This"
 echo "needs sudo once, to raise the kernel's unprivileged port boundary."
 read -r -p "Use standard ports 80/443? [y/N]: " choice
 
+# The `:` gives the yes branch a command, so kcov sees it run.
 case "$choice" in
-y | Y | yes | Yes | YES) ;;
+y | Y | yes | Yes | YES) : ;;
 *)
   echo "Keeping the rootless-safe defaults (8080/8443)."
   exit 0
   ;;
 esac
 
-boundary="$(cat /proc/sys/net/ipv4/ip_unprivileged_port_start 2>/dev/null || echo 1024)"
+boundary="$(cat "$PORT_START_FILE" 2>/dev/null || echo 1024)"
 if [[ "$boundary" -gt 80 ]]; then
   echo "Lowering the kernel's unprivileged port boundary (needs sudo)..."
   if ! sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80; then

@@ -101,6 +101,7 @@ STOP_COMPOSE_FILES := --file docker-compose.yml $(foreach route_file,$(STOP_ROUT
 .PHONY: restart sanity_fast sanity_full start start_library start_observability
 .PHONY: stop stop_all update_containers update_pre_commit test test_ci test_extended test_prerequisites
 .PHONY: test_no_rotate_passwords
+.PHONY: coverage
 
 BACKUP_DIR ?= backup
 # Simply expanded, not ?=. The three archive names below each expand this,
@@ -1015,6 +1016,136 @@ test_no_rotate_passwords: tests/.venv ## Run full test suite except password rot
 # every `make test`. `bootstrap_tests` calls this, not plain `test`.
 test_extended: test ## Run the full suite plus rinse-and-repeat lifecycle cycles
 	@tests/.venv/bin/pytest -m "rinse_and_repeat" $(PYTEST_ARGS)
+
+# Coverage of the code this repository writes, held at 100%: every Python file
+# in scripts/ (lines and branches, .coveragerc) under coverage.py, the shell
+# scripts in COVERAGE_SHELL_SCRIPTS (lines; kcov reports no branches for bash)
+# under kcov, and the JavaScript in COVERAGE_JS_SOURCES (lines, branches and
+# functions) under node's own test runner. All three run the container free
+# unit tier in tests/unit, never the stack. Writes the reports SonarQube Cloud
+# reads, $(COVERAGE_DIR)/coverage.xml, $(COVERAGE_DIR)/shell.xml and
+# $(COVERAGE_DIR)/lcov.info, and fails if any language is under 100%. .github/workflows/sonarqube.yml runs this,
+# and so does the `coverage` pre-push hook. See docs/TESTING.md, "The unit
+# tier".
+#
+# The tools run in containers that cannot see this checkout. The files git
+# would commit (tracked, plus new ones not ignored) go in on standard input as
+# a tar stream, so neither .env nor anything under configs/ or data/ that git
+# ignores ever reaches them, and the only host path either container gets is an
+# empty scratch directory for its report. Nothing else is mounted: no home
+# directory, no SSH agent, no token, and no environment variable is passed in.
+# Every container drops every capability; the kcov and node ones also get no
+# network and a read only root filesystem. The Python container needs the network for its pip install,
+# which is hash locked (tests/unit/requirements.txt). The images are pinned by
+# digest, and Renovate moves the digests.
+#
+# The scratch directory comes from mktemp, so it lands in TMPDIR. In a
+# devcontainer-airlock workbench run this as `l2 --engine --net -- make
+# coverage`: the engine can only mount paths under the TMPDIR it sets.
+#
+# Every report is written before any verdict is given, so CI can still hand
+# SonarQube the report of a run that falls short. A step that fails inside a
+# container does not stop the ones after it either, so such a run still prints
+# every line it is missing (`coverage xml` alone would exit 2 below
+# fail_under and end the Python run before `coverage report` named them).
+#
+# COVERAGE_SHELL_SCRIPTS is the list of shell scripts held at 100%, and it
+# grows a script at a time: each one listed needs a tests/unit/<name>.test.sh
+# that reaches every line of it, with every external command it drives
+# (podman, docker, make, curl and the rest) replaced by a stub on PATH. A
+# script not yet listed is not measured at all. See docs/TESTING.md, "The unit
+# tier".
+COVERAGE_DIR ?= coverage
+COVERAGE_RUNTIME ?= $(if $(CONTAINER_HOST),podman-remote,podman)
+# renovate: datasource=docker depName=docker.io/library/python
+COVERAGE_PYTHON_IMAGE ?= docker.io/library/python:3.14-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
+# renovate: datasource=docker depName=docker.io/kcov/kcov
+COVERAGE_KCOV_IMAGE ?= docker.io/kcov/kcov:latest@sha256:481289ae32e55e5b733019515acd10948a4f76dfed381765577db909664fc603
+# renovate: datasource=docker depName=docker.io/library/node
+COVERAGE_NODE_IMAGE ?= docker.io/library/node:24-trixie@sha256:be40f6a87b9b22215ddb20da0a2320a5c6d583fe3ee3b0024d9fa4f05b40c8fd
+COVERAGE_SHELL_SCRIPTS := \
+	.claude/hooks/git-guard.sh \
+	configs/calibre/custom-cont-init.d/10-fix-library.sh \
+	scripts/assert-stack-started.sh \
+	scripts/auto-start.sh \
+	scripts/check-network-subnets.sh \
+	scripts/detect-system-values.sh \
+	scripts/disk-status.sh \
+	scripts/enable-test-profiles.sh \
+	scripts/korsync-users.sh \
+	scripts/prune-nginx-cache.sh \
+	scripts/rotate-all.sh \
+	scripts/rotate-api-keys.sh \
+	scripts/rotate-certificate.sh \
+	scripts/rotate-nginx-logs.sh \
+	scripts/rotate-passwords.sh \
+	scripts/schedule-backup.sh \
+	scripts/seed-calibre-library.sh \
+	scripts/seed-configs.sh \
+	scripts/seed-gluetun-secret.sh \
+	scripts/seed-nginx-ports.sh \
+	scripts/seed-secrets.sh \
+	scripts/seed-vpn-mock.sh \
+	scripts/storage-mount.sh \
+	scripts/wire-connections.sh
+# The JavaScript this repository writes, each tested by a tests/unit/*.test.js.
+COVERAGE_JS_SOURCES := configs/homepage/config/custom.js
+
+# Builds $$out/src.tar: the files git would commit (tracked, plus new ones
+# not ignored), minus any deleted in the working tree, each step checked,
+# so the containers never measure a partial tree.
+coverage_sources := git ls-files -z --cached --others --exclude-standard --deduplicate \
+		>"$$out/all" || exit 1; \
+	xargs -0 sh -c 'for f do if [ -e "$$f" ] || [ -L "$$f" ]; then printf "%s\0" "$$f"; fi; done' sh \
+		<"$$out/all" >"$$out/list" || exit 1; \
+	tar --create --owner=0 --group=0 --numeric-owner --null --files-from="$$out/list" --file="$$out/src.tar" || exit 1
+coverage_unpack := set -e; mkdir /tmp/w; tar -x --no-same-owner -C /tmp/w; cd /tmp/w
+coverage_locked := --cap-drop=ALL --security-opt no-new-privileges
+coverage_sealed := $(coverage_locked) --network=none --read-only --tmpfs /tmp
+
+coverage:
+	@set -u; out="$$(mktemp -d)"; trap 'rm -rf "$$out"' EXIT; \
+	$(coverage_sources); \
+	mkdir "$$out/python" "$$out/shell" "$$out/js"; py=0; sh=0; js=0; \
+	$(COVERAGE_RUNTIME) run <"$$out/src.tar" --rm --interactive $(coverage_locked) \
+		-v "$$out/python:/out:rw,Z" "$(COVERAGE_PYTHON_IMAGE)" sh -c '$(coverage_unpack); \
+			pip install --quiet --disable-pip-version-check --root-user-action=ignore \
+				--require-hashes --only-binary=:all: -r tests/unit/requirements.txt; \
+			status=0; \
+			coverage run -m pytest tests/unit --confcutdir=tests/unit -p no:cacheprovider -q || status=1; \
+			coverage xml -q --fail-under=0 -o /out/coverage.xml || status=1; \
+			coverage report || status=1; \
+			exit $$status' || py=$$?; \
+	$(COVERAGE_RUNTIME) run <"$$out/src.tar" --rm --interactive $(coverage_sealed) \
+		-v "$$out/shell:/out:rw,Z" "$(COVERAGE_KCOV_IMAGE)" sh -c '$(coverage_unpack); \
+			status=0; \
+			kcov --include-path=$(subst $(space),$(comma),$(addprefix /tmp/w/,$(COVERAGE_SHELL_SCRIPTS))) \
+				/out/kcov tests/unit/run-shell-tests.sh $(COVERAGE_SHELL_SCRIPTS) || status=1; \
+			python3 scripts/convert-kcov-coverage.py /tmp/w /out/kcov/run-shell-tests.sh.*/cobertura.xml \
+				/out/shell.xml $(COVERAGE_SHELL_SCRIPTS) || status=1; \
+			exit $$status' || sh=$$?; \
+	$(COVERAGE_RUNTIME) run <"$$out/src.tar" --rm --interactive $(coverage_sealed) \
+		-v "$$out/js:/out:rw,Z" "$(COVERAGE_NODE_IMAGE)" sh -c '$(coverage_unpack); \
+			status=0; node --test --experimental-test-coverage \
+				$(addprefix --test-coverage-include=,$(COVERAGE_JS_SOURCES)) \
+				--test-coverage-lines=100 --test-coverage-branches=100 \
+				--test-coverage-functions=100 \
+				--test-reporter=spec --test-reporter-destination=stdout \
+				--test-reporter=lcov --test-reporter-destination=/tmp/lcov.info \
+				"tests/unit/*.test.js" || status=$$?; \
+			if [ -f /tmp/lcov.info ]; then \
+				sed "s|^SF:/tmp/w/|SF:|" /tmp/lcov.info > /out/lcov.info || status=1; \
+				for f in $(COVERAGE_JS_SOURCES); do \
+					grep -qx "SF:$$f" /out/lcov.info || { echo "$$f: not in the report, so no test ran it"; status=1; }; \
+				done; \
+			else echo "node wrote no lcov report; see its error above"; status=1; fi; \
+			exit $$status' || js=$$?; \
+	mkdir -p "$(COVERAGE_DIR)" && rm -f "$(COVERAGE_DIR)/coverage.xml" "$(COVERAGE_DIR)/shell.xml" "$(COVERAGE_DIR)/lcov.info" || exit 1; \
+	for report in "$$out/python/coverage.xml" "$$out/shell/shell.xml" "$$out/js/lcov.info"; do \
+		if [ -f "$$report" ]; then cp "$$report" "$(COVERAGE_DIR)"/ || exit 1; fi; \
+	done; \
+	test "$$py" -eq 0 && test "$$sh" -eq 0 && test "$$js" -eq 0 && \
+		test -s "$(COVERAGE_DIR)/coverage.xml" && test -s "$(COVERAGE_DIR)/shell.xml" && test -s "$(COVERAGE_DIR)/lcov.info"
 
 # The workbench targets (make claude, make codex, make unlock and the rest)
 # come from a devcontainer-airlock clone, by default the one next to this

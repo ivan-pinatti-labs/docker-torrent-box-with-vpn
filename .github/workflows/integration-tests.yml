@@ -528,7 +528,7 @@ jobs:
           # this one on its own; it needs telling. See the customManager in
           # .github/renovate.json5.
           # renovate: datasource=pypi depName=podman-compose
-          pip install podman-compose==1.6.0
+          pip install podman-compose==1.6.0 --only-binary=:all:
           # tests/conftest.py's docker_client fixture talks to podman over
           # this exact socket path, not the CLI; nothing starts it by
           # default on ubuntu-latest, confirmed live (every container/auth
@@ -627,9 +627,11 @@ jobs:
         timeout-minutes: 3
         # seed_all's own permissions_repair step runs this script directly
         # with the system Python, not tests/.venv (that only gets created
-        # later, by make test's own dependency on it).
+        # later, by make test's own dependency on it). Hash locked, and wheels
+        # only, from scripts/requirements.txt; see scripts/requirements.in.
         shell: bash
-        run: pip install pyyaml
+        run: |
+          pip install --require-hashes --only-binary=:all: -r scripts/requirements.txt
 
       - name: Seed every app's config and secrets
         # make start alone, unlike make bootstrap, never seeds any of this:

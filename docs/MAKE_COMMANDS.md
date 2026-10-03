@@ -73,6 +73,7 @@ See [docs/CONTRIBUTING.md](CONTRIBUTING.md) for how these fit into CI.
 | `make test_extended` | `make test` plus the `rinse_and_repeat` lifecycle tests (stop/start and down/start cycles), the slowest tier, run deliberately rather than on every `make test`. |
 | `make test_prerequisites` | Pre-flight checks only; doesn't need any containers running. |
 | `make test_no_rotate_passwords` | The full suite except `rotate-passwords.sh` coverage. |
+| `make coverage` | The container free unit tier (`tests/unit`) under coverage.py and kcov, in podman containers; fails unless every Python file in `scripts/` and every shell script in the Makefile's `COVERAGE_SHELL_SCRIPTS` is at 100%. Needs no stack. See [docs/TESTING.md](TESTING.md#the-unit-tier). |
 | `make test_ci` | The first two passes of `make test` only, no serial rotation/wiring/killswitch tier. What CI's own integration job runs; not a substitute for `make test` or `make bootstrap_tests` outside CI. |
 | `make bootstrap_tests` | Enables every profile with real test coverage, runs `bootstrap` from scratch, then `test_extended`. **Only for a disposable clone**: it rewrites every credential exactly like plain `bootstrap` does. This is the release-validation command. |
 

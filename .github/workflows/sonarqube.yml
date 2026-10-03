@@ -19,9 +19,13 @@ name: SonarQube
 # GitHub App also posts a check on the pull request; that one is informational
 # only, because it is never posted on a merge queue commit.
 #
-# No coverage step yet. Almost every test here needs the full Podman stack and
-# runs behind `/run-tests`, so there is no container free tier to measure in a
-# plain job. A later pull request adds one.
+# Coverage comes from the container free unit tier in tests/unit, not from
+# the integration suite: that one needs the full Podman stack and runs behind
+# `/run-tests`, while this job stands nothing up. `make coverage` measures the
+# Python in scripts/, the shell scripts listed in the Makefile's
+# COVERAGE_SHELL_SCRIPTS and the JavaScript in COVERAGE_JS_SOURCES, and holds
+# all three at 100%; see docs/TESTING.md, "The
+# unit tier".
 #
 # Triggers:
 #   pull_request   the analysis a reviewer reads, decorated onto the pull
@@ -85,6 +89,19 @@ jobs:
           # new code, and a shallow clone makes every line look new.
           fetch-depth: 0
 
+      # Coverage of the Python, the listed shell scripts and the JavaScript,
+      # held at 100% (see the Makefile's `coverage` target). The quality gate
+      # also requires 80% on new code, and with no report every new line would
+      # count as uncovered. The tools run in podman containers that see the source
+      # only through a tar stream; the runner ships podman. The step is
+      # allowed to fail so SonarQube still gets the report of a run that falls
+      # short, and the last step below fails the job on it.
+      - name: Measure coverage
+        id: coverage
+        if: github.event_name != 'merge_group'
+        continue-on-error: true
+        run: make coverage
+
       - name: Scan
         if: github.event_name != 'merge_group'
         uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
@@ -93,3 +110,12 @@ jobs:
         with:
           args: >-
             -Dsonar.qualitygate.wait=true
+
+      - name: Require 100% coverage
+        # After the scan, so a pull request below 100% still gets SonarQube's
+        # report of which lines are missing. `make coverage` above printed
+        # them too; this only carries its verdict.
+        if: github.event_name != 'merge_group' && steps.coverage.outcome == 'failure'
+        run: |
+          echo "::error::Coverage is below 100%; see the Measure coverage step."
+          exit 1

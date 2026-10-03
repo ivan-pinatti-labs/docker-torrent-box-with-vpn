@@ -132,6 +132,8 @@ repos:
       - id: name-tests-test
         args: ["--pytest-test-first"]
         files: ^tests/.*\.py$
+        # Helpers the shell tests run, not test modules.
+        exclude: ^tests/unit/(with-tty|stack-stub)\.py$
       - id: requirements-txt-fixer
         files: ^tests/requirements\.txt$
       # Commit stage only, deliberately. Its job is to stop a commit landing on
@@ -358,7 +360,11 @@ repos:
         # still have the directory. Documented in .cspell.json's own
         # `description` field, since JSON cannot carry a comment and check-json
         # validates that file.
-        exclude: '^patches/|^configs/.*/config/|^configs/.*/custom-(cont-init|services)\.d/|^\.gitleaksignore$'
+        #
+        # tests/unit/requirements.txt and scripts/requirements.txt are
+        # generated hash locks: nothing in them is prose, and their hashes
+        # would read as a run of unknown words.
+        exclude: '^patches/|^configs/.*/config/|^configs/.*/custom-(cont-init|services)\.d/|^\.gitleaksignore$|^(tests/unit|scripts)/requirements\.txt$'
 
   # CI runs `pre-commit run --all-files`, while the commit-stage hooks only ever
   # see staged files and the push-stage ones only the range being pushed. A
@@ -379,6 +385,28 @@ repos:
         stages: [pre-push]
         pass_filenames: false
         always_run: true
+
+  # This repository's own coverage gate: 100% of the Python in scripts/
+  # (lines and branches), of the shell scripts the Makefile lists in
+  # COVERAGE_SHELL_SCRIPTS (lines) and of the JavaScript in COVERAGE_JS_SOURCES
+  # (lines, branches and functions). `make coverage` runs the unit tier in
+  # podman containers that see the source only through a tar stream; see the
+  # Makefile. Pre-push, not pre-commit, because it starts three containers.
+  #
+  # Code Check runs this file with `--hook-stage pre-push`, which would select
+  # this hook too, so pull-request-validation.yml lists it in SKIP beside
+  # all-files-sweep: the SonarQube job already runs the same target on every
+  # pull request, and running it twice would only spend runner time. Locally
+  # it saves the round trip to find out.
+  - repo: local
+    hooks:
+      - id: coverage
+        name: Coverage, 100% of scripts/ and the listed shell and JavaScript
+        language: system
+        entry: make coverage
+        pass_filenames: false
+        files: '^(scripts/|tests/unit/|configs/[^/]+/custom-cont-init\.d/)|^(\.coveragerc|Makefile|pytest\.ini|\.claude/hooks/git-guard\.sh|configs/homepage/config/custom\.js)$'
+        stages: [pre-push]
 
   # Was moved out of MegaLinter when this repository switched to the cupcake
   # flavor, the one linter that flavor did not carry, and stayed here when the

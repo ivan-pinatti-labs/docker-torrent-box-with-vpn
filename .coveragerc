@@ -1,0 +1,36 @@
+# Coverage settings for the Python this repository writes, read by
+# `make coverage`, which .github/workflows/sonarqube.yml and the `coverage`
+# pre-push hook in .pre-commit-config.yaml both run.
+#
+# 100%, lines and branches both. SonarQube Cloud's quality gate is fixed at
+# 80% on new code and cannot be raised on this plan, so this is what holds the
+# higher bar. Branches too, so every `if` has been seen going both ways, not
+# only reached. The shell scripts listed in the Makefile's
+# COVERAGE_SHELL_SCRIPTS are held to 100% of their lines by kcov, see
+# scripts/convert-kcov-coverage.py.
+[run]
+# Paths in coverage.xml relative rather than absolute (a `scripts` source and
+# file names inside it), which SonarQube Cloud resolves against the
+# repository root; the tests run in a container whose copy of the tree lives
+# elsewhere.
+relative_files = true
+# scripts/ and nothing else. Every Python file there is measured, including
+# one no test imports (it reports as 0% rather than being left out), so a new
+# script cannot join the directory untested. The other Python in the tree is
+# not this repository's to cover: patches/ is vendored upstream Mylar source,
+# and configs/qbittorrent_exporter/exporter_extended.py is a third party
+# exporter that sonar-project.properties leaves out for the same reason.
+source = scripts
+branch = true
+
+[report]
+# Measure a .py file even where its directory has no __init__.py, so a
+# new untested file shows up at 0% and fails, rather than going unseen.
+include_namespace_packages = true
+fail_under = 100
+show_missing = true
+skip_covered = true
+# The one line a test cannot reach without running the file as a program.
+# Everything it calls is main(), which the tests drive directly.
+exclude_also =
+    if __name__ == .__main__.:

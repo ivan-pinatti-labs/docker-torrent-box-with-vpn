@@ -321,7 +321,7 @@ def test_generate_homepage_services_tolerates_unowned_output_file(
 
     monkeypatch.setattr(module.Path, "chmod", _raise_permission_error)
 
-    assert module.main() == 0
+    assert module.main() is None
     assert "Sonarr" in output_file.read_text()
 
 

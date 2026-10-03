@@ -16,21 +16,28 @@ if [[ $# -ne 1 ]]; then
 fi
 
 readonly ENV_FILE="$1"
+# Where the host's time zone is read from when timedatectl has no answer.
+# Overridable only so the unit tests can point them at a scratch directory.
+readonly TIMEZONE_FILE="${DETECT_TIMEZONE_FILE:-/etc/timezone}"
+readonly LOCALTIME_LINK="${DETECT_LOCALTIME_LINK:-/etc/localtime}"
 
 [[ -f "$ENV_FILE" ]] || exit 0
 
 detected_uid="$(id -u)"
 detected_gid="$(id -g)"
 detected_timezone="$(timedatectl show --property=Timezone --value 2>/dev/null || true)"
-if [[ -z "$detected_timezone" && -f /etc/timezone ]]; then
-  detected_timezone="$(cat /etc/timezone)"
+if [[ -z "$detected_timezone" && -f "$TIMEZONE_FILE" ]]; then
+  detected_timezone="$(cat "$TIMEZONE_FILE")"
 fi
-if [[ -z "$detected_timezone" && -L /etc/localtime ]]; then
-  detected_timezone="$(readlink /etc/localtime | sed 's#.*/zoneinfo/##')"
+if [[ -z "$detected_timezone" && -L "$LOCALTIME_LINK" ]]; then
+  detected_timezone="$(readlink "$LOCALTIME_LINK" | sed 's#.*/zoneinfo/##')"
 fi
-detected_lan_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i=="src") print $(i+1)}')"
+# `|| true` on both lookups: under pipefail a failing ip or hostname (no route,
+# no network yet) fails the assignment, and errexit then ended the script
+# before the hostname -I fallback or any of the other values were written.
+detected_lan_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i=="src") print $(i+1)}' || true)"
 if [[ -z "$detected_lan_ip" ]]; then
-  detected_lan_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  detected_lan_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
 fi
 
 if [[ "$detected_uid" != "1000" ]] && grep -qx "UID=1000" "$ENV_FILE"; then

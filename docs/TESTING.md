@@ -182,6 +182,143 @@ exactly like plain `make bootstrap` already does. This is the
 release-validation command: a clean `make bootstrap_tests` run with 0
 failures is the bar every change in this repo is held to before release.
 
+## The unit tier
+
+Everything above tests the stack. `tests/unit` tests the code this repository
+writes, as code: the Python in `scripts/`, a growing list of its shell scripts
+(in `scripts/`, `.claude/hooks/` and the containers' init hooks under
+`configs/`), and the JavaScript Homepage loads, run with every external they
+drive replaced by a stand in. No container, no network, no podman or docker,
+nothing outside each test's own temporary directory, so it runs anywhere and in
+seconds.
+
+```shell
+make coverage
+```
+
+`make coverage` runs it three times, each in a podman container that sees only
+the files git would commit, streamed in as a tar archive (no mount of this
+checkout, no `.env`, no credentials):
+
+- The Python run is under coverage.py and has to reach **100% of the lines
+  and branches of every Python file in `scripts/`** (`.coveragerc`). A new
+  script there is measured from the moment it exists, so it ships with tests.
+- The shell run goes through `tests/unit/run-shell-tests.sh` under kcov, which
+  runs `tests/unit/<name>.test.sh` for every script the Makefile lists in
+  `COVERAGE_SHELL_SCRIPTS`, and each listed script has to reach **100% of its
+  lines** (kcov records no branches for bash). The list grows a script at a
+  time; a script not on it is not measured yet.
+- The JavaScript run goes through `tests/unit/*.test.js` under node's own test
+  runner, and every file in the Makefile's `COVERAGE_JS_SOURCES` has to reach
+  **100% of its lines, branches and functions**.
+  `configs/homepage/config/custom.js` is browser code, so its test installs a
+  stand in `document` and `window` as globals and loads the file afresh for
+  each case.
+
+It writes `coverage/coverage.xml`, `coverage/shell.xml` and
+`coverage/lcov.info`, which SonarQube Cloud reads (`sonar-project.properties`),
+and fails when any of the three falls short. The `SonarQube` job runs it on
+every pull request, and it is a `pre-push` hook, so run `pre-commit install`
+again in an existing clone to pick it up. It needs podman on `PATH`; in a
+devcontainer-airlock workbench run it as `l2 --engine --net -- make coverage`.
+
+To iterate on one file without the containers, the integration environment
+already has what the tier needs:
+`tests/.venv/bin/pytest tests/unit --confcutdir=tests/unit`.
+
+How the tier keeps out of the integration suite: `pytest.ini`'s
+`norecursedirs` stops every integration target from collecting `tests/unit`,
+and `--confcutdir=tests/unit` stops the unit tier from loading
+`tests/conftest.py`, which imports the Docker SDK and reads `.env`. Every unit
+test carries the `unit` marker. A script is loaded by path
+(`tests/unit/conftest.py`'s `load_script`), since the hyphenated names cannot
+be imported, and driven through its own functions, with podman, the Podman
+socket, HTTP and the filesystem it manages swapped for stand ins. A shell test
+runs its script as its own `bash` process with stub commands first on `PATH`
+and the stub directory as the only other thing there when the script must not
+find a real one.
+
+To add a shell script to the list, write `tests/unit/<name>.test.sh` (the
+existing ones show the pattern), add the script to `COVERAGE_SHELL_SCRIPTS`,
+and run `make coverage`. Two things kcov does that are worth knowing: it
+counts a `: '...'` block comment as code it never saw run, so write those as
+`#` comments, and under kcov a script's `set -x` trace goes to kcov rather than
+to standard error. kcov also counts lines it can never see run: every line of
+a multi line quoted program handed to awk or another interpreter (use a quoted
+here document), the later lines of a command continued with `\`, the first
+line of an assignment from a command substitution spread over several lines,
+an array literal spread over several, the `done` of a loop or the `)` of a
+subshell that carries a redirection (open the file on a descriptor first, or
+make the subshell a function), and an empty `case` arm (give it a `:`).
+Worse, kcov stops reading a script altogether at a here document opened on
+an `if` line (`if python3 - <<EOF; then`), so nothing below it is measured
+and the report still reads 100%: run such a here document from a function
+the `if` calls. A test that clears the environment with `env -i`
+drops the variables kcov traces through, so unset single variables with
+`env -u` instead. A prompt guarded by `[[ -t 0 ]]` is driven on a pseudo
+terminal with `tests/unit/with-tty.py`.
+
+The scripts that drive the running stack share `tests/unit/stack-stubs.bash`.
+Each one runs in a scratch repository against `tests/unit/stack-stub.py`, a
+single program standing in for podman, jq, yq and the rest: its podman answers
+each app's API from rules the test writes, keyed on the URL asked for, and it
+logs every call, so a test checks the requests a real run would make. Its jq
+knows only the filters those scripts use, each written out in Python, so a
+script that gains a filter needs a line in that table. The integration suite
+still runs these scripts for real against the stack.
+
+### Updating the unit tier's dependencies
+
+`tests/unit/requirements.in` carries exact pins, and
+`tests/unit/requirements.txt` is a lock compiled from it with every hash,
+which `make coverage` installs with `--require-hashes --only-binary=:all:`.
+Renovate's `pip-compile` manager bumps both. To change one by hand, edit the
+`.in` file and regenerate the lock in a container, from `tests/unit`:
+
+```shell
+podman run --rm -v "$PWD:/w:rw,Z" -w /w ghcr.io/astral-sh/uv:python3.14-trixie-slim \
+  uv pip compile --generate-hashes --python-version=3.14 --exclude-newer=P7D \
+  --output-file=requirements.txt requirements.in
+```
+
+That is the command in the lock's own header, which Renovate replays.
+`--exclude-newer=P7D` leaves out anything released in the last seven days,
+dependencies of dependencies included. Keep pytest and pyyaml equal to their
+pins in `tests/requirements.txt`, the integration suite's own environment,
+which is not a lock and is unchanged.
+
+`scripts/requirements.in` and its lock `scripts/requirements.txt` work the
+same way, from `scripts`. They hold the pyyaml that `integration-tests.yml`
+installs before seeding the stack, since `scripts/permissions.py` runs there
+with the system Python rather than `tests/.venv`.
+
+#### A security fix younger than seven days
+
+The seven day window also holds back a security release, and Renovate
+cannot make an exception: it replays the header's command as written, so its
+pull request for a vulnerability alert fails to regenerate the lock and says
+so. Update that one package by hand, in the same container and from the
+lock's directory, letting it past the window and asking for its newest
+release (`--upgrade-package`; without it, uv keeps the version already in the
+lock, so a vulnerable dependency of a dependency would not move):
+
+```bash
+podman run --rm -v "$PWD:/w:rw,Z" -w /w ghcr.io/astral-sh/uv:python3.14-trixie-slim \
+  uv pip compile --generate-hashes --python-version=3.14 --exclude-newer=P7D \
+  --exclude-newer-package "<package>=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --upgrade-package "<package>" \
+  --output-file=requirements.txt requirements.in
+```
+
+Then edit the lock's header back to the standard command above, by hand,
+removing `--exclude-newer-package` (uv does not record `--upgrade-package`
+there). Left in, the per package date is fixed, so it would hold that
+package at today's releases for good. Read the lock's diff before
+committing: the other pins are kept as preferences, not guarantees, so uv
+moves another package too when the fix needs it, and each such move gets
+the same review as the fix. The next Renovate update replays the standard
+command once the fix is past the window.
+
 ## Adding a test
 
 Register a new marker in `pytest.ini` before using it (an unregistered
