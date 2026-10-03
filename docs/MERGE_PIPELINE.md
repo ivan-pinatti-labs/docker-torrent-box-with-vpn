@@ -83,13 +83,14 @@ section for what a pin-only diff actually earns it.
 | `Code Check` | The full pre-commit hook set (both stages) passed over every file | `pull-request-validation.yml`, as a job |
 | `Prerequisite Checks` | The static, no-containers-needed test tier passed (pin annotations, repo hygiene) | `pull-request-validation.yml`, as a job |
 | `Detect Changed Paths` | Nothing more than that the path filter itself ran; other jobs read its output | `pull-request-validation.yml`, as a job |
+| `SonarQube` | SonarQube Cloud analyzed the pull request and its quality gate passed; on a merge queue commit it passes without analyzing, see below | `sonarqube.yml`, as a job |
 | `Tests Verified` | The integration suite passed on this exact commit, or the change touched no runtime file | `integration-tests.yml`, published directly onto the head SHA |
 | `Pin Only` | A dependency bot's diff changes nothing but a version or digest in a pin position; `success` with a "not a dependency bot pull request" description on everything else | `coderabbit-gate.yml`, published directly onto the head SHA |
 | `Review Verified` | CodeRabbit's actual review outcome, not merely that it reported something | `coderabbit-gate.yml`, published directly onto the head SHA |
 
-`Code Check`, `Prerequisite Checks` and `Detect Changed Paths` are ordinary
-workflow jobs: GitHub reports a job's own pass or fail as the check. The other
-three are commit statuses, written directly by a workflow step rather than
+`Code Check`, `Prerequisite Checks`, `Detect Changed Paths` and `SonarQube`
+are ordinary workflow jobs: GitHub reports a job's own pass or fail as the
+check. The other three are commit statuses, written directly by a workflow step rather than
 read off a job's outcome, for the reason [docs/TESTING.md](TESTING.md)
 explains for `Tests Verified`: a job gated on a condition is *skipped* when
 the condition does not hold, and branch protection counts a skipped job as
@@ -97,14 +98,22 @@ successful, which would let an untested pull request merge. A status that a
 workflow chooses whether to write, and what to write, does not have that
 failure mode: absent reads as waiting, not as passed.
 
-`SonarQube` also runs on every pull request, from
-`.github/workflows/sonarqube.yml`, and fails when the SonarQube Cloud quality
-gate fails. It is not a required context yet, so a red `SonarQube` does not
-block a merge today. It becomes required in a later pull request, which also
-removes `codeql.yml`, the analysis it replaces. It also runs `make coverage`
-(the unit tier, see [docs/TESTING.md](TESTING.md#the-unit-tier)) and fails
-below 100% coverage, after handing SonarQube the report. What it scans and what it
-leaves out is in `sonar-project.properties`.
+`SonarQube` is the `sonarqube.yml` job. It runs SonarQube Cloud's analysis on
+every pull request and every push to `main`, and fails when the quality gate
+does (`sonar.qualitygate.wait=true`). Before scanning it runs `make coverage`
+(the unit tier, see [docs/TESTING.md](TESTING.md#the-unit-tier)), which fails
+below 100% coverage after handing SonarQube the report. SonarQube Cloud's own
+GitHub App posts a second check, `SonarCloud Code Analysis`, which is
+deliberately not required: that app never posts on a merge queue commit, so
+requiring it would stall the queue. On `merge_group` the job passes without
+analyzing, because the pull request's head was already analyzed and gated and
+SonarQube Cloud has no pull request to attach a queue commit to; the push to
+`main` right after the merge analyzes the result. A fork's pull request fails
+the job with an explanation, since it cannot receive `SONAR_TOKEN`; a
+maintainer pushes the branch to this repository and opens the pull request
+from there instead. What it scans and what it leaves out is in
+`sonar-project.properties`. It replaced CodeQL, which only ever analyzed the
+Python here; see [docs/SECURITY.md](SECURITY.md).
 
 ## `Review Verified`, and the bug it exists to fix
 
@@ -180,7 +189,8 @@ The queue supplies the same guarantee without that cascade. It tests a
 throwaway merge commit against the current `main` rather than moving a pull
 request's own head, so "tested against what it lands on" still holds, and
 every context in the table above runs a second time against that commit before
-anything merges. `strict` was the stand-in for a queue that could not exist
+anything merges (`SonarQube` passes there without a second analysis, as
+described above). `strict` was the stand-in for a queue that could not exist
 yet; keeping both would have kept the rebase cascade while paying for the
 queue.
 

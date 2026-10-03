@@ -9,9 +9,9 @@ name: SonarQube
 # hadolint and actionlint keep running on every commit, and Sonar's rules are
 # different from theirs, not a superset.
 #
-# Not a required check yet, and codeql.yml keeps running alongside it. A later
-# pull request makes `SonarQube` required and removes codeql.yml; see
-# docs/MERGE_PIPELINE.md.
+# `SonarQube` is a required check, and this replaced CodeQL (codeql.yml), which
+# only ever analyzed the Python here; see docs/MERGE_PIPELINE.md and
+# docs/SECURITY.md.
 #
 # The job fails when the SonarQube Cloud quality gate fails
 # (`sonar.qualitygate.wait=true`), so the `SonarQube` check is the gate verdict

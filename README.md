@@ -6,6 +6,8 @@
 [![GitHub Repo stars](https://img.shields.io/github/stars/ivan-pinatti-labs/docker-torrent-box-with-vpn?logo=Github&style=for-the-badge)](https://github.com/ivan-pinatti-labs/docker-torrent-box-with-vpn)
 [![GitHub forks](https://img.shields.io/github/forks/ivan-pinatti-labs/docker-torrent-box-with-vpn?logo=Github&style=for-the-badge)](https://github.com/ivan-pinatti-labs/docker-torrent-box-with-vpn/forks)
 [![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/ivan-pinatti-labs/docker-torrent-box-with-vpn?utm_source=oss&utm_medium=github&utm_campaign=ivan-pinatti-labs%2Fdocker-torrent-box-with-vpn&labelColor=171717&color=FF570A&label=CodeRabbit+Reviews&style=for-the-badge)](https://coderabbit.ai)
+[![Quality Gate](https://img.shields.io/sonar/quality_gate/ivan-pinatti-labs_docker-torrent-box-with-vpn?server=https%3A%2F%2Fsonarcloud.io&logo=sonarqubecloud&style=for-the-badge)](https://sonarcloud.io/project/overview?id=ivan-pinatti-labs_docker-torrent-box-with-vpn)
+[![Coverage](https://img.shields.io/sonar/coverage/ivan-pinatti-labs_docker-torrent-box-with-vpn?server=https%3A%2F%2Fsonarcloud.io&logo=sonarqubecloud&style=for-the-badge)](https://sonarcloud.io/component_measures?id=ivan-pinatti-labs_docker-torrent-box-with-vpn&metric=coverage)
 
 The code on this repository is intended to be used to share media content with
 various networks such as Torrent and Usenet while protecting your privacy
