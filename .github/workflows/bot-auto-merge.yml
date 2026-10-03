@@ -64,14 +64,18 @@ on:
   # contexts actually finishes last is what re-triggers the poll, instead of
   # depending on an assumption about which one that will be.
   #
-  # `workflow_run`, not `status`: both workflows publish their status with
-  # `secrets.GITHUB_TOKEN`, and GitHub does not start new workflow runs from
-  # events a `GITHUB_TOKEN` creates, so a `status` trigger would never fire
-  # from either publish at all, silently. `workflow_run` reacts to the run
+  # SonarQube is named for the same reason. Its `SonarQube` check is required
+  # too, and it waits on the SonarQube Cloud quality gate, so it can settle
+  # after both of the others.
+  #
+  # `workflow_run`, not `status`: CodeRabbit Gate and Integration Tests
+  # publish their status with `secrets.GITHUB_TOKEN`, and GitHub does not
+  # start new workflow runs from events a `GITHUB_TOKEN` creates, so a
+  # `status` trigger would never fire from either publish at all, silently. `workflow_run` reacts to the run
   # finishing rather than to the API call made during it, which is why it is
   # the sanctioned way to chain workflows without a personal access token.
   workflow_run:
-    workflows: ["CodeRabbit Gate", "Integration Tests"]
+    workflows: ["CodeRabbit Gate", "Integration Tests", "SonarQube"]
     types: [completed]
   # The recovery lever, for the `nudge-bot` job below only. Neither
   # `pull_request_target` above fires again once a pull request stops
@@ -375,8 +379,8 @@ jobs:
 
       - name: Wait for every required context to be green
         # Every required context, not just `Pin Only` the way the bot job
-        # waits: `Pre-commit`, `Tests`, `Pin Only` and `Review Verified` all
-        # have to read green before this job approves anything, because an
+        # waits: every context in the `required` list below has to read green
+        # before this job approves anything, because an
         # approval issued before `Review Verified` settles would hand the
         # owner a merge path around the CodeRabbit gate, which is the exact
         # hole docker-torrent-box-with-vpn's #114 was about, and the owner is
@@ -384,17 +388,17 @@ jobs:
         # themselves.
         #
         # `statusCheckRollup`, not the `/commits/{sha}/status` endpoint the
-        # bot job's wait step reads, because two of the four required
-        # contexts here, `Pre-commit` and `Tests`, are ordinary GitHub Checks
-        # (workflow jobs), not commit statuses, and that endpoint only ever
+        # bot job's wait step reads, because `Code Check`, `Prerequisite
+        # Checks`, `Detect Changed Paths` and `SonarQube` are ordinary GitHub
+        # Checks (workflow jobs), not commit statuses, and that endpoint only ever
         # returns the latter. `statusCheckRollup` is the one place where
         # both shapes show up together.
         #
         # A two minute window is still not a guarantee `Review Verified`
         # settles inside it, since it depends on CodeRabbit's own review
         # completing. What makes that survivable rather than a dead end is
-        # the `workflow_run` trigger above: every time coderabbit-gate.yml
-        # finishes a run, this job runs again and re-reads the rollup fresh,
+        # the `workflow_run` trigger above: every time coderabbit-gate.yml,
+        # integration-tests.yml or sonarqube.yml finishes a run, this job runs again and re-reads the rollup fresh,
         # rather than depending on this one poll window catching the change
         # or on someone pushing a pull request that has nothing left to
         # change.
@@ -405,7 +409,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          required='["Code Check","Prerequisite Checks","Detect Changed Paths","Tests Verified","Pin Only","Review Verified"]'
+          required='["Code Check","Prerequisite Checks","Detect Changed Paths","Tests Verified","SonarQube","Pin Only","Review Verified"]'
           for _ in $(seq 1 24); do
             # $owner, $name and $number below are GraphQL query variables,
             # not shell expansions; they are meant to stay literal inside

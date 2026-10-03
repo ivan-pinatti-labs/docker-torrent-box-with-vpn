@@ -138,8 +138,8 @@ every required check, and what each one proves are in
 docs/MERGE_PIPELINE.md; do not restate that reasoning here.
 
 1. Open as a draft (`gh pr create --draft`). `Code Check` (pre-commit),
-   `Prerequisite Checks` and `Security Reports` all start at once, none of them
-   gated on another, and `Renovate Config` follows `Detect Changed Paths`.
+   `Prerequisite Checks`, `SonarQube` and `Security Reports` all start at once,
+   none of them gated on another, and `Renovate Config` follows `Detect Changed Paths`.
    CodeRabbit skips drafts. There is no `MegaLinter` step: #50 replaced it with
    pre-commit hooks on 2026-08-15, so `Code Check` is where that coverage lives
    now.
