@@ -59,11 +59,14 @@ podman run --rm --network=none \
   this repository's own `Makefile` or hooks start. In a workbench both run in
   L2 too.
 
-### Parallel work uses worktrees
+### Parallel work uses separate checkouts
 
 More than one agent may work in a repository at the same time. Give each task
-its own worktree under `.claude/worktrees/<branch>` (gitignored), and never
-switch branches in a checkout someone else may be using.
+its own checkout under `.claude/worktrees/<name>` (gitignored), and never
+switch branches in a checkout someone else may be using. In a
+devcontainer-airlock session that checkout is the session's own clone, made
+with `airlock-worktree <repo> [<branch>]`, because the main clone is read
+only there. Elsewhere a `git worktree` serves the same purpose.
 
 ### Unattended work runs on a bounded tick
 
