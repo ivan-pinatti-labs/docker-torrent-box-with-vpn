@@ -231,4 +231,7 @@ def test_discovery_refuses_unsafe_script_names():
     text = (here / "Makefile").read_text()
     assert "_shell_safe = $(if $(filter UNSAFE:," in text
     assert "$(call _shell_safe," in text
-    assert '? FILENAME : "UNSAFE:")' in text
+    assert '? substr(FILENAME, 3) : "UNSAFE:")' in text
+    # awk reads an operand like `shell=tool.sh` as a variable assignment, so
+    # every path reaches it as `./path` and is printed without that prefix.
+    assert 'printf "./%s\\0"' in text
