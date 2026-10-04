@@ -219,3 +219,16 @@ def test_the_coverage_hook_runs_for_every_found_script():
     files = re.compile(coverage["files"])
     unmatched = [path for path in sorted(discovered()) if not files.search(path)]
     assert not unmatched, f"the coverage hook's `files` misses {unmatched}"
+
+
+def test_discovery_refuses_unsafe_script_names():
+    """A script name reaches make's recipes as shell text, so discovery has to
+    refuse any name outside [A-Za-z0-9._/+-] (a committed `x;id;#.sh` would
+    otherwise run `id`)."""
+    here = Path(__file__).resolve().parent
+    while not (here / "Makefile").is_file():
+        here = here.parent
+    text = (here / "Makefile").read_text()
+    assert "_shell_safe = $(if $(filter UNSAFE:," in text
+    assert "$(call _shell_safe," in text
+    assert '? FILENAME : "UNSAFE:")' in text
