@@ -1091,7 +1091,7 @@ _shell_safe = $(if $(filter UNSAFE:,$(1)),$(error a shell script name holds a ch
 COVERAGE_SHELL_SCRIPTS := $(call _shell_safe,$(sort $(filter-out $(SHELL_EXCLUDE),$(shell \
 	git ls-files -z --cached --others --exclude-standard 2>/dev/null \
 	| xargs -0 sh -c 'for f do if [ -f "$$f" ]; then printf "%s\0" "$$f"; fi; done' sh \
-	| xargs -0 awk 'FNR == 1 { if (FILENAME ~ /\.(sh|bash)$$/ || $$0 ~ /^#![[:space:]]*([^[:space:]]*\/)?(env[[:space:]]+(-[^[:space:]]+[[:space:]]+)*)?(ba|da)?sh([[:space:]]|$$)/) print (FILENAME ~ /^[A-Za-z0-9._\/+-]+$$/ ? FILENAME : "UNSAFE:"); nextfile }' 2>/dev/null \
+	| xargs -0 awk 'FNR == 1 { if (FILENAME ~ /^tests\//) { nextfile } if (FILENAME ~ /\.(sh|bash)$$/ || $$0 ~ /^#![[:space:]]*([^[:space:]]*\/)?(env[[:space:]]+(-[^[:space:]]+[[:space:]]+)*)?(ba|da)?sh([[:space:]]|$$)/) print (FILENAME ~ /^[A-Za-z0-9._\/+-]+$$/ ? FILENAME : "UNSAFE:"); nextfile }' 2>/dev/null \
 	| grep -v '^tests/')) $(SHELL_EXTRA)))
 # The JavaScript this repository writes, each tested by a tests/unit/*.test.js.
 COVERAGE_JS_SOURCES := configs/homepage/config/custom.js
