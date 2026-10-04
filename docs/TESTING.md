@@ -204,10 +204,14 @@ checkout, no `.env`, no credentials):
   and branches of every Python file in `scripts/`** (`.coveragerc`). A new
   script there is measured from the moment it exists, so it ships with tests.
 - The shell run goes through `tests/unit/run-shell-tests.sh` under kcov, which
-  runs `tests/unit/<name>.test.sh` for every script the Makefile lists in
-  `COVERAGE_SHELL_SCRIPTS`, and each listed script has to reach **100% of its
-  lines** (kcov records no branches for bash). The list grows a script at a
-  time; a script not on it is not measured yet.
+  runs `tests/unit/<name>.test.sh` for every shell script the repository
+  writes, and each has to reach **100% of its lines** (kcov records no
+  branches for bash). Nobody lists them: the Makefile finds them as
+  `COVERAGE_SHELL_SCRIPTS`, every file git would commit that ends in `.sh` or
+  `.bash` or starts with a `sh`, `bash` or `dash` shebang, minus `tests/` and
+  the vendored paths in `SHELL_EXCLUDE`, plus any in `SHELL_EXTRA` that
+  neither identifies. A new script is measured from the moment it exists, so
+  it ships with tests. `make print-shell-scripts` prints the set.
 - The JavaScript run goes through `tests/unit/*.test.js` under node's own test
   runner, and every file in the Makefile's `COVERAGE_JS_SOURCES` has to reach
   **100% of its lines, branches and functions**.
@@ -238,9 +242,9 @@ runs its script as its own `bash` process with stub commands first on `PATH`
 and the stub directory as the only other thing there when the script must not
 find a real one.
 
-To add a shell script to the list, write `tests/unit/<name>.test.sh` (the
-existing ones show the pattern), add the script to `COVERAGE_SHELL_SCRIPTS`,
-and run `make coverage`. Two things kcov does that are worth knowing: it
+A new shell script needs `tests/unit/<name>.test.sh` (the existing ones show
+the pattern) before `make coverage` passes again; vendored shell goes in
+`SHELL_EXCLUDE` with a comment saying why. Two things kcov does that are worth knowing: it
 counts a `: '...'` block comment as code it never saw run, so write those as
 `#` comments, and under kcov a script's `set -x` trace goes to kcov rather than
 to standard error. kcov also counts lines it can never see run: every line of

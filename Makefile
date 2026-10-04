@@ -101,7 +101,7 @@ STOP_COMPOSE_FILES := --file docker-compose.yml $(foreach route_file,$(STOP_ROUT
 .PHONY: restart sanity_fast sanity_full start start_library start_observability
 .PHONY: stop stop_all update_containers update_pre_commit test test_ci test_extended test_prerequisites
 .PHONY: test_no_rotate_passwords
-.PHONY: coverage
+.PHONY: coverage print-shell-scripts
 
 BACKUP_DIR ?= backup
 # Simply expanded, not ?=. The three archive names below each expand this,
@@ -1018,8 +1018,8 @@ test_extended: test ## Run the full suite plus rinse-and-repeat lifecycle cycles
 	@tests/.venv/bin/pytest -m "rinse_and_repeat" $(PYTEST_ARGS)
 
 # Coverage of the code this repository writes, held at 100%: every Python file
-# in scripts/ (lines and branches, .coveragerc) under coverage.py, the shell
-# scripts in COVERAGE_SHELL_SCRIPTS (lines; kcov reports no branches for bash)
+# in scripts/ (lines and branches, .coveragerc) under coverage.py, every shell
+# script, found as COVERAGE_SHELL_SCRIPTS (lines; kcov reports no branches for bash)
 # under kcov, and the JavaScript in COVERAGE_JS_SOURCES (lines, branches and
 # functions) under node's own test runner. All three run the container free
 # unit tier in tests/unit, never the stack. Writes the reports SonarQube Cloud
@@ -1049,12 +1049,12 @@ test_extended: test ## Run the full suite plus rinse-and-repeat lifecycle cycles
 # every line it is missing (`coverage xml` alone would exit 2 below
 # fail_under and end the Python run before `coverage report` named them).
 #
-# COVERAGE_SHELL_SCRIPTS is the list of shell scripts held at 100%, and it
-# grows a script at a time: each one listed needs a tests/unit/<name>.test.sh
-# that reaches every line of it, with every external command it drives
-# (podman, docker, make, curl and the rest) replaced by a stub on PATH. A
-# script not yet listed is not measured at all. See docs/TESTING.md, "The unit
-# tier".
+# COVERAGE_SHELL_SCRIPTS is every shell script this repository writes, found
+# rather than listed, and each is held at 100%: it needs a
+# tests/unit/<name>.test.sh that reaches every line of it, with every external
+# command it drives (podman, docker, make, curl and the rest) replaced by a
+# stub on PATH. See docs/TESTING.md, "The unit tier". The definition is below
+# the images.
 COVERAGE_DIR ?= coverage
 COVERAGE_RUNTIME ?= $(if $(CONTAINER_HOST),podman-remote,podman)
 # renovate: datasource=docker depName=docker.io/library/python
@@ -1063,31 +1063,32 @@ COVERAGE_PYTHON_IMAGE ?= docker.io/library/python:3.14-slim@sha256:51dafde81dbdb
 COVERAGE_KCOV_IMAGE ?= docker.io/kcov/kcov:latest@sha256:481289ae32e55e5b733019515acd10948a4f76dfed381765577db909664fc603
 # renovate: datasource=docker depName=docker.io/library/node
 COVERAGE_NODE_IMAGE ?= docker.io/library/node:24-trixie@sha256:be40f6a87b9b22215ddb20da0a2320a5c6d583fe3ee3b0024d9fa4f05b40c8fd
-COVERAGE_SHELL_SCRIPTS := \
-	.claude/hooks/git-guard.sh \
-	configs/calibre/custom-cont-init.d/10-fix-library.sh \
-	scripts/assert-stack-started.sh \
-	scripts/auto-start.sh \
-	scripts/check-network-subnets.sh \
-	scripts/detect-system-values.sh \
-	scripts/disk-status.sh \
-	scripts/enable-test-profiles.sh \
-	scripts/korsync-users.sh \
-	scripts/prune-nginx-cache.sh \
-	scripts/rotate-all.sh \
-	scripts/rotate-api-keys.sh \
-	scripts/rotate-certificate.sh \
-	scripts/rotate-nginx-logs.sh \
-	scripts/rotate-passwords.sh \
-	scripts/schedule-backup.sh \
-	scripts/seed-calibre-library.sh \
-	scripts/seed-configs.sh \
-	scripts/seed-gluetun-secret.sh \
-	scripts/seed-nginx-ports.sh \
-	scripts/seed-secrets.sh \
-	scripts/seed-vpn-mock.sh \
-	scripts/storage-mount.sh \
-	scripts/wire-connections.sh
+# How a shell script is found: a file git would commit (tracked, plus new ones
+# not ignored; a path deleted in the working tree is dropped before awk opens
+# it) whose name ends in .sh or .bash, or whose first line is a shebang running
+# sh, bash or dash (any interpreter path, env with or without options). Nothing
+# under tests/ counts, since those are the tests rather than the code under
+# test. tests/unit/test_shell_discovery.py checks this rule and keeps it here.
+#
+# SHELL_EXCLUDE is shell that is not ours to cover, the same paths the
+# shellcheck hook in .pre-commit-config.yaml leaves alone:
+#   configs/lidarr/custom-cont-init.d/scripts_init.bash is the upstream
+#     arr-scripts installer snippet, run verbatim inside the Lidarr container.
+#   patches/sabnzbd/svc-sabnzbd/run is the linuxserver SABnzbd service file,
+#     vendored with one change (patches/README.md). Its with-contenv shebang
+#     keeps the rule from finding it today; listed so it stays out if that
+#     shebang ever changes.
+# SHELL_EXTRA is shell that neither its name nor a shebang identifies (a
+# dotfile such as .bashrc). There is none.
+SHELL_EXCLUDE := \
+	configs/lidarr/custom-cont-init.d/scripts_init.bash \
+	patches/sabnzbd/svc-sabnzbd/run
+SHELL_EXTRA :=
+COVERAGE_SHELL_SCRIPTS := $(sort $(filter-out $(SHELL_EXCLUDE),$(shell \
+	git ls-files -z --cached --others --exclude-standard 2>/dev/null \
+	| xargs -0 sh -c 'for f do if [ -f "$$f" ]; then printf "%s\0" "$$f"; fi; done' sh \
+	| xargs -0 awk 'FNR == 1 { if (FILENAME ~ /\.(sh|bash)$$/ || $$0 ~ /^#![[:space:]]*([^[:space:]]*\/)?(env[[:space:]]+(-[^[:space:]]+[[:space:]]+)*)?(ba|da)?sh([[:space:]]|$$)/) print FILENAME; nextfile }' 2>/dev/null \
+	| grep -v '^tests/')) $(SHELL_EXTRA))
 # The JavaScript this repository writes, each tested by a tests/unit/*.test.js.
 COVERAGE_JS_SOURCES := configs/homepage/config/custom.js
 
@@ -1102,6 +1103,10 @@ coverage_sources := git ls-files -z --cached --others --exclude-standard --dedup
 coverage_unpack := set -e; mkdir /tmp/w; tar -x --no-same-owner -C /tmp/w; cd /tmp/w
 coverage_locked := --cap-drop=ALL --security-opt no-new-privileges
 coverage_sealed := $(coverage_locked) --network=none --read-only --tmpfs /tmp
+
+# Prints the shell scripts `make coverage` measures, one per line.
+print-shell-scripts:
+	@printf '%s\n' $(COVERAGE_SHELL_SCRIPTS)
 
 coverage:
 	@set -u; out="$$(mktemp -d)"; trap 'rm -rf "$$out"' EXIT; \

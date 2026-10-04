@@ -5,8 +5,8 @@
 # 100%, lines and branches both. SonarQube Cloud's quality gate is fixed at
 # 80% on new code and cannot be raised on this plan, so this is what holds the
 # higher bar. Branches too, so every `if` has been seen going both ways, not
-# only reached. The shell scripts listed in the Makefile's
-# COVERAGE_SHELL_SCRIPTS are held to 100% of their lines by kcov, see
+# only reached. Every shell script, which the Makefile finds as
+# COVERAGE_SHELL_SCRIPTS, is held to 100% of its lines by kcov, see
 # scripts/convert-kcov-coverage.py.
 [run]
 # Paths in coverage.xml relative rather than absolute (a `scripts` source and

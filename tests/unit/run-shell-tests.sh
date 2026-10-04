@@ -4,10 +4,10 @@
 #
 # The shell half of the unit tier. Runs tests/unit/<name>.test.sh for every
 # script named on the command line, which is the Makefile's
-# COVERAGE_SHELL_SCRIPTS: `make coverage` runs this file under kcov, which
-# follows each test and each script it starts. A listed script with no test
-# file is a failure, not a skip, so the list cannot claim a script nothing
-# exercises.
+# COVERAGE_SHELL_SCRIPTS (every shell script the repository writes, found
+# rather than listed): `make coverage` runs this file under kcov, which
+# follows each test and each script it starts. A script with no test file is
+# a failure, not a skip, so a new script cannot go unexercised.
 #
 # Usage: tests/unit/run-shell-tests.sh scripts/<name>.sh [...]
 
