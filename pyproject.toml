@@ -1,5 +1,11 @@
 [tool.ruff]
-target-version = "py311"
+# tests/unit/test_python_version_pin.py keeps this equal to CI's Python
+# (PYTHON_VERSION in .env.example).
+target-version = "py314"
+# Except the integration suite: it runs in tests/.venv, built from whatever
+# python3 the host has (README.md, Requisites), not from CI's pinned one, so it
+# keeps to syntax older interpreters parse (no PEP 758 `except A, B:`).
+per-file-target-version = { "tests/*.py" = "py311" }
 line-length = 88
 
 [tool.ruff.lint]
