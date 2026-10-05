@@ -6,8 +6,9 @@ set -euo pipefail
 # Usage: ./scripts/enable-test-profiles.sh
 # Applies .env.tests' profile overrides onto .env, then seeds the local
 # mock VPN endpoint if one is needed (scripts/seed-vpn-mock.sh decides
-# that for itself). Called by `make bootstrap_tests`, never by plain
-# `make bootstrap` or `make start`. Never run this against a real
+# that for itself). Called by tests/ci-suite.sh inside the nested test
+# runner (every stack test target, `make bootstrap_tests` included), never by
+# plain `make bootstrap` or `make start`. Never run this against a real
 # deployment: it changes which profiles are enabled in .env, the same way
 # bootstrap's own credential rotation permanently changes every password.
 

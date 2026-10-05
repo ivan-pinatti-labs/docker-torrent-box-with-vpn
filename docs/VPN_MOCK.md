@@ -75,8 +75,11 @@ a local mock.
 ## Never for a real deployment
 
 `VPN_MOCK_PROFILE` defaults to `disabled` in `.env.example` and stays that
-way unless `.env.tests` is applied. Running `make bootstrap_tests` rewrites
-`configs/gluetun/.secret` and `.env` the same way plain `make bootstrap`
-rewrites every other credential, so it's meant for a disposable clone, not
-a deployment you care about. If you want your own real VPN, follow
+way unless `.env.tests` is applied. `make bootstrap_tests` and the other test
+targets apply it only inside the nested test runner (docs/TESTING.md, "Where
+the suite runs"), to a throwaway copy of the tree. Running
+`make enable_test_profiles` directly is another matter: it rewrites this
+checkout's `configs/gluetun/.secret` and `.env` the same way plain
+`make bootstrap` rewrites every other credential, so it's meant for a
+disposable clone, not a deployment you care about. If you want your own real VPN, follow
 README.md section 2 or `docs/VPN_PROVIDERS.md` instead.

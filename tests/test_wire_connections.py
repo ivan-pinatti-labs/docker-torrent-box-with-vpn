@@ -10,7 +10,7 @@ is meant to stay, not act as a temporary probe value.
 
 The Jellyfin cases at the bottom are additionally marked `wiring_readonly`:
 they only read the wiring back, so they skip the script run and CI does run
-them. See pytest.ini and the Makefile's comment on test_ci.
+them. See pytest.ini and the Makefile's comment on suite_ci.
 
 App ports are not published to the host, so all API calls run curl inside the
 target container (see conftest.container_http), matching how the wiring
@@ -131,7 +131,7 @@ def run_wire_connections(request):
     nothing and would cost minutes of real writes against live apps. That is
     what lets CI run the read-only subset in its fast tier, off the back of its
     own `make wire_connections` step, without pulling in the serial tier this
-    module otherwise belongs to (see the Makefile's own comment on test_ci).
+    module otherwise belongs to (see the Makefile's own comment on suite_ci).
     """
     selected = [item for item in request.session.items if item.path == request.path]
     if selected and all(

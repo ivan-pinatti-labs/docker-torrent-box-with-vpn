@@ -116,8 +116,17 @@ def test_linux_kernel_version():
 def test_wireguard_available():
     """WireGuard must be either loaded (lsmod) or available as a loadable module (modinfo)."""
     in_lsmod = "wireguard" in run(["lsmod"]).stdout
-    if in_lsmod:
+    if in_lsmod or pathlib.Path("/sys/module/wireguard").exists():
         return
+    # The suite runs in the nested test runner, which shares the host's kernel
+    # but not its /lib/modules, so a module that is available and not yet
+    # loaded cannot be seen from there. That is a question for the host, which
+    # `make check_requirements` asks; here it is a skip rather than a failure.
+    if not pathlib.Path("/lib/modules", platform.release()).is_dir():
+        pytest.skip(
+            "WireGuard is not loaded and this kernel's modules are not visible "
+            "here (a container); make check_requirements checks the host"
+        )
     # Module built-in to kernel or available but not yet loaded: check with modinfo
     modinfo = run(["modinfo", "wireguard"])
     assert modinfo.returncode == 0, (

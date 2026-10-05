@@ -251,9 +251,9 @@ Every entry is `==`, not `>=`, and the difference mattered in two ways that
 were both invisible until #94 sat unapproved, back when Dependabot managed
 this file.
 
-**The cooling window did not reach this surface.** `make bootstrap_tests`
-builds `tests/.venv` from scratch and runs `pip install -r
-tests/requirements.txt`, so a `>=` floor resolved to whatever was newest on
+**The cooling window did not reach this surface.** Every suite run installs
+from scratch inside the nested test runner (`tests/ci-suite.sh` runs `pip
+install -r tests/requirements.txt`), so a `>=` floor resolved to whatever was newest on
 PyPI at that moment. Neither bot's cooldown governs what pip installs, only
 when it *proposes* a change, so a package published an hour earlier went into
 the suite on the next run regardless of which bot's schedule that was. This

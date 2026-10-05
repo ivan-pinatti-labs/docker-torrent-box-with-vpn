@@ -677,7 +677,10 @@
     // interpreter CI provisions (PYTHON_VERSION in .env.example) and the one
     // sonar-project.properties judges the code against, so it moves with
     // those by hand, node 24 is an LTS line that moves by hand to the next
-    // one, and kcov publishes nothing but `latest`. Grouped under a
+    // one, and kcov publishes nothing but `latest`. The nested test runner
+    // every integration target runs in (NESTED_IMAGE) is in the same file
+    // and the same position: devcontainer-airlock publishes it as `latest`
+    // plus a digest, so only the digest ever moves. Grouped under a
     // name of their own, after the observability group above, which would
     // otherwise claim docker.io/library/python here too because it matches by
     // package name.
@@ -810,8 +813,9 @@
     },
     {
       customType: "regex",
-      // The container images `make coverage` runs, each annotated in the
-      // Makefile the way Renovate documents for a regex manager:
+      // The container images `make coverage` and the nested test runner run,
+      // each annotated in the Makefile the way Renovate documents for a regex
+      // manager:
       //   # renovate: datasource=docker depName=<image>
       //   NAME ?= <image>:<tag>@sha256:<digest>
       managerFilePatterns: ["/^Makefile$/"],

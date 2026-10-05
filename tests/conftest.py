@@ -50,7 +50,7 @@ def pytest_collection_modifyitems(config, items):
     intermittent by nature, which is why the same commit range passed three
     runs and failed four.
 
-    --dist loadgroup (see the Makefile's test_ci) keeps same-group tests on one
+    --dist loadgroup (see the Makefile's suite_ci) keeps same-group tests on one
     worker, so grouping by app serialises the pair per app while different apps
     still run concurrently. Applied here rather than as a per-parameter mark so
     it covers both rotation files and anything added to them later.

@@ -99,8 +99,9 @@ STOP_COMPOSE_FILES := --file docker-compose.yml $(foreach route_file,$(STOP_ROUT
 .PHONY: install_requirements pull_docker_images pre_commit
 .PHONY: restore-configs restore-full
 .PHONY: restart sanity_fast sanity_full start start_library start_observability
-.PHONY: stop stop_all update_containers update_pre_commit test test_ci test_extended test_prerequisites
-.PHONY: test_no_rotate_passwords
+.PHONY: stop stop_all update_containers update_pre_commit test test_nested test_extended test_prerequisites
+.PHONY: test_no_rotate_passwords nested_only suite_ci suite_full suite_no_rotate_passwords suite_prerequisites suite_rinse
+.PHONY: suite_marker test_marker
 .PHONY: coverage print-shell-scripts
 
 BACKUP_DIR ?= backup
@@ -838,15 +839,16 @@ wire_connections:
 enable_test_profiles:
 	@./scripts/enable-test-profiles.sh
 
-# Enables every profile with real pytest coverage, bootstraps, and runs the
-# full suite: `make bootstrap_tests`. One command for the validation this
-# session's own manual walkthrough did by hand before finding three bugs
-# that had never been exercised (see docs/VPN_MOCK.md, docs/CONNECTIONS.md).
-# Run only against a disposable clone; it rewrites every credential exactly
-# like plain bootstrap does.
-bootstrap_tests: enable_test_profiles
-	@$(MAKE) --no-print-directory bootstrap
-	@$(MAKE) --no-print-directory test_extended
+# Enables every profile with real pytest coverage, bootstraps from scratch,
+# and runs the full suite plus rinse_and_repeat: `make bootstrap_tests`. One
+# command for the validation this session's own manual walkthrough did by hand
+# before finding three bugs that had never been exercised (see
+# docs/VPN_MOCK.md, docs/CONNECTIONS.md). It runs in the nested test runner
+# like every other test target (see "Where the suite runs" below), so the
+# bootstrap, and the credentials it rotates, belong to a throwaway stack and
+# never to this checkout.
+bootstrap_tests:
+	$(call nested_suite,bootstrap suite_full suite_rinse)
 
 # Refuses to start when external storage is configured but not mounted. The
 # fstab entry uses nofail so a NAS that is down cannot hold up boot, which
@@ -954,11 +956,91 @@ update_pre_commit:
 	@echo "Updating pre-commit hooks..."
 	@pre-commit autoupdate
 
-tests/.venv:
-	@echo "Creating test virtual environment..."
-	@python3 -m venv tests/.venv
-	@tests/.venv/bin/pip install -q -r tests/requirements.txt
-	@echo ".OK!"
+# Where the suite runs. Never against this host's engine and never with this
+# host's Python: every target below streams the files git would commit into
+# a throwaway container of the podman-nested image (a rootless podman inside
+# podman, from devcontainer-airlock), which stands its own stack up in its own
+# storage and runs pytest there. A deployment running on this machine is
+# invisible to it, and nothing it starts outlives it. docs/TESTING.md, "Where
+# the suite runs", has the reasoning; tests/ci-suite.sh has the steps, which
+# are exactly what integration-tests.yml runs, since that workflow calls
+# `make test_nested` too.
+#
+# The run flags are the image's documented ones (devcontainer-airlock's
+# docs/IMAGES.md, "The nested test runner"), plus two devices the stack
+# itself needs passed on: /dev/kmsg for cadvisor, and /dev/null standing in
+# for a GPU render node, because Jellyfin maps JELLYFIN_DRI_DEVICE and a
+# container inside a container cannot be handed the /dev/dri directory.
+#
+# NESTED_MEMORY caps the whole stack (8g fits the full test profile set);
+# set it empty where the outer engine cannot apply a cgroup limit.
+# NESTED_LABEL is the outer container's SELinux label. An SELinux host passes
+# the TUN device on to gluetun under container_engine_t only with
+# devcontainer-airlock's host/selinux policy module installed, and that module
+# does not cover /dev/kmsg, which cadvisor reads and container_engine_t cannot
+# even stat. Such a host sets NESTED_LABEL=disable for the full profile set
+# (tests/ci-suite.sh stops early and says so otherwise). Where SELinux is off
+# the option does nothing.
+# NESTED_STORAGE is the named volume holding the nested images, kept between
+# runs so they are not pulled again; `podman volume rm` it to reclaim the
+# space. NESTED_REGISTRY_SECRET names a podman secret holding a registry
+# auth file for the nested pulls (CI's Docker Hub login).
+# SUITE_DISABLE_PROFILES switches *_PROFILE variables off after the test
+# profiles are applied, for a reduced stack on a machine short of memory.
+#
+# The container is named and removed with `podman rm -v` on the way out as
+# well as by --rm: a killed client can leave the container running, and the
+# image declares anonymous volumes that only -v removes.
+#
+# renovate: datasource=docker depName=ghcr.io/ivan-pinatti-labs/airlock-podman-nested
+NESTED_IMAGE ?= ghcr.io/ivan-pinatti-labs/airlock-podman-nested:latest@sha256:aaa215596a799910ccc5aeeaee10c67190cc480495efc6dcd29161a26a0a5f04
+NESTED_RUNTIME ?= podman
+NESTED_MEMORY ?= 8g
+NESTED_LABEL ?= type:container_engine_t
+NESTED_STORAGE ?= $(COMPOSE_PROJECT_NAME)-nested-storage
+NESTED_NAME ?= $(COMPOSE_PROJECT_NAME)-nested
+NESTED_DRI_DEVICE ?= /dev/dri/card0
+NESTED_REGISTRY_SECRET ?=
+SUITE_DISABLE_PROFILES ?=
+
+# Runs tests/ci-suite.sh $(1) in the nested runner. The tree is unpacked into
+# a fresh git repository, so the hygiene tests that ask git what is tracked
+# and ignored see exactly what was committed.
+define nested_suite
+	@set -u; out="$$(mktemp -d)"; name="$(NESTED_NAME)"; \
+	trap '$(NESTED_RUNTIME) rm -v --force --time 10 "$$name" >/dev/null 2>&1; rm -rf "$$out"' EXIT; \
+	trap 'exit 130' INT TERM; \
+	$(coverage_sources); \
+	$(NESTED_RUNTIME) run <"$$out/src.tar" --rm --interactive --name "$$name" \
+		--user podman \
+		--device /dev/fuse --device /dev/net/tun --device /dev/kmsg \
+		--device /dev/null:$(NESTED_DRI_DEVICE) \
+		--security-opt label=$(NESTED_LABEL) --security-opt unmask=ALL \
+		$(if $(NESTED_MEMORY),--memory $(NESTED_MEMORY) --memory-swap $(NESTED_MEMORY)) \
+		-v "$(NESTED_STORAGE):/home/podman/.local/share/containers" \
+		$(if $(NESTED_REGISTRY_SECRET),--secret $(NESTED_REGISTRY_SECRET)$(comma)target=registry-auth.json$(comma)uid=1000$(comma)mode=0400 \
+			--env REGISTRY_AUTH_FILE=/run/secrets/registry-auth.json) \
+		$(if $(GITHUB_ACTIONS),--env GITHUB_ACTIONS=true) \
+		--env NESTED_RUNNER=1 \
+		--env SUITE_PROJECT="$(COMPOSE_PROJECT_NAME)" \
+		--env JELLYFIN_DRI_DEVICE="$(NESTED_DRI_DEVICE)" \
+		--env SUITE_DISABLE_PROFILES="$(SUITE_DISABLE_PROFILES)" \
+		--env PYTEST_ARGS="$(PYTEST_ARGS)" --env MARKER="$(MARKER)" \
+		"$(NESTED_IMAGE)" bash -c 'set -e; mkdir "$$HOME/work"; cd "$$HOME/work"; \
+			tar -x --no-same-owner; git init -q; git add -A; \
+			exec tests/ci-suite.sh $(1)'
+endef
+
+# The suite_* targets are the tiers themselves, run by tests/ci-suite.sh
+# inside the runner against the stack it stood up, and refused anywhere else.
+nested_only:
+	@if [ "$${NESTED_RUNNER:-}" != 1 ]; then \
+		echo "ERROR: this tier runs inside the nested test runner only."; \
+		echo "Run make test_nested, make test or make test_prerequisites instead."; \
+		exit 1; \
+	fi
+
+PYTEST := python3 -m pytest
 
 # Three passes instead of one invocation: most of this suite's runtime is
 # concentrated in a small number of tests that mutate shared, live
@@ -972,14 +1054,14 @@ tests/.venv:
 # error precisely because parallel invocations race on it (see pytest.ini
 # and conftest.py's restart_container()). It gets its own parallel pass
 # too, separate from the read-only tier since it still needs the live
-# stack. rinse_and_repeat is excluded here entirely; see test_extended.
-test: tests/.venv ## Run the full test suite (requires the stack to be running)
-	@tests/.venv/bin/pytest -n auto -m "not rotation and not pw_rotation and not wiring and not killswitch and not rinse_and_repeat" $(PYTEST_ARGS)
-	@tests/.venv/bin/pytest -n 4 --dist loadgroup -m "rotation_isolated" $(PYTEST_ARGS)
-	@tests/.venv/bin/pytest -m "(rotation or pw_rotation or wiring or killswitch) and not rotation_isolated" $(PYTEST_ARGS)
+# stack. rinse_and_repeat is excluded here entirely; see suite_rinse.
+suite_full: nested_only
+	@$(PYTEST) -n auto -m "not rotation and not pw_rotation and not wiring and not killswitch and not rinse_and_repeat" $(PYTEST_ARGS)
+	@$(PYTEST) -n 4 --dist loadgroup -m "rotation_isolated" $(PYTEST_ARGS)
+	@$(PYTEST) -m "(rotation or pw_rotation or wiring or killswitch) and not rotation_isolated" $(PYTEST_ARGS)
 
-# The serial (rotation or pw_rotation or wiring or killswitch) tier test
-# excludes above genuinely needs a real app restart to complete and
+# The serial (rotation or pw_rotation or wiring or killswitch) tier
+# suite_full runs last genuinely needs a real app restart to complete and
 # report healthy within its own wait budget, over and over, for dozens of
 # apps in a row. Confirmed live: that's reliable on a real bench's own
 # hardware (two full clean runs, zero failures each), but not on a
@@ -987,35 +1069,65 @@ test: tests/.venv ## Run the full test suite (requires the stack to be running)
 # same restarts intermittently overrun the exact same wait budgets and
 # retry counts that are already tuned for exactly this kind of transient
 # "container state improper" race (see this file's own comment on
-# rotation_isolated above). CI runs this instead of plain test; make
-# bootstrap_tests (a real bench, pre-release) still runs the full thing.
+# rotation_isolated above). CI runs this instead of suite_full; make test
+# and make bootstrap_tests still run the full thing.
 #
 # wiring_readonly is the exception to that wiring exclusion: it only reads the
 # wiring back and runs each app's own Test action, so it neither restarts a
 # container nor writes anything, and the module's autouse fixture skips
 # re-running wire-connections.sh when that is the whole selection. It does need
-# the wiring to already exist, which the CI job's own `make wire_connections`
-# step (and, locally, make bootstrap) does. Serial rather than -n auto: it is a
+# the wiring to already exist, which tests/ci-suite.sh's `make wire_connections`
+# step (and make bootstrap) does. Serial rather than -n auto: it is a
 # handful of HTTP calls, so a worker pool costs more to start than it saves.
-test_ci: tests/.venv ## Run the fast tiers only (read-only + rotation_isolated + wiring_readonly); what CI runs
-	@tests/.venv/bin/pytest -n auto -m "not rotation and not pw_rotation and not wiring and not killswitch and not rinse_and_repeat" $(PYTEST_ARGS)
-	@tests/.venv/bin/pytest -n 4 --dist loadgroup -m "rotation_isolated" $(PYTEST_ARGS)
-	@tests/.venv/bin/pytest -m "wiring_readonly" $(PYTEST_ARGS)
+suite_ci: nested_only
+	@$(PYTEST) -n auto -m "not rotation and not pw_rotation and not wiring and not killswitch and not rinse_and_repeat" $(PYTEST_ARGS)
+	@$(PYTEST) -n 4 --dist loadgroup -m "rotation_isolated" $(PYTEST_ARGS)
+	@$(PYTEST) -m "wiring_readonly" $(PYTEST_ARGS)
 
-test_prerequisites: tests/.venv ## Run only pre-flight checks (no containers needed)
-	@tests/.venv/bin/pytest -m prerequisites $(PYTEST_ARGS)
+suite_prerequisites: nested_only
+	@$(PYTEST) -m prerequisites $(PYTEST_ARGS)
 
-test_no_rotate_passwords: tests/.venv ## Run full test suite except password rotation (rotate-passwords.sh)
-	@tests/.venv/bin/pytest -m "not pw_rotation" $(PYTEST_ARGS)
+suite_no_rotate_passwords: nested_only
+	@$(PYTEST) -m "not pw_rotation" $(PYTEST_ARGS)
 
 # rinse_and_repeat (stop/start and down/start cycles against the whole
 # stack) is the single most expensive marker by far and, unlike
 # rotation/wiring/killswitch, isn't testing a specific credential or
 # connection: it's a lifecycle-stability check best run deliberately
 # (before a release, after touching bootstrap/compose) rather than on
-# every `make test`. `bootstrap_tests` calls this, not plain `test`.
-test_extended: test ## Run the full suite plus rinse-and-repeat lifecycle cycles
-	@tests/.venv/bin/pytest -m "rinse_and_repeat" $(PYTEST_ARGS)
+# every `make test`.
+suite_rinse: nested_only
+	@$(PYTEST) -m "rinse_and_repeat" $(PYTEST_ARGS)
+
+# One marker expression in a single pytest pass, for when one marker is the
+# point (`make test_marker MARKER=security`). PYTEST_ARGS="-m ..." cannot do
+# this through the tiers above: each tier is its own pytest call with its own
+# -m, and pytest keeps only the last -m it is given.
+suite_marker: nested_only
+	@if [ -z "$(MARKER)" ]; then echo "ERROR: set MARKER, for example MARKER=security"; exit 1; fi
+	@$(PYTEST) -m "$(MARKER)" $(PYTEST_ARGS)
+
+# The entry points, each a fresh nested stack. The prerequisites tier needs no
+# stack, only the runner's tools and the committed tree. What the host needs
+# to run a deployment is `make check_requirements`, which stays here.
+test_prerequisites: ## Run the pre-flight and repository checks in the nested runner (no stack)
+	$(call nested_suite,none suite_prerequisites)
+
+test_nested: ## Stand a nested stack up and run the CI tiers; what integration-tests.yml runs
+	$(call nested_suite,stack suite_ci)
+
+test: ## Stand a nested stack up and run the full suite
+	$(call nested_suite,stack suite_full)
+
+test_no_rotate_passwords: ## Stand a nested stack up and run the full suite except password rotation
+	$(call nested_suite,stack suite_no_rotate_passwords)
+
+test_extended: ## Stand a nested stack up and run the full suite plus rinse-and-repeat lifecycle cycles
+	$(call nested_suite,stack suite_full suite_rinse)
+
+test_marker: ## Stand a nested stack up and run one marker expression, MARKER=<expression>
+	@if [ -z "$(MARKER)" ]; then echo "ERROR: set MARKER, for example MARKER=security"; exit 1; fi
+	$(call nested_suite,stack suite_marker)
 
 # Coverage of the code this repository writes, held at 100%: every Python file
 # in scripts/ (lines and branches, .coveragerc) under coverage.py, every shell

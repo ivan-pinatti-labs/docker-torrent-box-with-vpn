@@ -15,9 +15,10 @@
 #
 # The unit tier added three more surfaces, graded by grammars of their own
 # rather than the repository default, which none of them fit: the exact pins
-# in tests/unit/requirements.in, the hash lock compiled from them, and the two
-# images `make coverage` runs, pinned by digest in the Makefile (Renovate's
-# packageRules keep their tags fixed, so only the digest ever moves). The
+# in tests/unit/requirements.in, the hash lock compiled from them, and the
+# images `make coverage` and the nested test runner run, pinned by digest in
+# the Makefile (Renovate's packageRules keep their tags fixed, so only the
+# digest ever moves). The
 # rules are matched in order and none of the three is a suffix pattern, so
 # tests/requirements.txt, which is not a lock, keeps the default grammars.
 # scripts/requirements.in and its lock, the pyyaml integration-tests.yml

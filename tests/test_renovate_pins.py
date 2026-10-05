@@ -22,8 +22,8 @@ Checks` job in .github/workflows/pull-request-validation.yml runs, so these
 gate every pull request without waiting on the integration suite, which is the
 point: an unwatched pin is a review-time mistake, not a runtime failure.
 
-No containers and no stack state, so these run anywhere:
-    pytest -m prerequisites tests/test_renovate_pins.py
+No containers and no stack state, so they need no stack either:
+    make test_prerequisites
 """
 
 import re
