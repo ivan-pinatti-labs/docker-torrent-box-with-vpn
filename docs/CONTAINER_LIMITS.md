@@ -43,6 +43,15 @@ memory ceiling via `ALLOY_MEMORY` (default `512mb`) instead of `TELEMETRY_MEMORY
 For Jellyfin CPU transcoding, increase `JELLYFIN_CPUS` to `2`. Hardware
 transcoding through `/dev/dri` may not need that increase.
 
+`JELLYFIN_DRI_DEVICE` names the GPU device Jellyfin gets, mapped to the same
+path inside the container. It defaults to `/dev/dri`, the whole directory,
+which is what a real host wants, and a deployment whose `.env` predates the
+variable gets that same default. Set a single node such as `/dev/dri/card0`
+only where the runtime cannot pass a directory on: the nested test runner
+(docs/TESTING.md) is one, since a directory mapping fails for a container
+started inside another container, and it sets `/dev/dri/card0` for that
+reason.
+
 jDownloader2 is a JVM application and carries an additional X11/VNC layer from
 the `jlesage/jdownloader-2` image. Its JVM heap is capped at 384 MB via
 `JDOWNLOADER_MAX_MEM=384m` in `configs/jdownloader2/.env`, with supporting JVM

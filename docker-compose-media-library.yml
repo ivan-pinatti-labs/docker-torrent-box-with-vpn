@@ -91,7 +91,10 @@ services:
       - no-new-privileges:true
     # Leave commented unless your machine is capable of Hardware acceleration - Intel / Nvidia
     # More information at; https://jellyfin.org/docs/general/installation/container#with-hardware-acceleration
-    devices: ["/dev/dri:/dev/dri"] # Intel QuickSync
+    # JELLYFIN_DRI_DEVICE (.env.example) names what is passed through, the whole
+    # /dev/dri directory unless set. The nested test runner sets one render
+    # node instead, since it cannot pass a directory on (docs/CONTAINER_LIMITS.md).
+    devices: ["${JELLYFIN_DRI_DEVICE:-/dev/dri}:${JELLYFIN_DRI_DEVICE:-/dev/dri}"] # Intel QuickSync
     env_file: ["${CONFIG_FOLDER}/jellyfin/.env"]
     environment:
       PGID: "${JELLYFIN_GID}"
