@@ -10,6 +10,6 @@
 # coverage to measure it, and pyyaml because permissions.py and
 # generate-homepage-services.py import it. Keep pytest and pyyaml equal to the
 # integration pins.
-coverage==7.16.1
+coverage==7.16.2
 pytest==9.1.1
 pyyaml==6.0.3
