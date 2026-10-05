@@ -39,7 +39,7 @@ def _detect_runtime() -> str:
                 == 0
             ):
                 return "podman"
-        except (subprocess.TimeoutExpired, OSError):
+        except subprocess.TimeoutExpired, OSError:
             pass
     return "docker"
 
@@ -70,7 +70,7 @@ def _answers(cmd: list[str]) -> bool:
     """
     try:
         return run(cmd).returncode == 0
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return False
 
 

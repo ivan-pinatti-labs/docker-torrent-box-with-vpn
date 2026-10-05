@@ -5,6 +5,10 @@ credential rotation, app-to-app wiring, and VPN killswitch behavior. See
 [docs/CONTRIBUTING.md](CONTRIBUTING.md) for how it fits into pre-commit, CI,
 and pull requests; this page covers the suite itself.
 
+Running it needs only Podman on the host, plus the nested test runner image
+the test targets pull on first use. No Python, compose, yq or xmlstarlet on
+the host: the suite runs inside that image (see "Where the suite runs").
+
 ## Markers and tiers
 
 Every test carries a marker registered in `pytest.ini`, and `make test` runs
