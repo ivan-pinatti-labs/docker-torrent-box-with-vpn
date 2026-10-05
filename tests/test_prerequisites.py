@@ -61,24 +61,36 @@ def test_docker_version():
         assert ver >= (4, 0, 0), f"Podman {ver} < 4.0.0 required"
 
 
-def test_compose_available():
-    # A slow `docker compose version` counts as "this flavour did not
-    # answer", not as a hard failure of the whole test, otherwise it aborts
-    # the test before the other two flavours are ever checked, even when one
-    # of them is perfectly usable. Fixed at this call site rather than in
-    # run() itself: run() is shared by every other probe in this file, and
-    # broadening it there would change what a timeout means for all of them,
-    # not just this one.
+def _answers(cmd: list[str]) -> bool:
+    """True when the command exists and exits 0 within run()'s timeout.
+
+    A missing binary is an answer of no, not an error: a host with podman and
+    no docker raises FileNotFoundError from `docker compose version`, which
+    used to crash the whole test before podman's own compose was ever asked.
+    """
     try:
-        has_docker_compose_plugin = (
-            run(["docker", "compose", "version"]).returncode == 0
-        )
-    except subprocess.TimeoutExpired:
-        has_docker_compose_plugin = False
+        return run(cmd).returncode == 0
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+
+
+def test_compose_available():
+    # A slow or missing flavour counts as "this flavour did not answer", not as
+    # a hard failure of the whole test, otherwise it aborts the test before
+    # the others are ever checked, even when one of them is perfectly usable.
+    # Handled at this call site rather than in run() itself: run() is shared
+    # by every other probe in this file, and broadening it there would change
+    # what a timeout means for all of them, not just this one.
+    has_docker_compose_plugin = _answers(["docker", "compose", "version"])
     has_docker_compose_standalone = shutil.which("docker-compose") is not None
     has_podman_compose = shutil.which("podman-compose") is not None
+    # podman's own subcommand, which answers only when it finds a provider.
+    has_podman_compose_subcommand = _answers(["podman", "compose", "version"])
     assert (
-        has_docker_compose_plugin or has_docker_compose_standalone or has_podman_compose
+        has_docker_compose_plugin
+        or has_docker_compose_standalone
+        or has_podman_compose
+        or has_podman_compose_subcommand
     ), (
         "No Docker Compose found. Install via: apt install docker-compose-plugin "
         "(or podman-compose for Podman)"
