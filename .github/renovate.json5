@@ -284,7 +284,7 @@
     // arrived tagged as a container image. This covers both customManagers
     // that set `datasourceTemplate: "docker"`, and correctly leaves out the
     // ones taking their datasource from the annotation, which is how checkov,
-    // zizmor, podman-compose and gitleaks stop being called images.
+    // zizmor and gitleaks stop being called images.
     //
     // addLabels accumulates rather than replacing, so this composes with the
     // rule above and with the group rules below instead of racing them.
@@ -589,29 +589,6 @@
       ],
       groupName: "lint and scanner tooling",
       groupSlug: "lint-scanner-tooling",
-    },
-    // The container runtime tooling CI installs, pinned inline in the
-    // workflows. Grouped so the two copies of the pin always move in one pull
-    // request: they are the same pin, and letting them drift apart would mean
-    // the prerequisite job and the suite testing different tools.
-    //
-    // This used to be held out of automerge, on the grounds that podman-compose
-    // is what talks to podman and a bump had to be proven by an actual suite
-    // run, which only started when someone commented `/run-tests`. The suite now
-    // starts itself for these pull requests, so the condition that kept this
-    // manual is met by the thing it was waiting for. A podman-compose that
-    // cannot stand the stack up fails the suite loudly, which is the whole
-    // proof that was being asked for.
-    //
-    // The `ci-runtime` label stays. It marks the one bump that changes the
-    // tooling the suite itself runs on, which is worth being able to find after
-    // the fact when something starts behaving oddly in CI.
-    {
-      matchDatasources: ["pypi"],
-      matchPackageNames: ["podman-compose"],
-      groupName: "container runtime tooling",
-      groupSlug: "ci-runtime",
-      addLabels: ["ci-runtime"],
     },
     // The three ecosystems that moved here from Dependabot, each grouped the
     // way Dependabot grouped it: one pull request per ecosystem

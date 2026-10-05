@@ -303,10 +303,16 @@ jobs:
     # shortening the suite, and it should not need raising again unless the
     # suite grows further.
     #
-    # This stays the binding limit and the per-step limits below do not try to
-    # replace it. They sum past an hour because each has to allow for its own
-    # worst case, and that is the point: they exist to catch a step that has
-    # *hung*, not to police normal variance.
+    # 40 since the suite moved into the nested test runner, which adds the
+    # podman-nested image's own pull and runs every nested container on
+    # a FUSE overlay. Nothing has measured that overhead on a runner yet, so
+    # this is headroom to be brought back toward the old 25 once a few runs
+    # have, by the same bar as before: about a third over the worst honest run.
+    #
+    # This stays the binding limit and the per-step limits inside
+    # tests/ci-suite.sh do not try to replace it. They sum past an hour because
+    # each has to allow for its own worst case, and that is the point: they
+    # exist to catch a step that has *hung*, not to police normal variance.
     #
     # Sized at four to six times the worst of seventeen samples, or whatever the
     # value was before, whichever is higher. A first attempt sized them from a
@@ -316,7 +322,7 @@ jobs:
     # request that had changed nothing but a comment. Normal variance on a busy
     # runner is wide, so anything close to the observed maximum will fail honest
     # runs more often than it catches real hangs.
-    timeout-minutes: 25
+    timeout-minutes: 40
     # One suite per pull request: a second `/run-tests`, or a push to a bot's
     # branch, supersedes the first rather than standing a competing stack up on
     # the same runner pool. That matters more on the bot path than the comment
@@ -405,412 +411,98 @@ jobs:
             exit 1
           fi
 
-      - name: Install xmlstarlet
-        # Bounded and retried, because this innocuous line has cost two suite
-        # runs. On 2026-08-18 it hung for the whole twenty minute job budget on
-        # #68, twice, while every step after it was skipped: `apt-get update`
-        # stalls on an unreachable mirror and waits out its own long default
-        # timeouts. A step with no limit of its own inside a job whose limit is
-        # the only backstop turns a mirror hiccup into a failed suite, and the
-        # publish job can only report that the run did not finish.
-        #
-        # No custom Acquire timeouts, and that is the correction. A first
-        # attempt set them to 15 seconds so a stall would fail fast enough to
-        # retry, which instead made a slow mirror fail *deterministically*:
-        # azure.archive.ubuntu.com took longer than 15 seconds to answer, apt
-        # gave up on the source with `Ign:`, and installing then failed because
-        # the archive's package lists had never been fetched. Three attempts
-        # reproduced it three times. The proof it was self inflicted is that
-        # pull-request-validation.yml installs the same package with a bare
-        # apt-get and passed on the same runner pool in the same minute.
-        #
-        # So apt keeps its own timeouts, the retry stays for a genuinely
-        # transient failure, and the step bound below is what protects against a
-        # hang. That is the right division: a limit catches a stall, it should
-        # not manufacture one.
-        timeout-minutes: 8
-        shell: bash
-        run: |
-          set -euo pipefail
-          apt_opts=(-o Acquire::Retries=3)
-          for attempt in 1 2; do
-            if sudo apt-get "${apt_opts[@]}" update \
-              && sudo apt-get "${apt_opts[@]}" install -y xmlstarlet; then
-              exit 0
-            fi
-            echo "::warning::apt attempt $attempt failed, retrying."
-            sleep 5
-          done
-          echo "::error::Could not install xmlstarlet after three attempts."
-          exit 1
-
       - name: Set up rootless Podman
-        # Bounded for the same reason as the xmlstarlet step above: this one
-        # also talks to the archive, so a stalled mirror here would spend the
-        # job budget rather than this step's.
-        timeout-minutes: 10
-        # See prerequisites job's own copy of this step for why it's
-        # needed. This is the runtime the project is actually built and
-        # documented for; every local bench validation this session ran
-        # on Podman, not Docker.
+        # The runner image's own podman, unchanged. It only starts one
+        # container here, the nested test runner, and the stack runs on the
+        # podman inside that image (docs/TESTING.md, "Where the suite runs").
+        # That is what retired the Ubuntu archive's podman 4.9.3 this step
+        # used to install: the image's podman is built without systemd, so it
+        # cannot schedule healthchecks and no compose stack it ran ever came
+        # up, and the podman-nested image's health ticker now runs every
+        # healthcheck inside the nested engine instead. No socket to start either, since
+        # the image serves its own API socket to the suite.
+        timeout-minutes: 3
         shell: bash
         run: |
-          # CI runs the archive's podman, not the one the runner image ships,
-          # and this is deliberate. It is also the one place where CI and a real
-          # bench differ on purpose, so it is worth being precise about why.
-          #
-          # The image's podman lives in /usr/local and is built without systemd
-          # support. Such a build cannot schedule healthcheck timers at all: it
-          # logs "New container has a health check" and then never creates one,
-          # so every container stays `starting` forever, nothing satisfies
-          # `depends_on: condition: service_healthy`, and `podman-compose up`
-          # waits on `podman wait --condition=healthy gluetun` until something
-          # kills it. Its bundled crun cannot even start a container under
-          # `--cgroup-manager=systemd` ("crun: systemd not supported"), and it
-          # reports `eventLogger: file` rather than journald, which is the tell
-          # for a build missing the systemd tag. No amount of environment fixes
-          # it: lingering, a user manager and a DBus address were all confirmed
-          # present and changed nothing.
-          #
-          # The distributions build podman with systemd support, which is why a
-          # Fedora bench runs 5.8.4 perfectly well and why the archive's 4.9.3
-          # passes the whole start path here unchanged. There is no podman 5
-          # package for this release, and adding a third party apt repository to
-          # reach one would put a new supplier inside CI's trust boundary to
-          # chase a version number, which is a worse trade than the gap it
-          # closes.
-          #
-          # So: CI on the archive's 4.9.3, benches on whatever their distribution
-          # ships (5.8.4 today, unchanged and not to be pinned down there), and
-          # `make bootstrap_tests` on a real bench stays the release gate for the
-          # runtime you actually run. What this job exercises is the compose
-          # files, the scripts, the wiring and the tests, none of which are
-          # podman-version-specific.
-          #
-          # conmon and crun come from the archive too: the binary alone is not
-          # the environment, and 4.9.3 driving the image's podman 5 helpers dies
-          # on the first container with "conmon failed: exit status 1".
-          target=$(apt-cache madison podman | awk '{print $3}' | grep -m1 '^4\.' || true)
-          if [ -z "$target" ]; then
-            echo "::error::No podman 4.x in the archive; see this step's comment."
-            exit 1
-          fi
-          sudo apt-get install -y --allow-downgrades "podman=$target" conmon crun
-          # apt writes /usr/bin, the image ships /usr/local/bin, and /usr/local
-          # wins on PATH. Without displacing it the install reports success and
-          # changes nothing, which cost one run before it was noticed. Renamed
-          # rather than deleted so the originals are still there to look at.
-          for path in /usr/local/bin/podman /usr/local/bin/conmon \
-                      /usr/local/bin/crun /usr/local/lib/podman; do
-            if [ -e "$path" ]; then
-              sudo mv "$path" "$path.shadowed"
-            fi
-          done
-          hash -r
-          command -v podman
-          podman --version
-          # Asserted, so a silent no-op can never again look like a working run.
-          if ! podman --version | grep -q ' 4\.'; then
-            echo "::error::Expected podman 4.x, got $(podman --version)."
-            exit 1
-          fi
+          # ubuntu-latest delegates no subordinate id range to the runner
+          # user, and rootless podman needs one for any container.
           sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 "$(whoami)"
+          # Ubuntu can confine every unprivileged user namespace through
+          # AppArmor, and the podman inside the runner creates one for each
+          # container it starts. `--security-opt apparmor=unconfined` on the
+          # outer container would not reach this: rootless podman applies no
+          # AppArmor profile at all, so the outer container already runs
+          # unconfined, and it is the kernel setting below that confines an
+          # unconfined process's new namespace. Switched off on the runner
+          # only, and only when it is on.
+          if [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" = 1 ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
           podman system migrate
-          podman info
-          # Pinned so a release of podman-compose cannot change what CI tests
-          # without anything in this repository changing. Reproducibility, not a
-          # fix: 1.5.0 and 1.6.0 both hang against podman 5.8.4, so the version
-          # installed here is ruled out as the cause and podman is not.
-          #
-          # The annotation is what keeps the pin from rotting. Renovate's own
-          # native pip_requirements manager reads tests/requirements.txt and
-          # nothing else, so it would never see an inline `pip install` like
-          # this one on its own; it needs telling. See the customManager in
-          # .github/renovate.json5.
-          # renovate: datasource=pypi depName=podman-compose
-          pip install podman-compose==1.6.0 --only-binary=:all:
-          # tests/conftest.py's docker_client fixture talks to podman over
-          # this exact socket path, not the CLI; nothing starts it by
-          # default on ubuntu-latest, confirmed live (every container/auth
-          # test errored out at fixture setup with a plain
-          # FileNotFoundError on the socket path).
-          mkdir -p "/run/user/$(id -u)/podman"
-          nohup podman system service --time=0 "unix:///run/user/$(id -u)/podman/podman.sock" >/tmp/podman-service.log 2>&1 &
-          timeout 30 bash -c 'until [ -S "/run/user/'"$(id -u)"'/podman/podman.sock" ]; do sleep 1; done'
-
-      - name: Create .env file
-        timeout-minutes: 2
-        shell: bash
-        run: |
-          cp .env.example .env
-          # make generate_certificate rejects .env.example's own LAN_IP placeholder
-          # (OpenSSL needs a real IP for the certificate's subjectAltName); any
-          # RFC 1918 address works here since nothing on the runner resolves it.
-          sed -i 's/^LAN_IP=192.168.1.x/LAN_IP=192.168.1.100/' .env
-          # UID and GID ship as 1000, the common case on a bench and wrong here:
-          # this runner's user is 1001. Three observability services mount the
-          # rootless podman socket at /run/user/${UID}/podman, so a wrong UID
-          # makes that path not exist and podman refuses the container with
-          # "statfs /run/user/1000/podman/podman.sock: no such file or directory".
-          # It went unnoticed until `make start` began reporting which services
-          # failed to come up instead of hanging.
-          sed -i "s/^UID=.*/UID=$(id -u)/" .env
-          sed -i "s/^GID=.*/GID=$(id -g)/" .env
-
-      - name: Apply the test profile overrides
-        timeout-minutes: 3
-        # `make enable_test_profiles` applies .env.tests onto .env and then
-        # seeds the VPN mock, which is exactly what this step used to do by hand
-        # for one of that file's variables. Hand-rolling it meant CI enabled
-        # VPN_MOCK_PROFILE and nothing else, so the eleven observability
-        # profiles, whisparr and nzbhydra2 stayed off here, and every test
-        # written for them skipped: .env.tests exists precisely because each of
-        # those profiles "has real pytest coverage that never runs otherwise",
-        # and CI was the one place not reading it. The groundwork was already
-        # laid, since `make seed_all` above seeds configs/grafana's secrets and
-        # creates storage/{loki,prometheus,grafana}/data whether or not anything
-        # uses them.
-        #
-        # Using the make target rather than restating the profile list keeps one
-        # source of truth. The list drifted once already, which is what this
-        # replaces.
-        #
-        # The VPN half of the reasoning is unchanged. Always the mock, never a
-        # real credential: there is no PROTONVPN_PRIVATE_KEY secret in this
-        # repository and there is not going to be one, and `make test_ci` below
-        # excludes the killswitch tier, the only one that exercises a real VPN
-        # credential. scripts/enable-test-profiles.sh only seeds the mock when
-        # configs/gluetun/.secret is still a placeholder, so a real key is never
-        # overwritten.
-        #
-        # gluetun can't be skipped the way GLUETUN_PROFILE=disabled tries to:
-        # it's foundational, not optional the way other apps' profiles are,
-        # since every VPN-routed container's network_mode depends on it
-        # existing. Confirmed live: disabling its profile just makes make
-        # start's own explicit `up gluetun` call fail outright ("missing
-        # services [gluetun]") under podman-compose, which (unlike Docker
-        # Compose) doesn't let an explicitly named service override profile
-        # filtering. So it points at this repo's own credential-free mock
-        # WireGuard endpoint instead; see docs/VPN_MOCK.md.
-        shell: bash
-        run: |
-          make enable_test_profiles
-          # podman_exporter and podman_limits_exporter cannot start here, and it
-          # is the runtime rather than the services: both set userns_mode,
-          # podman-compose puts every service in a pod, and podman 4.9.3 refuses
-          # the combination outright with "--userns and --pod cannot be set
-          # together". CI runs the Ubuntu archive's 4.9.3 deliberately, see the
-          # podman install step above, so this is not a version to chase.
-          #
-          # Disabled here rather than in .env.tests, because they do work on a
-          # bench: verified on podman 5.8.4, where both come up healthy and serve
-          # metrics. `make bootstrap_tests` therefore still exercises them, and
-          # that is where the release gate lives.
-          #
-          # cadvisor stays enabled: it sets no userns_mode and only ever failed
-          # on the UID above.
-          sed -i 's/^PODMAN_EXPORTER_PROFILE=enabled/PODMAN_EXPORTER_PROFILE=disabled/' .env
-          sed -i 's/^PODMAN_LIMITS_EXPORTER_PROFILE=enabled/PODMAN_LIMITS_EXPORTER_PROFILE=disabled/' .env
-
-      - name: Read PYTHON_VERSION from .env
-        timeout-minutes: 1
-        shell: bash
-        run: grep -m1 '^PYTHON_VERSION=' .env >> "$GITHUB_ENV"
-
-      - name: Python Setup
-        timeout-minutes: 4
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install scripts/permissions.py's dependency
-        timeout-minutes: 3
-        # seed_all's own permissions_repair step runs this script directly
-        # with the system Python, not tests/.venv (that only gets created
-        # later, by make test's own dependency on it). Hash locked, and wheels
-        # only, from scripts/requirements.txt; see scripts/requirements.in.
-        shell: bash
-        run: |
-          pip install --require-hashes --only-binary=:all: -r scripts/requirements.txt
-
-      - name: Seed every app's config and secrets
-        # make start alone, unlike make bootstrap, never seeds any of this:
-        # every app whose compose service references a secrets.yml or
-        # .env.secrets file normally seeded here fails outright the moment
-        # that file doesn't exist yet, confirmed live (calibre's own
-        # .env.secrets specifically, but this affects every app in the
-        # list, not just that one).
-        # Bounded because it is not just file seeding: its own
-        # configs/flaresolverr/config/chromedriver prerequisite runs a
-        # container to extract chromedriver, so this step performs the job's
-        # first Docker Hub pull. A run stalled here for over four minutes,
-        # having previously stalled in Start stack, which is the same cause
-        # wearing a different step name.
-        timeout-minutes: 8
-        run: make seed_all
-
-      - name: Generate self-signed certificate
-        timeout-minutes: 3
-        run: make generate_certificate
+          podman --version
 
       - name: Log in to Docker Hub
         # 26 of this stack's images come from Docker Hub, and anonymous pulls
         # are rate limited per source address while GitHub runners share
-        # addresses across every project on the pool. Three runs on this pull
+        # addresses across every project on the pool. Three runs on one pull
         # request stalled mid-pull long enough to hit a timeout, each in a
         # different step, which is the shape throttling makes.
         #
-        # podman login rather than docker/login-action: podman is the runtime
-        # here and only falls back to ~/.docker/config.json, so this writes the
-        # auth file it actually uses.
+        # The pulls happen inside the nested test runner, so the login has to
+        # reach the podman there: it is written to an auth file, handed to
+        # the outer podman as a secret, and mounted for the nested pulls by
+        # the Makefile (NESTED_REGISTRY_SECRET). The file itself is removed
+        # once the secret holds it.
         #
-        # Withheld from a fork's head for the same reason as the VPN key above.
-        # A fork pulls anonymously and leans on the retry below, so this must
-        # not fail it.
+        # Withheld from a fork's head, since the suite runs that head's code.
+        # A fork pulls anonymously and leans on the pull retry in
+        # tests/ci-suite.sh, so this must not fail it.
         timeout-minutes: 2
         env:
           DOCKERHUB_USERNAME: ${{ needs.gate.outputs.is_fork == 'false' && secrets.DOCKERHUB_USERNAME || '' }}
           DOCKERHUB_TOKEN: ${{ needs.gate.outputs.is_fork == 'false' && secrets.DOCKERHUB_TOKEN || '' }}
+        shell: bash
         run: |
           if [ -z "$DOCKERHUB_USERNAME" ]; then
             echo "No Docker Hub credentials for this head; pulling anonymously."
             exit 0
           fi
+          auth="$RUNNER_TEMP/dockerhub-auth.json"
+          name=dockerhub-auth
           printf '%s' "$DOCKERHUB_TOKEN" \
-            | podman login docker.io --username "$DOCKERHUB_USERNAME" --password-stdin
+            | podman login docker.io --authfile "$auth" --username "$DOCKERHUB_USERNAME" --password-stdin
+          podman secret create "$name" "$auth" >/dev/null
+          rm -f "$auth"
+          echo "NESTED_REGISTRY_SECRET=$name" >> "$GITHUB_ENV"
 
-      - name: Pull container images
-        # Split out of `make start` so the pull is visible and bounded on its
-        # own. Three runs on this pull request stalled in `Start stack` for
-        # long enough to hit the job's 25 minute cap, and the only thing the
-        # log said was "The operation was canceled": with the pull folded into
-        # the same step there was no way to tell a slow registry from a
-        # container that never comes up.
+      - name: Run the integration suite
+        # `make test_nested` is the whole suite, the same command a bench
+        # runs: it streams the checked out tree into the nested test runner,
+        # whose tests/ci-suite.sh creates .env, applies the test profiles,
+        # seeds, generates the certificate, pulls, builds, starts the stack,
+        # waits for it, wires it and runs the CI tiers. Each of those steps
+        # carries its own bound inside the script, sized from the per step
+        # limits this job used to have, so a hang still names its step; this
+        # one is the backstop.
         #
-        # Retried with a growing pause, because an anonymous pull (every fork
-        # run) is the one that meets Docker Hub's rate limit, and a limit that
-        # has just been hit is the kind of failure that clears on its own.
-        # `make pull_docker_images` is idempotent, so a retry resumes rather
-        # than starting over.
-        timeout-minutes: 12
-        shell: bash
-        run: |
-          for attempt in 1 2 3; do
-            if make pull_docker_images; then
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "::warning::Pull attempt $attempt failed, retrying in $((attempt * 30))s"
-              sleep $((attempt * 30))
-            fi
-          done
-          echo "::error::Could not pull the images after 3 attempts."
-          exit 1
-
-      - name: Build custom container images
-        # `make bootstrap` builds LazyLibrarian and Mylar before it ever calls
-        # `start` (they have no upstream image; compose builds them from the
-        # Dockerfiles under build/), but this workflow replicates bootstrap's
-        # steps one by one instead of calling it, and this one had been left
-        # out. Without it, `make start` built lazylibrarian for the first time
-        # inline, and assert-stack-started.sh's 300s readiness clock (see
-        # `Wait for containers to be ready` below) started counting before
-        # that build finished, so a slow apt mirror for the Calibre
-        # dependency install (over 4 minutes fetching 60MB at times) burned
-        # the whole budget on a build and left none for any container to
-        # actually come up: three unrelated pull requests failed this way in
-        # the same run.
-        timeout-minutes: 10
-        run: make build_images
-
-      - name: Start stack
-        # Every long step carries its own timeout. Without them the job-level
-        # 25 minutes was the only bound, so a single stuck step burned the
-        # whole budget and reported nothing about which one it was. These sum
-        # to more than 25 deliberately: the job cap stays the outer bound, and
-        # these exist to name the culprit, not to replace it.
-        timeout-minutes: 10
-        # The step timing out on its own says only that something hung: the log
-        # ends on a container name with nothing after it, which is what four
-        # runs in a row reported. Interrupting a little before the cap and
-        # dumping state instead is what established that the stack does come up,
-        # every container `Up` with healthchecks still pending, and that it is
-        # `podman-compose up --detach` that never returns.
-        shell: bash
-        run: |
-          rc=0
-          timeout --signal=INT 420 make start || rc=$?
-          if [ "$rc" -ne 0 ]; then
-            echo "::group::podman ps -a"
-            podman ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' || true
-            echo "::endgroup::"
-            echo "::group::podman processes"
-            pgrep -a -f 'podman|conmon|make' || true
-            echo "::endgroup::"
-            echo "::error::make start did not finish (exit $rc)."
-            exit "$rc"
-          fi
-
-      - name: Wait for containers to be ready
-        timeout-minutes: 7
-        # Reads straight from `podman ps`, not through a compose wrapper:
-        # podman's own --format json is a single JSON array with health
-        # folded into the free-text Status field ("Up 3 minutes
-        # (healthy)"), not a docker compose-style newline-delimited object
-        # per container with its own top-level Health key.
+        # The CI tiers rather than the full suite: the serial rotation, wiring
+        # and killswitch tier needs a real app restart to complete and report
+        # healthy within its own wait budget, over and over, for dozens of
+        # apps in a row, and that is not reliable on a GitHub hosted runner's
+        # shared resources, confirmed live, though the same suite passed clean
+        # twice on a real bench the same night. `make test` and
+        # `make bootstrap_tests` on a bench still run it. See the Makefile's
+        # comment on suite_ci.
         #
-        # 300s, not 120s: confirmed live, calibre-web and lidarr both took
-        # longer than 120s to report healthy on a runner's shared, more
-        # constrained resources than any local bench this session ran on.
-        # calibre-web in particular is already known to be slow on first
-        # boot; see docs/ROTATION.md.
-        shell: bash
-        run: |
-          timeout 300 bash -c '
-            until podman ps --format json 2>/dev/null | \
-              python3 -c "
-          import sys, json
-          containers = json.load(sys.stdin)
-          starting = [c[\"Names\"] for c in containers if \"starting\" in c.get(\"Status\", \"\")]
-          print(starting); sys.exit(0 if not starting else 1)
-          "; do sleep 5; done
-          '
-
-      - name: Wire app-to-app connections
-        # Homepage's widgets read each app's API key from configs/<app>/secrets/
-        # api_key.txt, but Jellyfin and Audiobookshelf issue that key live
-        # through their own first-run API (see wire-connections.sh), and never
-        # from a seeded default the way the arr apps do. Skipping this step
-        # left both widgets, and Calibre-Web's own library path setup, on
-        # nothing but a seeded placeholder, confirmed live as the cause of
-        # this job's own Homepage widget failures. make bootstrap always runs
-        # this straight after make start for the same reason.
-        timeout-minutes: 10
-        run: make wire_connections
-
-      - name: Run integration tests
-        # make test_ci, not make test: the serial rotation/wiring/
-        # killswitch tier needs a real app restart to complete and report
-        # healthy within its own wait budget, over and over, for dozens
-        # of apps in a row, and that isn't reliable on a GitHub-hosted
-        # runner's shared, more constrained resources, confirmed live
-        # (many failures, "container state improper" among them, despite
-        # the exact same suite passing 100% clean twice on a real bench's
-        # own hardware the same night). test_ci's own killswitch marker
-        # exclusion already covers not having a real VPN key here, same
-        # as the make test invocation this replaced did explicitly.
-        # make bootstrap_tests (a real bench, pre-release) still runs the
-        # full thing, including this tier.
-        # The wiring_readonly subset does run here: it reads back what the
-        # wire_connections step above just wired, and restarts nothing. See
-        # the Makefile's own comment on test_ci.
-        timeout-minutes: 12
-        run: make test_ci
-
-      - name: Tear down
-        if: always()
-        timeout-minutes: 5
-        run: make stop_all
+        # NESTED_MEMORY is empty here. The runner is a VM of its own with
+        # nothing else on it, so the cap would only protect the job from
+        # itself, and the runner image's podman (no systemd, so cgroupfs) is
+        # not expected to apply a cgroup limit to a rootless container at all.
+        #
+        # No teardown step: the Makefile removes the runner container with
+        # `podman rm -v` on the way out, and the runner VM goes with the job.
+        timeout-minutes: 38
+        run: make test_nested NESTED_MEMORY=
 
   publish:
     name: Publish the result
