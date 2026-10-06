@@ -100,7 +100,7 @@ STOP_COMPOSE_FILES := --file docker-compose.yml $(foreach route_file,$(STOP_ROUT
 .PHONY: restore-configs restore-full
 .PHONY: restart sanity_fast sanity_full start start_library start_observability
 .PHONY: stop stop_all update_containers update_pre_commit test test_ci test_nested test_extended test_prerequisites
-.PHONY: test_no_rotate_passwords nested_only suite_ci suite_full suite_no_rotate_passwords suite_prerequisites suite_rinse
+.PHONY: test_bootstrap test_no_rotate_passwords nested_only suite_ci suite_full suite_no_rotate_passwords suite_prerequisites suite_rinse
 .PHONY: suite_marker test_marker
 .PHONY: coverage print-shell-scripts
 
@@ -972,6 +972,16 @@ update_pre_commit:
 # for a GPU render node, because Jellyfin maps JELLYFIN_DRI_DEVICE and a
 # container inside a container cannot be handed the /dev/dri directory.
 #
+# No --user: the image starts as container root so its init can hand the
+# nested engine a cgroup subtree where the host delegates one, then drops to
+# the podman account before the command runs, and prints one line saying
+# whether nested cgroups are on (devcontainer-airlock's docs/IMAGES.md,
+# "Cgroups for the nested containers"). With them on, podman stats has data
+# and the stack's *_CPUS and *_MEMORY limits are enforced inside the runner.
+# `--user podman` would still work, with them off. A `podman exec` into the
+# running container is root by default, so it needs `--user podman` to reach
+# the nested engine; nothing here execs into it.
+#
 # NESTED_MEMORY caps the whole stack (8g fits the full test profile set);
 # set it empty where the outer engine cannot apply a cgroup limit.
 # NESTED_LABEL is the outer container's SELinux label. An SELinux host passes
@@ -993,7 +1003,7 @@ update_pre_commit:
 # image declares anonymous volumes that only -v removes.
 #
 # renovate: datasource=docker depName=ghcr.io/ivan-pinatti-labs/airlock-podman-nested
-NESTED_IMAGE ?= ghcr.io/ivan-pinatti-labs/airlock-podman-nested:latest@sha256:aaa215596a799910ccc5aeeaee10c67190cc480495efc6dcd29161a26a0a5f04
+NESTED_IMAGE ?= ghcr.io/ivan-pinatti-labs/airlock-podman-nested:latest@sha256:602c62d61635d892677f099f0b10e954215deeb69f966c57230dcfe0352c14f4
 NESTED_RUNTIME ?= podman
 NESTED_MEMORY ?= 8g
 NESTED_LABEL ?= type:container_engine_t
@@ -1012,7 +1022,6 @@ define nested_suite
 	trap 'exit 130' INT TERM; \
 	$(coverage_sources); \
 	$(NESTED_RUNTIME) run <"$$out/src.tar" --rm --interactive --name "$$name" \
-		--user podman \
 		--device /dev/fuse --device /dev/net/tun --device /dev/kmsg \
 		--device /dev/null:$(NESTED_DRI_DEVICE) \
 		--security-opt label=$(NESTED_LABEL) --security-opt unmask=ALL \
@@ -1130,6 +1139,13 @@ test_no_rotate_passwords: ## Stand a nested stack up and run the full suite exce
 
 test_extended: ## Stand a nested stack up and run the full suite plus rinse-and-repeat lifecycle cycles
 	$(call nested_suite,stack suite_full suite_rinse)
+
+# `make bootstrap` from scratch, which rotates every credential on the way,
+# then the CI tiers against what it built: the part of bootstrap_tests that
+# fits one CI job's budget, run nightly by nightly-tests.yml. The full suite
+# and rinse_and_repeat on a bootstrapped stack stay with bootstrap_tests.
+test_bootstrap: ## Bootstrap a nested stack from scratch and run the CI tiers
+	$(call nested_suite,bootstrap suite_ci)
 
 test_marker: ## Stand a nested stack up and run one marker expression, MARKER=<expression>
 	@if [ -z "$(MARKER)" ]; then echo "ERROR: set MARKER, for example MARKER=security"; exit 1; fi

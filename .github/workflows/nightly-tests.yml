@@ -1,0 +1,158 @@
+---
+name: Nightly Tests
+
+# What the integration suite leaves to a bench, run against main every night
+# so it no longer waits for someone to remember it (docs/TESTING.md, "Where
+# the suite runs" and "What the nested run cannot cover").
+#
+#   rinse_and_repeat   the stop/start and down/start lifecycle cycles, the
+#                      most expensive marker and the only one that walks the
+#                      whole stack's startup path again.
+#   bootstrap          `make bootstrap` from scratch, which rotates every
+#                      credential, then the CI tiers against what it built
+#                      (`make test_bootstrap`). The full `make bootstrap_tests`
+#                      does not fit one job's budget, and its remaining parts
+#                      are the legs below and the rinse leg, each on a stack
+#                      of its own.
+#   the serial tiers   the same four legs integration-tests.yml runs on
+#                      `/run-tests`, so a dependency bump that merged
+#                      unattended, which never runs them, is covered by the
+#                      next night.
+#
+# Each leg stands a nested stack of its own on a runner of its own, the same
+# way integration-tests.yml does, and keeps the same 40 minute budget. Nothing
+# here is a required check or publishes a status: it runs on main after the
+# fact, so a red night is a failed run in the Actions tab and a notification,
+# not a blocked merge. It never checks out anything but this repository's own
+# branch, so it can hold the Docker Hub login without the care the pull
+# request workflow takes.
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  nightly:
+    name: Nightly (${{ matrix.name }})
+    # A fork inherits the file but not the secrets or the reason to spend
+    # its own runners on this every night.
+    if: github.repository == 'ivan-pinatti-labs/docker-torrent-box-with-vpn'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: rinse and repeat
+            slug: rinse
+            target: test_marker
+            marker: rinse_and_repeat
+          - name: bootstrap
+            slug: bootstrap
+            target: test_bootstrap
+            marker: ""
+          - name: api key rotation
+            slug: rotation-api-keys
+            target: test_marker
+            marker: rotation and not pw_rotation and not rotation_isolated
+          - name: password rotation
+            slug: rotation-passwords
+            target: test_marker
+            marker: pw_rotation and not rotation_isolated
+          - name: state changing wiring
+            slug: wiring
+            target: test_marker
+            marker: wiring and not wiring_readonly
+          - name: killswitch
+            slug: killswitch
+            target: test_marker
+            marker: killswitch
+    concurrency:
+      group: ${{ github.workflow }}-${{ matrix.slug }}-${{ github.ref }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        timeout-minutes: 2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up rootless Podman
+        # integration-tests.yml's step, which explains each line.
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 "$(whoami)"
+          if [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" = 1 ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          podman system migrate
+          podman --version
+
+      - name: Log in to Docker Hub
+        id: login
+        # As in integration-tests.yml: the login reaches the nested pulls as
+        # a podman secret, and the auth file is removed once the secret
+        # holds it.
+        timeout-minutes: 2
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "$DOCKERHUB_USERNAME" ]; then
+            echo "No Docker Hub credentials; pulling anonymously."
+            exit 0
+          fi
+          auth="$RUNNER_TEMP/dockerhub-auth.json"
+          name=dockerhub-auth
+          printf '%s' "$DOCKERHUB_TOKEN" \
+            | podman login docker.io --authfile "$auth" --username "$DOCKERHUB_USERNAME" --password-stdin
+          podman secret create "$name" "$auth" >/dev/null
+          rm -f "$auth"
+          echo "secret=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Probe cgroup delegation for the nested run
+        # integration-tests.yml's probe, reduced to the answer the run acts
+        # on: the run enters a delegated scope only when the image, started
+        # inside one, says it turned nested cgroups on.
+        id: cgroups
+        timeout-minutes: 4
+        continue-on-error: true
+        shell: bash
+        run: |
+          image=$(sed -n 's/^NESTED_IMAGE ?= //p' Makefile)
+          line=$(sudo --preserve-env systemd-run --scope --quiet --collect \
+            --uid="$(id -u)" --gid="$(id -g)" -p Delegate=yes \
+            -- env "PATH=$PATH" "HOME=$HOME" \
+            timeout 120 podman run --rm --network=none --security-opt unmask=ALL "$image" true 2>&1 \
+            | grep -m1 '^podman-nested: nested cgroups' || true)
+          echo "The image inside a delegated scope: ${line:-printed no cgroups line}"
+          if [[ "$line" == "podman-nested: nested cgroups on"* ]]; then
+            echo "scope=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run the leg
+        timeout-minutes: 38
+        shell: bash
+        env:
+          SCOPE: ${{ steps.cgroups.outputs.scope }}
+          NESTED_REGISTRY_SECRET: ${{ steps.login.outputs.secret }}
+          TARGET: ${{ matrix.target }}
+          MARKER: ${{ matrix.marker }}
+        run: |
+          run=(make "$TARGET" NESTED_MEMORY=)
+          if [ -n "$MARKER" ]; then
+            run+=("MARKER=$MARKER")
+          fi
+          if [ "$SCOPE" = true ]; then
+            sudo --preserve-env systemd-run --scope --quiet --collect \
+              --uid="$(id -u)" --gid="$(id -g)" -p Delegate=yes \
+              -- env "PATH=$PATH" "HOME=$HOME" "${run[@]}"
+          else
+            "${run[@]}"
+          fi

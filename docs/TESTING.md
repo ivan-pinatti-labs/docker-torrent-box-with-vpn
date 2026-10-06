@@ -37,6 +37,39 @@ constrained resources, confirmed live. This is what `integration-tests.yml`'s
 own suite job actually runs; it is not a substitute for `make test`
 or `make bootstrap_tests` and should not be reached for outside CI.
 
+Tier 3 runs in CI too, split rather than serial. On `/run-tests` the same
+workflow starts four more jobs beside the suite, each on a runner of its own
+with a nested stack of its own and the same 40 minute budget, each running one
+marker expression with `make test_marker`:
+
+| Job | `MARKER` |
+| --- | --- |
+| Tier (api key rotation) | `rotation and not pw_rotation and not rotation_isolated` |
+| Tier (password rotation) | `pw_rotation and not rotation_isolated` |
+| Tier (state changing wiring) | `wiring and not wiring_readonly` |
+| Tier (killswitch) | `killswitch` |
+
+`rotation_isolated` is already in the suite's own tiers, so neither rotation
+shard repeats it. These jobs are reported, not required: they publish nothing
+to `Tests Verified`, which keeps meaning what
+[docs/MERGE_PIPELINE.md](MERGE_PIPELINE.md) says it means (the CI tiers passed
+on this commit). Folding them in would make that context stricter and slower
+and hold every unattended dependency merge and every merge queue entry on the
+tiers least reliable on a hosted runner. A red tier shows on the pull request
+as a failed check of its own, for the maintainer who asked for the run to read.
+They do not run on the dependency bot path or in the merge queue.
+
+`.github/workflows/nightly-tests.yml` runs every night against `main` (and on
+demand from the Actions tab): the same four tier legs, so what merged
+unattended is covered by the next morning, plus `rinse_and_repeat`
+(`make test_marker MARKER=rinse_and_repeat`) and `make test_bootstrap`, which
+bootstraps a stack from scratch, rotating every credential on the way, and
+runs the CI tiers against it. Each leg is its own job with its own stack and
+the same 40 minute budget. The whole of `make bootstrap_tests` (bootstrap,
+then the full suite and `rinse_and_repeat` on that one stack) does not fit one
+job and stays the bench's release bar. Nothing in the nightly is required; a
+red night is a failed run and a notification, not a blocked merge.
+
 That suite does not run on a push. It stands the whole stack up and takes
 upward of twelve minutes, so a code owner asks for it by commenting
 `/run-tests` on the pull request once the change has settled.
@@ -227,9 +260,14 @@ of this: they reach gluetun at its fixed address on the stack's own
 `services` network.
 
 The run uses the flags the image documents (devcontainer-airlock's
-`docs/IMAGES.md`, "The nested test runner"): `--user podman`, `/dev/fuse` and
-`/dev/net/tun`, `--security-opt label=type:container_engine_t` and
-`--security-opt unmask=ALL`, a memory cap and a named storage volume. The
+`docs/IMAGES.md`, "The nested test runner"): `/dev/fuse` and `/dev/net/tun`,
+`--security-opt label=type:container_engine_t` and
+`--security-opt unmask=ALL`, a memory cap and a named storage volume. There is
+no `--user`: the image starts as container root, hands the nested engine a
+cgroup subtree where the host delegates one, and drops to its `podman` account
+before the suite runs. Its first line of output says which way that went,
+`podman-nested: nested cgroups on (...)` or `off (...)`, and
+`tests/ci-suite.sh` repeats the answer as its first step. The
 stack adds two devices of its own. cadvisor reads `/dev/kmsg`. Jellyfin maps
 its GPU device, and a container started inside another container cannot be
 handed the `/dev/dri` directory, so the outer container gets `/dev/null` at
@@ -268,8 +306,9 @@ run anywhere but inside the runner.
 
 The aim is to test everything that can be tested, and where an environment
 cannot, to isolate, mock or reduce rather than to leave a test that skips
-without saying why. These are the known gaps of the nested run CI makes
-(`make test_nested`), each with its reason and what stands in for it.
+without saying why. These are the known gaps of the nested runs CI makes
+(`make test_nested`, the tier jobs and the nightly legs), each with its reason
+and what stands in for it.
 
 - **jDownloader2's first boot.** jDownloader2 runs a mandatory self update on
   its first boot, before its `RemoteAPIConfig.json`, and so its API, exists at
@@ -279,33 +318,45 @@ without saying why. These are the known gaps of the nested run CI makes
   whenever gluetun points at the mock, which in the nested runner is every run.
   Nothing automated covers it; it runs on a bench whose gluetun holds a real
   provider credential. See [docs/JDOWNLOADER2.md](JDOWNLOADER2.md).
-- **podman_exporter's CPU and memory series.** `podman stats`, and so the
-  exporter, reads them from each container's cgroup, and the nested engine has
-  none unless the host delegates a cgroup to the outer container and the
-  runner image creates its containers with one (devcontainer-airlock's
-  `docs/IMAGES.md`, "The nested test runner"). The image sets
-  `cgroups = "disabled"` today. `test_podman_exporter_cpu_metrics` and
-  `test_podman_exporter_memory_metrics` ask the engine first (`podman info`
-  for the controllers, the exporter container's `HostConfig.Cgroups` for the
-  mode) and skip with that reason only when cgroups are missing, so they run
-  wherever cgroups exist. `integration-tests.yml` already runs the suite in a
-  delegated systemd scope when the runner grants one, so CI picks the series
-  up as soon as the image stops disabling cgroups. The rest of the exporter (scrape target up,
-  container names present) is checked either way.
+- **Per container limits and statistics without a delegated cgroup.** The
+  runner image turns nested cgroups on only when the host hands the outer
+  container a cgroup v2 tree of its own (devcontainer-airlock's
+  `docs/IMAGES.md`, "Cgroups for the nested containers"). With them on, the
+  stack's `*_CPUS` and `*_MEMORY` limits are enforced inside the runner and
+  `podman stats` has data, so `test_podman_exporter_cpu_metrics` and
+  `test_podman_exporter_memory_metrics` run. A bench running rootless podman
+  under systemd gets that by default. A hosted runner does not: its job runs
+  in a cgroup owned by root, so every CI job here probes a transient systemd
+  scope with `Delegate=yes`, starts the image inside it, and runs the stack
+  in that scope only when the image's own line says
+  `podman-nested: nested cgroups on`. Otherwise the run goes ahead with
+  cgroups off: the limits are accepted and ignored, and the two tests skip,
+  reading `podman info` for the controllers and the exporter container's
+  `HostConfig.Cgroups` for the mode, never a configuration file. The first
+  step of `tests/ci-suite.sh` says which way a run went, and on a runner
+  posts it as a notice on the run's summary. The rest of the exporter (scrape
+  target up, container names present) is checked either way.
 - **nzbget.** Off in CI on purpose: `NZBGET_PROFILE` stays disabled in
   `.env.tests` because its nginx location in
   `configs/nginx/templates/default.conf.template` is commented out as a legacy
   endpoint, so its proxied tests could never pass. SABnzbd is the usenet client
   the stack enables and the suite covers.
-- **The tiers CI does not run yet.** `make test_nested` runs tiers 1 and 2
-  plus `wiring_readonly`. The `rotation`, `pw_rotation`, state changing
-  `wiring` and `killswitch` tests (the serial tier 3) and `rinse_and_repeat`
-  run on a bench through `make test`, `make test_extended` and
-  `make bootstrap_tests`, which is the bar before a release. They are left out
-  of CI because back to back restarts of dozens of apps overran their wait
-  budgets on a shared hosted runner (see "Markers and tiers"), not because they
-  need anything CI lacks. A follow up splits them into parallel CI jobs, each
-  with a stack of its own, so the serial tier stops being one long run.
+- **A real GPU.** A container started inside another container cannot be
+  handed the `/dev/dri` directory, so the runner gets `/dev/null` at
+  `/dev/dri/card0` and Jellyfin maps that (see "Where the suite runs").
+  Jellyfin starts and every test of it runs, but nothing transcodes on
+  hardware. That is a bench question with a real render node.
+- **WireGuard as a loadable module.** The runner shares the host's kernel but
+  not its `/lib/modules`, so `test_wireguard_available` cannot ask `modinfo`
+  about a module that is available and not yet loaded, and skips saying so
+  when it is not already loaded. `make check_requirements`, which runs on the
+  host, asks the host.
+- **The bench's full release run.** `make bootstrap_tests` (bootstrap, the
+  full suite and `rinse_and_repeat` on one stack) is longer than a CI job's
+  budget. CI covers its parts on separate stacks instead: the suite and the
+  tier jobs on `/run-tests`, and the tier, rinse and bootstrap legs nightly
+  (see "Markers and tiers"). Running the whole thing on one stack before a
+  release stays with a bench.
 
 ## The unit tier
 

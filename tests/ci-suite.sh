@@ -87,6 +87,11 @@ show_stack() {
   podman ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' || true
 }
 
+step "Nested cgroups"
+# The image's init has already printed whether it gave the nested engine
+# cgroups; scripts/nested-cgroups-report.sh repeats it from the engine.
+scripts/nested-cgroups-report.sh
+
 step "Clear what an earlier run left in the nested storage"
 # The storage volume is kept between runs for its images, but it holds the
 # earlier run's containers, pods, networks and volumes as well, whose bind
