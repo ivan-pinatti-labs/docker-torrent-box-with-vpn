@@ -39,9 +39,10 @@ tooling owns, whether that line is `.env.example`, a workflow's `run:` step, a p
 hook's `entry:` or a Makefile variable. The split is now entirely about manifest versus inline
 pin, not about which bot is reading which half. It exists because Renovate's own
 `pip_requirements` manager only reads requirements files. It would never see
-`pip install podman-compose==1.6.0` sitting inside a workflow's `run:` step, so a pin left
+`pip install checkov==<version>` sitting inside a workflow's `run:` step, so a pin left
 unwatched there rots silently, which is exactly how CI once ended up installing whatever
-version of `podman-compose` happened to be current. The `# renovate:` annotations are the seam
+version of `podman-compose` happened to be current (podman-compose now comes with the nested
+test runner image, which is pinned by digest). The `# renovate:` annotations are the seam
 that covers those inline pins, and the reasoning is spelled out in the header comment of
 [`.github/renovate.json5`](../.github/renovate.json5); this page reuses that reasoning rather
 than restating it differently.
@@ -251,9 +252,9 @@ Every entry is `==`, not `>=`, and the difference mattered in two ways that
 were both invisible until #94 sat unapproved, back when Dependabot managed
 this file.
 
-**The cooling window did not reach this surface.** `make bootstrap_tests`
-builds `tests/.venv` from scratch and runs `pip install -r
-tests/requirements.txt`, so a `>=` floor resolved to whatever was newest on
+**The cooling window did not reach this surface.** Every suite run installs
+from scratch inside the nested test runner (`tests/ci-suite.sh` runs `pip
+install -r tests/requirements.txt`), so a `>=` floor resolved to whatever was newest on
 PyPI at that moment. Neither bot's cooldown governs what pip installs, only
 when it *proposes* a change, so a package published an hour earlier went into
 the suite on the next run regardless of which bot's schedule that was. This

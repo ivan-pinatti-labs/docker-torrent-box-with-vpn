@@ -111,13 +111,14 @@ maintainer will comment for you.
    <https://github.com/mathieudutour/github-tag-action#bumping>
 10. The repository has a pytest suite under `tests/` covering container health,
    security hardening, credential rotation, app-to-app wiring, and VPN
-   killswitch behavior. `make test` runs it against a running stack (needs
-   `make bootstrap` first); `make test_extended` adds the slower
-   `rinse_and_repeat` lifecycle tests on top; `make test_prerequisites` runs
-   just the pre-flight checks with no containers needed at all; and
-   `make bootstrap_tests` does a full clean bootstrap and runs
-   `test_extended` in one step (only against a disposable clone, it
-   rewrites every credential). See [docs/TESTING.md](TESTING.md) for the
+   killswitch behavior. Every test target runs it in the nested test runner,
+   a throwaway podman-in-podman container with a stack of its own, so it
+   needs only Podman on the host and never touches a stack already running
+   there. `make test` stands a fresh stack up and runs it; `make
+   test_extended` adds the slower `rinse_and_repeat` lifecycle tests on top;
+   `make test_prerequisites` runs just the pre-flight and repository checks
+   with no stack at all; and `make bootstrap_tests` does a full clean
+   bootstrap and runs `test_extended` in one step. See [docs/TESTING.md](TESTING.md) for the
    marker/tier breakdown and how to add a test, and
    [docs/MAKE_COMMANDS.md](MAKE_COMMANDS.md) for the full list of test
    targets. Pull requests do not run the suite on their own: a maintainer
@@ -183,9 +184,9 @@ these conventions:
   snake_case mirror of the script name, for example `rotate_nginx_logs` runs
   `scripts/rotate-nginx-logs.sh`.
 - Every Python script ships with unit tests that reach all of its lines and
-  branches, and a shell script on the Makefile's `COVERAGE_SHELL_SCRIPTS`
-  list ships with tests that reach all of its lines; `make coverage` holds
-  both at 100%. See docs/TESTING.md, "The unit tier".
+  branches, and every shell script ships with tests that reach all of its
+  lines (the Makefile finds them as `COVERAGE_SHELL_SCRIPTS`, nobody lists
+  them); `make coverage` holds both at 100%. See docs/TESTING.md, "The unit tier".
 - Never commit live application state. Runtime databases and configs the app
   rewrites on shutdown stay gitignored; commit a sanitized `<file>.example`
   seed instead. See docs/HARDENING.md.

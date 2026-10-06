@@ -66,6 +66,12 @@ the optional monitoring stack. See
 | XML starlet                    | >1.6.x      | <https://xmlstar.sourceforge.net/doc/UG/xmlstarlet-ug.html>                           |
 | Python 3 (with PyYAML)         | >3.9        | `pip install --user pyyaml`, or your distro's `python3-yaml`/`python3-pyyaml` package |
 
+These are what the stack itself needs. The test suite needs only Podman, plus
+the nested test runner image the test targets pull on first use: every test
+target stands its own stack up inside that image, with its own Python and
+tools, and never touches a stack or a Python on the host. See
+[docs/TESTING.md](docs/TESTING.md#where-the-suite-runs).
+
 > **Why Podman over Docker, and how to use ports 80/443 with either runtime
 > rootless?** See [docs/PODMAN.md](docs/PODMAN.md). Short version: Podman is
 > daemonless, `podman-docker` keeps existing `docker` commands working if you

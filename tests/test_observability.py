@@ -9,6 +9,7 @@ Grafana           → datasource healthy, dashboards provisioned
 
 import json
 import re
+import subprocess  # nosec B404 - podman CLI, see _podman_cgroups_missing
 
 import pytest
 import requests
@@ -18,6 +19,7 @@ from conftest import (
     GRAFANA_INI,
     REPO_ROOT,
     base_url,
+    container_name,
     env,
     grafana_admin_credentials,
     is_enabled,
@@ -212,6 +214,69 @@ def test_podman_exporter_container_metrics_present(running_containers, prometheu
     assert not missing, f"Expected containers missing from podman metrics: {missing}"
 
 
+def _podman_cgroups_missing() -> str | None:
+    """Why the engine running the stack keeps no cgroup statistics, or None.
+
+    podman_exporter reads CPU and memory from `podman stats`, which reads them
+    from each container's cgroup. The nested test runner's engine can have
+    none: its containers.conf sets `cgroups = "disabled"`, and even without
+    that a rootless engine gets controllers only when the host delegates a
+    cgroup to the outer container (devcontainer-airlock docs/IMAGES.md). The
+    series then never exist, which says nothing about the exporter.
+
+    Asked of the engine itself, through the same podman CLI the rest of the
+    suite drives, rather than inferred from where the suite runs: `podman
+    info` for the controllers the engine has, and the exporter's own
+    container for whether containers are created with a cgroup at all (a
+    libpod field, `HostConfig.Cgroups`, absent from the Docker API). An
+    engine that cannot answer is not a reason to skip, so the test runs and
+    its own assertion reports.
+    """
+    info = subprocess.run(  # nosec B607 - podman is a trusted, fixed CLI in this stack
+        ["podman", "info", "--format", "json"],
+        capture_output=True,
+        text=True,
+        timeout=TIMEOUT,
+    )
+    if info.returncode == 0:
+        try:
+            controllers = json.loads(info.stdout)["host"]["cgroupControllers"]
+        except ValueError, KeyError, TypeError:
+            controllers = None
+        if controllers is not None and not {"cpu", "memory"} <= set(controllers):
+            return (
+                "the container engine lacks the cpu or memory cgroup controller "
+                f"(podman info reports {controllers}), so podman stats has "
+                "nothing to read; the host does not delegate cgroups here"
+            )
+    mode = subprocess.run(  # nosec B607 - podman is a trusted, fixed CLI in this stack
+        [
+            "podman",
+            "container",
+            "inspect",
+            "--format",
+            "{{.HostConfig.Cgroups}}",
+            container_name("podman_exporter"),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=TIMEOUT,
+    )
+    if mode.returncode == 0 and mode.stdout.strip() == "disabled":
+        return (
+            "the container engine creates containers without cgroups "
+            '(containers.conf cgroups = "disabled"), so podman stats has '
+            "nothing to read"
+        )
+    return None
+
+
+def _skip_if_no_cgroups():
+    reason = _podman_cgroups_missing()
+    if reason:
+        pytest.skip(reason)
+
+
 def test_podman_exporter_cpu_metrics(running_containers, prometheus_url):
     """podman_container_cpu_seconds_total has data for running containers."""
     if not is_enabled("podman_exporter"):
@@ -219,6 +284,7 @@ def test_podman_exporter_cpu_metrics(running_containers, prometheus_url):
     skip_if_not_running("podman_exporter", running_containers)
     if not is_enabled("prometheus"):
         pytest.skip("prometheus profile is disabled")
+    _skip_if_no_cgroups()
 
     data = _prom_get(
         prometheus_url, "/query", {"query": "podman_container_cpu_seconds_total"}
@@ -325,6 +391,7 @@ def test_podman_exporter_memory_metrics(running_containers, prometheus_url):
     skip_if_not_running("podman_exporter", running_containers)
     if not is_enabled("prometheus"):
         pytest.skip("prometheus profile is disabled")
+    _skip_if_no_cgroups()
 
     data = _prom_get(
         prometheus_url, "/query", {"query": "podman_container_mem_usage_bytes"}

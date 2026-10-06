@@ -35,13 +35,13 @@ def _get_cert(host: str, port: int) -> dict | None:
     try:
         ctx.load_verify_locations(cafile=str(CERT_FILE))
         ctx.verify_mode = ssl.CERT_REQUIRED
-    except (FileNotFoundError, ssl.SSLError):
+    except FileNotFoundError, ssl.SSLError:
         ctx.verify_mode = ssl.CERT_NONE
     try:
         with socket.create_connection((host, port), timeout=5) as raw:
             with ctx.wrap_socket(raw, server_hostname=host) as conn:
                 return conn.getpeercert()
-    except (OSError, ssl.SSLError):
+    except OSError, ssl.SSLError:
         return None
 
 

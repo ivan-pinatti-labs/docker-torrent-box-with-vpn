@@ -387,11 +387,13 @@ repos:
         always_run: true
 
   # This repository's own coverage gate: 100% of the Python in scripts/
-  # (lines and branches), of the shell scripts the Makefile lists in
-  # COVERAGE_SHELL_SCRIPTS (lines) and of the JavaScript in COVERAGE_JS_SOURCES
+  # (lines and branches), of every shell script, which the Makefile finds as
+  # COVERAGE_SHELL_SCRIPTS (lines), and of the JavaScript in COVERAGE_JS_SOURCES
   # (lines, branches and functions). `make coverage` runs the unit tier in
   # podman containers that see the source only through a tar stream; see the
   # Makefile. Pre-push, not pre-commit, because it starts three containers.
+  # `files` has to match every script the Makefile finds, so a change to one
+  # reruns the gate; tests/unit/test_shell_discovery.py checks that it does.
   #
   # Code Check runs this file with `--hook-stage pre-push`, which would select
   # this hook too, so pull-request-validation.yml lists it in SKIP beside
@@ -401,11 +403,11 @@ repos:
   - repo: local
     hooks:
       - id: coverage
-        name: Coverage, 100% of scripts/ and the listed shell and JavaScript
+        name: Coverage, 100% of scripts/, every shell script and the listed JavaScript
         language: system
         entry: make coverage
         pass_filenames: false
-        files: '^(scripts/|tests/unit/|configs/[^/]+/custom-cont-init\.d/)|^(\.coveragerc|Makefile|pytest\.ini|\.claude/hooks/git-guard\.sh|configs/homepage/config/custom\.js)$'
+        files: '^(scripts/|tests/unit/|configs/[^/]+/custom-cont-init\.d/)|^(\.coveragerc|Makefile|pytest\.ini|configs/homepage/config/custom\.js)$|\.(sh|bash)$'
         stages: [pre-push]
 
   # Was moved out of MegaLinter when this repository switched to the cupcake

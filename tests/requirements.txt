@@ -1,8 +1,9 @@
 # Exact pins, not `>=` floors, for two reasons that both bite.
 #
-# The cooling window did not apply. `make bootstrap_tests` builds tests/.venv
-# from scratch and runs `pip install -r tests/requirements.txt`, so a `>=`
-# floor resolves to whatever is newest on PyPI at that moment. Dependabot's
+# The cooling window did not apply. Every suite run (tests/ci-suite.sh, in the
+# nested test runner) installs from scratch with `pip install -r
+# tests/requirements.txt`, so a `>=` floor resolves to whatever is newest on
+# PyPI at that moment. Dependabot's
 # seven-day `cooldown` only governs when Dependabot *proposes* a change, not
 # what pip installs, so a package published an hour ago went straight into the
 # suite on the next run. The window that the rest of this repository's

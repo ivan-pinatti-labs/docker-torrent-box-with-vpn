@@ -70,13 +70,18 @@ Every test that currently skips without a real VPN key becomes
 exercisable, most notably `tests/test_vpn_killswitch.py`, which only
 requires gluetun and the probe container to be genuinely healthy: it has
 no idea whether the tunnel behind that health state is a real provider or
-a local mock.
+a local mock. The one exception is jDownloader2's first boot self update,
+which does not complete behind the mock; docs/TESTING.md lists it under
+"What the nested run cannot cover".
 
 ## Never for a real deployment
 
 `VPN_MOCK_PROFILE` defaults to `disabled` in `.env.example` and stays that
-way unless `.env.tests` is applied. Running `make bootstrap_tests` rewrites
-`configs/gluetun/.secret` and `.env` the same way plain `make bootstrap`
-rewrites every other credential, so it's meant for a disposable clone, not
-a deployment you care about. If you want your own real VPN, follow
+way unless `.env.tests` is applied. `make bootstrap_tests` and the other test
+targets apply it only inside the nested test runner (docs/TESTING.md, "Where
+the suite runs"), to a throwaway copy of the tree. Running
+`make enable_test_profiles` directly is another matter: it rewrites this
+checkout's `configs/gluetun/.secret` and `.env` the same way plain
+`make bootstrap` rewrites every other credential, so it's meant for a
+disposable clone, not a deployment you care about. If you want your own real VPN, follow
 README.md section 2 or `docs/VPN_PROVIDERS.md` instead.

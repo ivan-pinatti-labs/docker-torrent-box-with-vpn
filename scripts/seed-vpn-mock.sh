@@ -8,8 +8,8 @@ set -euo pipefail
 # vpn_mock service; see docs/VPN_MOCK.md) and points gluetun at it, but
 # only when there's no real VPN key to protect: a real key already in
 # place is never touched or overwritten. Only ever called from
-# scripts/enable-test-profiles.sh (make bootstrap_tests), never from plain
-# make bootstrap.
+# scripts/enable-test-profiles.sh (the nested test runner's suite), never
+# from plain make bootstrap.
 
 readonly ENV_FILE=".env"
 readonly GLUETUN_SECRET="configs/gluetun/.secret" # pragma: allowlist secret

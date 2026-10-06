@@ -173,7 +173,9 @@ jobs:
   prerequisites:
     name: Prerequisite Checks
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 10 rather than 5 since the tier runs in the nested test runner, whose
+    # image this job pulls first.
+    timeout-minutes: 10
     if: github.event_name != 'workflow_dispatch' || inputs.job_scope != 'checks'
     permissions:
       contents: read
@@ -183,54 +185,29 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/head', inputs.pr_number) || github.ref }}
 
-      - name: Install xmlstarlet
-        shell: bash
-        run: sudo apt-get update && sudo apt-get install -y xmlstarlet
-
       - name: Set up rootless Podman
-        # ubuntu-latest ships Podman's binaries but doesn't delegate any
-        # subuid/subgid range to the runner user, so podman info hangs
-        # rather than reporting a real daemon, confirmed live. This is the
-        # runtime the project is actually built and documented for (see
-        # docs/PODMAN.md); every local bench validation this session ran
-        # on Podman, not Docker. podman-compose (not podman's own built-in
-        # compose subcommand, which falls back to whichever compose
-        # implementation it finds first, possibly Docker's own) matches
-        # the Makefile's own COMPOSE resolution for local dev exactly.
-        #
-        # Deliberately not carrying integration-tests.yml's podman downgrade.
-        # That exists because the image's podman cannot run container
-        # healthchecks, and this job starts no containers: `make
-        # test_prerequisites` is pre-flight checks only. Adding it here would
-        # cost every pull request an apt install to change nothing.
+        # `make test_prerequisites` runs the prerequisites tier inside the
+        # nested test runner, like every other test target, so this job needs
+        # the runner image's podman and nothing else: no Python, no
+        # podman-compose, no xmlstarlet on the runner. The tool checks in that
+        # tier therefore describe the podman-nested image's tools, the ones
+        # that stand the stack up (docs/TESTING.md, "Where the suite runs").
+        # See integration-tests.yml's copy of this step for why each line is
+        # here.
         shell: bash
         run: |
           sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 "$(whoami)"
+          if [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" = 1 ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
           podman system migrate
-          podman info
-          # Pinned to match integration-tests.yml, where the reasoning is: a
-          # release of podman-compose should not be able to change what CI tests
-          # without a change in this repository. Renovate keeps both in step
-          # through the annotation below; see the customManager in
-          # .github/renovate.json5.
-          # renovate: datasource=pypi depName=podman-compose
-          pip install podman-compose==1.6.0 --only-binary=:all:
+          podman --version
 
-      - name: Create .env file
-        shell: bash
-        run: cp .env.example .env
-
-      - name: Read PYTHON_VERSION from .env
-        shell: bash
-        run: grep -m1 '^PYTHON_VERSION=' .env >> "$GITHUB_ENV"
-
-      - name: Python Setup
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Create test venv and run prerequisite tests
-        run: make test_prerequisites
+      - name: Run the prerequisite tests
+        # NESTED_MEMORY empty for the same reason as in integration-tests.yml:
+        # the runner image's podman is not expected to apply a cgroup limit to
+        # a rootless container.
+        run: make test_prerequisites NESTED_MEMORY=
 
   # Findings from the security scanners, published to GitHub code scanning so
   # they land in the Security tab with the deduplication, history and dismissal

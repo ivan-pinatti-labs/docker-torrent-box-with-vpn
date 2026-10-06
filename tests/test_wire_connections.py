@@ -10,7 +10,7 @@ is meant to stay, not act as a temporary probe value.
 
 The Jellyfin cases at the bottom are additionally marked `wiring_readonly`:
 they only read the wiring back, so they skip the script run and CI does run
-them. See pytest.ini and the Makefile's comment on test_ci.
+them. See pytest.ini and the Makefile's comment on suite_ci.
 
 App ports are not published to the host, so all API calls run curl inside the
 target container (see conftest.container_http), matching how the wiring
@@ -21,6 +21,7 @@ Run explicitly with:
 """
 
 import json
+import os
 import subprocess
 import time
 from datetime import UTC
@@ -131,7 +132,7 @@ def run_wire_connections(request):
     nothing and would cost minutes of real writes against live apps. That is
     what lets CI run the read-only subset in its fast tier, off the back of its
     own `make wire_connections` step, without pulling in the serial tier this
-    module otherwise belongs to (see the Makefile's own comment on test_ci).
+    module otherwise belongs to (see the Makefile's own comment on suite_ci).
     """
     selected = [item for item in request.session.items if item.path == request.path]
     if selected and all(
@@ -579,7 +580,14 @@ def test_jellyfin_connection_points_at_a_reachable_jellyfin(app, running_contain
     """Jellyfin is on the media network and the *arr apps are not, so the
     connection has to reach the port Jellyfin publishes on the host. The
     address is probed at wiring time rather than assumed, so assert the
-    result is usable rather than equal to any particular value."""
+    result is usable.
+
+    In the nested runner, also that it is LAN_IP, which tests/ci-suite.sh sets to the runner's own
+    address. wire-connections.sh falls back to host.containers.internal,
+    which from inside the runner can name the machine running it, so a
+    Jellyfin published there by a stack outside this one would answer the
+    probe and every check below would pass against the wrong stack. CI did
+    exactly that while its runner also ran a stack of its own."""
     if not is_enabled(app) or not is_enabled("jellyfin"):
         pytest.skip("app or jellyfin profile is disabled")
     connection = _jellyfin_connection(app, running_containers)
@@ -589,6 +597,15 @@ def test_jellyfin_connection_points_at_a_reachable_jellyfin(app, running_contain
     host = _field(connection, "host")
     port = _field(connection, "port")
     assert host, f"[{app}] Jellyfin connection has no host"
+    # Only in the nested runner, where tests/ci-suite.sh sets LAN_IP: run
+    # directly against a deployment, host.containers.internal is a legitimate
+    # answer while .env still carries the placeholder LAN_IP.
+    if os.environ.get("NESTED_RUNNER") == "1":
+        assert host == _env("LAN_IP"), (
+            f"[{app}] Jellyfin connection points at {host}, not at this stack's "
+            f"own LAN_IP {_env('LAN_IP')}, so it may reach a Jellyfin outside "
+            "the stack under test"
+        )
     assert port == int(_env("JELLYFIN_HTTP_PORT"))
     assert _field(connection, "urlBase") == _env("JELLYFIN_BASE_URL")
     assert _field(connection, "updateLibrary") is True, (

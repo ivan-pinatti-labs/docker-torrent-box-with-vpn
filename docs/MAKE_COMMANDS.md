@@ -2,8 +2,9 @@
 
 Quick reference for every user-facing `make` target. Grouped by what you'd
 reach for it to do, not alphabetically. Targets not listed here
-(`.env`, `certs/cert.conf`, `configs/flaresolverr/config/chromedriver`,
-`tests/.venv`) are internal file-based prerequisites, not commands you run
+(`.env`, `certs/cert.conf`, `configs/flaresolverr/config/chromedriver`)
+are internal file-based prerequisites, and the `suite_*` targets are the test
+tiers the nested test runner calls from the inside; none are commands you run
 directly.
 
 ## First-time setup
@@ -67,23 +68,34 @@ See [docs/PERMISSIONS.md](PERMISSIONS.md) for the ownership model these implemen
 
 See [docs/CONTRIBUTING.md](CONTRIBUTING.md) for how these fit into CI.
 
+Every test target except `make coverage` runs in the nested test runner: the
+committed tree is streamed into a throwaway container of the podman-nested
+image, which stands up its own stack in its own storage and runs pytest there,
+so nothing touches a stack or a deployment on this machine and nothing runs on
+the host's Python. The host needs Podman and nothing else. See
+[docs/TESTING.md](TESTING.md#where-the-suite-runs).
+
 | Target | What it does |
 | --- | --- |
-| `make test` | Runs the full pytest suite against an already-running stack, in three passes (parallel read-only tests, a parallel-safe rotation subset, then the remaining mutating tests serially). Does **not** include `rinse_and_repeat`. |
+| `make test` | Stands a fresh stack up with the test profiles and runs the full suite in three passes (parallel read-only tests, a parallel-safe rotation subset, then the remaining mutating tests serially). Does **not** include `rinse_and_repeat`. |
 | `make test_extended` | `make test` plus the `rinse_and_repeat` lifecycle tests (stop/start and down/start cycles), the slowest tier, run deliberately rather than on every `make test`. |
-| `make test_prerequisites` | Pre-flight checks only; doesn't need any containers running. |
+| `make test_nested` | The first two passes of `make test` plus the read-only wiring checks, no serial rotation/wiring/killswitch tier. What CI's own integration job runs; not a substitute for `make test` or `make bootstrap_tests` outside CI. |
+| `make test_prerequisites` | Pre-flight and repository checks only, in the runner, with no stack. What the `Prerequisite Checks` job runs. The host side of the pre-flight is `make check_requirements` above. |
 | `make test_no_rotate_passwords` | The full suite except `rotate-passwords.sh` coverage. |
-| `make coverage` | The container free unit tier (`tests/unit`) under coverage.py and kcov, in podman containers; fails unless every Python file in `scripts/` and every shell script in the Makefile's `COVERAGE_SHELL_SCRIPTS` is at 100%. Needs no stack. See [docs/TESTING.md](TESTING.md#the-unit-tier). |
-| `make test_ci` | The first two passes of `make test` only, no serial rotation/wiring/killswitch tier. What CI's own integration job runs; not a substitute for `make test` or `make bootstrap_tests` outside CI. |
-| `make bootstrap_tests` | Enables every profile with real test coverage, runs `bootstrap` from scratch, then `test_extended`. **Only for a disposable clone**: it rewrites every credential exactly like plain `bootstrap` does. This is the release-validation command. |
+| `make test_marker MARKER=<expression>` | One pytest marker expression in a single pass, against a fresh stack, for example `MARKER=security`. |
+| `make coverage` | The container free unit tier (`tests/unit`) under coverage.py and kcov, in podman containers; fails unless every Python file in `scripts/` and every shell script the repository writes (found, not listed: `make print-shell-scripts`) is at 100%. Needs no stack. See [docs/TESTING.md](TESTING.md#the-unit-tier). |
+| `make bootstrap_tests` | Enables every profile with real test coverage, runs `bootstrap` from scratch, then the `test_extended` tiers, all in the runner. This is the release-validation command. |
 
-`PYTEST_ARGS="..."` appends extra arguments to whichever pytest invocations a
-target runs. Note `make test`/`test_extended` are multiple separate pytest
+`PYTEST_ARGS="..."` appends extra arguments to whichever pytest invocations
+a target runs. Note `make test`/`test_extended` are multiple separate pytest
 calls, each with its own `-m` marker filter, and pytest's `-m` is
 single-value: passing `PYTEST_ARGS="-m security"` to those targets
-overrides each pass's own filter rather than combining with it. Invoke
-`tests/.venv/bin/pytest -m security` directly instead when you want just one
-marker.
+overrides each pass's own filter rather than combining with it. Use
+`make test_marker MARKER=security` when you want just one marker.
+
+The runner's own knobs (`NESTED_MEMORY`, `NESTED_LABEL`, `NESTED_STORAGE`,
+`SUITE_DISABLE_PROFILES` and the rest) are described in the Makefile, above
+the test targets.
 
 ## Maintenance
 

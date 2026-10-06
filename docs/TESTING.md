@@ -5,6 +5,10 @@ credential rotation, app-to-app wiring, and VPN killswitch behavior. See
 [docs/CONTRIBUTING.md](CONTRIBUTING.md) for how it fits into pre-commit, CI,
 and pull requests; this page covers the suite itself.
 
+Running it needs only Podman on the host, plus the nested test runner image
+the test targets pull on first use. No Python, compose, yq or xmlstarlet on
+the host: the suite runs inside that image (see "Where the suite runs").
+
 ## Markers and tiers
 
 Every test carries a marker registered in `pytest.ini`, and `make test` runs
@@ -24,7 +28,8 @@ them in three passes instead of one invocation:
    LazyLibrarian's Torznab entries) and can't safely run in parallel with
    each other.
 
-`make test_ci` runs tiers 1 and 2 only, no tier 3: the serial rotation/
+`make test_nested` runs tiers 1 and 2 only (plus the read-only
+`wiring_readonly` checks), no tier 3: the serial rotation/
 wiring/killswitch tier needs a real app restart to complete and report
 healthy within its own wait budget, over and over, for dozens of apps in a
 row, and that isn't reliable on a GitHub-hosted runner's shared, more
@@ -75,21 +80,20 @@ anonymously with a retry instead.
 
 The VPN is the credential-free mock (see [docs/VPN_MOCK.md](VPN_MOCK.md)) on
 every run, fork or not. There is no real provider credential in CI and there is
-not meant to be one. Nothing is lost by that: `make test_ci` excludes the
-`killswitch` tier, which is the only one that exercises a real VPN credential.
+not meant to be one. Almost nothing needs one: the `killswitch` tier runs
+against the mock (it stops and starts gluetun and asks whether the probe
+container can still reach out), and `make test_nested` leaves it out because it
+belongs to the serial tier, not because of the VPN. The one test the mock cannot
+serve is listed under "What the nested run cannot cover" below.
 
-CI also runs an older podman than a bench does, on purpose, and this is the one
-place the two deliberately differ. The `ubuntu-latest` image ships a podman
-built without systemd support, and such a build cannot schedule container
-healthchecks: every container stays `starting` indefinitely, nothing satisfies
-`depends_on: condition: service_healthy`, and the stack never finishes starting.
-The distributions build podman with systemd support, so a bench on 5.x is
-unaffected and needs no pinning; CI installs the Ubuntu archive's 4.x instead.
-Do not "fix" this by matching CI to your bench's version, and do not pin your
-bench to CI's. What the suite exercises is the compose files, scripts, wiring
-and tests, none of which are podman-version-specific, and
-`make bootstrap_tests` on a real bench remains the release gate for the runtime
-actually in use.
+CI and a bench run the suite the same way, in the nested test runner (see
+"Where the suite runs" below), so there is no longer a podman version that
+differs between them on purpose. The runner image's own podman, whatever
+version it is, only starts the outer container; the stack runs on the podman
+inside the image, the same one a bench runs it on. That also retired the
+reason CI used to install an older podman: the `ubuntu-latest` image ships a
+podman built without systemd support, which cannot schedule container
+healthchecks, and the image's health ticker now runs them instead.
 
 `make test_extended` runs `make test` plus a fourth pass: `rinse_and_repeat`
 (stop/start and down/start lifecycle cycles), the single most expensive
@@ -99,7 +103,10 @@ path rather than one credential or connection. It's kept out of the default
 release.
 
 `make test_prerequisites` runs only the `prerequisites` marker (pre-flight
-checks, no containers needed at all). `make test_no_rotate_passwords` runs
+checks, no stack needed at all), in the runner like every other target, so
+its tool checks describe the runner's tools, which are the ones that stand
+the stack up. What a host running a deployment needs is
+`make check_requirements`, which runs on the host. `make test_no_rotate_passwords` runs
 everything except `pw_rotation`, useful when iterating on something
 unrelated to password rotation without paying for its slowest tier.
 
@@ -127,9 +134,8 @@ in one fails rather than quietly covering nothing. See
 a target runs. Note `make test`/`test_extended` are multiple separate
 pytest calls, each with its own `-m` marker filter, and pytest's `-m` is
 single-value: passing `PYTEST_ARGS="-m security"` to those targets
-overrides each pass's own filter rather than combining with it. Invoke
-`tests/.venv/bin/pytest -m security` directly instead when you want just
-one marker.
+overrides each pass's own filter rather than combining with it. Use
+`make test_marker MARKER=security` when you want just one marker.
 
 ## Why a merge queue is the goal, not selective testing
 
@@ -176,11 +182,130 @@ by `scripts/enable-test-profiles.sh`: for each `KEY=value` line in
 exists there, or appends the line if it doesn't. `.env.tests` itself only
 lists the lines that need to differ from `.env.example`'s own defaults.
 
-**Run this only against a disposable clone, never a real deployment.** It
-changes which profiles are enabled in `.env` and rewrites every credential,
-exactly like plain `make bootstrap` already does. This is the
-release-validation command: a clean `make bootstrap_tests` run with 0
-failures is the bar every change in this repo is held to before release.
+It changes which profiles are enabled and rewrites every credential, exactly
+like plain `make bootstrap` does, but only in the throwaway copy of the tree
+inside the nested test runner, so this checkout's `.env` and any deployment on
+the same machine are untouched. This is the release-validation command: a
+clean `make bootstrap_tests` run with 0 failures is the bar every change in
+this repo is held to before release. It stands the whole test profile set up,
+so it wants the default `NESTED_MEMORY` (8g) to itself.
+
+## Where the suite runs
+
+Every test target except `make coverage` runs the suite in the nested test
+runner, never on the host's engine and never with the host's Python. The
+target streams the files git would commit (tracked, plus new ones not
+ignored) into a throwaway container of devcontainer-airlock's
+`airlock-podman-nested` image as a tar archive, the same way `make coverage`
+does, unpacks it into a fresh git repository there, and runs
+`tests/ci-suite.sh`, which sets `.env` up, applies the test profiles, seeds,
+pulls, builds, starts the stack, waits for it, wires it and runs the tiers.
+`integration-tests.yml` runs `make test_nested` itself, so CI and a bench run
+exactly the same steps.
+
+The image is rootless podman inside podman. The stack's containers, networks,
+volumes and images live in that container's own storage, and nothing in it
+talks to this machine's engine, so a deployment running here is invisible to
+the suite and nothing the suite starts outlives it. What the host needs is
+Podman, and the image, which the first run pulls (it is pinned by digest in
+the Makefile as `NESTED_IMAGE`, and Renovate moves the digest). It is not
+network isolation from the host: under rootless podman's default networking
+the outer container can still reach a service listening on this machine.
+
+The nested stack reaches itself the way a deployment does, through the ports
+it publishes on the machine it runs on, which here is the outer container.
+`tests/ci-suite.sh` sets `LAN_IP` to that container's own address (found the
+way `make bootstrap` finds a host's), and `scripts/wire-connections.sh` tries
+`LAN_IP` first when it points the *arr apps at Jellyfin's published port. Its
+fallback, `host.containers.internal`, is no good here: in a runner started by
+an engine using slirp4netns (the podman on CI's runners) it names the machine
+running the runner, so it reaches either nothing or a stack outside the one
+under test, and a pass against that stack is a false one.
+`test_jellyfin_connection_points_at_a_reachable_jellyfin` therefore requires
+every Jellyfin connection to point at `LAN_IP`. The download clients need none
+of this: they reach gluetun at its fixed address on the stack's own
+`services` network.
+
+The run uses the flags the image documents (devcontainer-airlock's
+`docs/IMAGES.md`, "The nested test runner"): `--user podman`, `/dev/fuse` and
+`/dev/net/tun`, `--security-opt label=type:container_engine_t` and
+`--security-opt unmask=ALL`, a memory cap and a named storage volume. The
+stack adds two devices of its own. cadvisor reads `/dev/kmsg`. Jellyfin maps
+its GPU device, and a container started inside another container cannot be
+handed the `/dev/dri` directory, so the outer container gets `/dev/null` at
+`/dev/dri/card0` and the stack's `JELLYFIN_DRI_DEVICE` is set to that node
+(see [docs/CONTAINER_LIMITS.md](CONTAINER_LIMITS.md)). Podman schedules
+healthchecks with systemd timers and there is no systemd in the image, so its
+health ticker runs every container's healthcheck on a ten second tick.
+
+The Makefile's variables, set on the command line:
+
+- `NESTED_MEMORY` (default `8g`) caps the whole nested stack. Leave it empty
+  where the outer engine cannot apply a cgroup limit.
+- `NESTED_LABEL` (default `type:container_engine_t`). On an SELinux host the
+  TUN device reaches gluetun under that domain only with the policy module in
+  devcontainer-airlock's `host/selinux`, and `/dev/kmsg`, which cadvisor
+  reads, is refused under it either way (that module does not cover it). So
+  an SELinux bench running the full profile set sets `NESTED_LABEL=disable`;
+  `tests/ci-suite.sh` stops before pulling anything and says so when cadvisor
+  is enabled and the device cannot be read. Where SELinux is off, as on CI's
+  runners, it does nothing.
+- `NESTED_STORAGE` names the volume holding the nested images, kept between
+  runs so they are not pulled again. `podman volume rm` it to reclaim the
+  space. The container itself goes with `podman rm -v` once the run ends,
+  since the image declares anonymous volumes as well.
+- `SUITE_DISABLE_PROFILES` lists `*_PROFILE` variables to switch off after the
+  test profiles are applied, for a reduced stack on a machine without the
+  memory, for example
+  `SUITE_DISABLE_PROFILES="GRAFANA_PROFILE LOKI_PROFILE" NESTED_MEMORY=4g`.
+- `NESTED_REGISTRY_SECRET` names a podman secret holding a registry auth file
+  for the nested pulls, which is how CI's Docker Hub login reaches them.
+
+The `suite_*` targets in the Makefile are the tiers themselves. They refuse to
+run anywhere but inside the runner.
+
+## What the nested run cannot cover, and what covers it instead
+
+The aim is to test everything that can be tested, and where an environment
+cannot, to isolate, mock or reduce rather than to leave a test that skips
+without saying why. These are the known gaps of the nested run CI makes
+(`make test_nested`), each with its reason and what stands in for it.
+
+- **jDownloader2's first boot.** jDownloader2 runs a mandatory self update on
+  its first boot, before its `RemoteAPIConfig.json`, and so its API, exists at
+  all. Behind the mock VPN that update never completes (it stalls on its own
+  "No Connection to the Internet" dialog, confirmed live), so
+  `tests/test_jdownloader2.py::test_mylar_reaches_jdownloader2_api` skips
+  whenever gluetun points at the mock, which in the nested runner is every run.
+  Nothing automated covers it; it runs on a bench whose gluetun holds a real
+  provider credential. See [docs/JDOWNLOADER2.md](JDOWNLOADER2.md).
+- **podman_exporter's CPU and memory series.** `podman stats`, and so the
+  exporter, reads them from each container's cgroup, and the nested engine has
+  none unless the host delegates a cgroup to the outer container and the
+  runner image creates its containers with one (devcontainer-airlock's
+  `docs/IMAGES.md`, "The nested test runner"). The image sets
+  `cgroups = "disabled"` today. `test_podman_exporter_cpu_metrics` and
+  `test_podman_exporter_memory_metrics` ask the engine first (`podman info`
+  for the controllers, the exporter container's `HostConfig.Cgroups` for the
+  mode) and skip with that reason only when cgroups are missing, so they run
+  wherever cgroups exist. `integration-tests.yml` already runs the suite in a
+  delegated systemd scope when the runner grants one, so CI picks the series
+  up as soon as the image stops disabling cgroups. The rest of the exporter (scrape target up,
+  container names present) is checked either way.
+- **nzbget.** Off in CI on purpose: `NZBGET_PROFILE` stays disabled in
+  `.env.tests` because its nginx location in
+  `configs/nginx/templates/default.conf.template` is commented out as a legacy
+  endpoint, so its proxied tests could never pass. SABnzbd is the usenet client
+  the stack enables and the suite covers.
+- **The tiers CI does not run yet.** `make test_nested` runs tiers 1 and 2
+  plus `wiring_readonly`. The `rotation`, `pw_rotation`, state changing
+  `wiring` and `killswitch` tests (the serial tier 3) and `rinse_and_repeat`
+  run on a bench through `make test`, `make test_extended` and
+  `make bootstrap_tests`, which is the bar before a release. They are left out
+  of CI because back to back restarts of dozens of apps overran their wait
+  budgets on a shared hosted runner (see "Markers and tiers"), not because they
+  need anything CI lacks. A follow up splits them into parallel CI jobs, each
+  with a stack of its own, so the serial tier stops being one long run.
 
 ## The unit tier
 
@@ -204,10 +329,14 @@ checkout, no `.env`, no credentials):
   and branches of every Python file in `scripts/`** (`.coveragerc`). A new
   script there is measured from the moment it exists, so it ships with tests.
 - The shell run goes through `tests/unit/run-shell-tests.sh` under kcov, which
-  runs `tests/unit/<name>.test.sh` for every script the Makefile lists in
-  `COVERAGE_SHELL_SCRIPTS`, and each listed script has to reach **100% of its
-  lines** (kcov records no branches for bash). The list grows a script at a
-  time; a script not on it is not measured yet.
+  runs `tests/unit/<name>.test.sh` for every shell script the repository
+  writes, and each has to reach **100% of its lines** (kcov records no
+  branches for bash). Nobody lists them: the Makefile finds them as
+  `COVERAGE_SHELL_SCRIPTS`, every file git would commit that ends in `.sh` or
+  `.bash` or starts with a `sh`, `bash` or `dash` shebang, minus `tests/` and
+  the vendored paths in `SHELL_EXCLUDE`, plus any in `SHELL_EXTRA` that
+  neither identifies. A new script is measured from the moment it exists, so
+  it ships with tests. `make print-shell-scripts` prints the set.
 - The JavaScript run goes through `tests/unit/*.test.js` under node's own test
   runner, and every file in the Makefile's `COVERAGE_JS_SOURCES` has to reach
   **100% of its lines, branches and functions**.
@@ -222,10 +351,6 @@ every pull request, and it is a `pre-push` hook, so run `pre-commit install`
 again in an existing clone to pick it up. It needs podman on `PATH`; in a
 devcontainer-airlock workbench run it as `l2 --engine --net -- make coverage`.
 
-To iterate on one file without the containers, the integration environment
-already has what the tier needs:
-`tests/.venv/bin/pytest tests/unit --confcutdir=tests/unit`.
-
 How the tier keeps out of the integration suite: `pytest.ini`'s
 `norecursedirs` stops every integration target from collecting `tests/unit`,
 and `--confcutdir=tests/unit` stops the unit tier from loading
@@ -238,9 +363,9 @@ runs its script as its own `bash` process with stub commands first on `PATH`
 and the stub directory as the only other thing there when the script must not
 find a real one.
 
-To add a shell script to the list, write `tests/unit/<name>.test.sh` (the
-existing ones show the pattern), add the script to `COVERAGE_SHELL_SCRIPTS`,
-and run `make coverage`. Two things kcov does that are worth knowing: it
+A new shell script needs `tests/unit/<name>.test.sh` (the existing ones show
+the pattern) before `make coverage` passes again; vendored shell goes in
+`SHELL_EXCLUDE` with a comment saying why. Two things kcov does that are worth knowing: it
 counts a `: '...'` block comment as code it never saw run, so write those as
 `#` comments, and under kcov a script's `set -x` trace goes to kcov rather than
 to standard error. kcov also counts lines it can never see run: every line of
@@ -288,9 +413,9 @@ pins in `tests/requirements.txt`, the integration suite's own environment,
 which is not a lock and is unchanged.
 
 `scripts/requirements.in` and its lock `scripts/requirements.txt` work the
-same way, from `scripts`. They hold the pyyaml that `integration-tests.yml`
-installs before seeding the stack, since `scripts/permissions.py` runs there
-with the system Python rather than `tests/.venv`.
+same way, from `scripts`. They hold the pyyaml that `tests/ci-suite.sh`
+installs in the nested test runner before seeding the stack, since
+`scripts/permissions.py` runs there with that interpreter directly.
 
 #### A security fix younger than seven days
 

@@ -363,7 +363,12 @@ def test_vpn_namespace_has_no_global_ipv6_address(running_containers, docker_cli
     bind address becomes worth arguing about again.
     """
     service_name = env("VPN_PROVIDER", "gluetun")
-    skip_if_disabled(service_name)
+    # Not skip_if_disabled(): the VPN container is not a SERVICES entry, so that
+    # helper finds no profile_var and always skipped. Read the profile the way
+    # test_containers.py's test_vpn_container_running does.
+    vpn_profile = f"{service_name.upper()}_PROFILE"
+    if env(vpn_profile, "disabled").lower() != "enabled":
+        pytest.skip(f"{vpn_profile} is not enabled")
     skip_if_not_running(service_name, running_containers)
     container = fresh_container(docker_client, service_name)
 
