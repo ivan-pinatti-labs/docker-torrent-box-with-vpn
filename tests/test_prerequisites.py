@@ -167,11 +167,10 @@ def test_xmlstarlet_available():
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 # Ignored live files that need no committed seed, because the app writes them
-# itself on first run. Jellyfin's network.xml is then patched in place by
-# `make configure_jellyfin_network` and `make generate_certificate`, so a
-# checked-in template would only go stale.
+# itself on first run. configs/jellyfin/config/network.xml used to be listed
+# here too, but it is seeded from network.xml.example now (see the Makefile),
+# so it is held to the seed check like any other curated config.
 APP_GENERATED_NO_SEED = {
-    "configs/jellyfin/config/network.xml",
     "configs/jellyfin/config/config/network.xml",
 }
 
@@ -270,17 +269,27 @@ def test_seeded_config_has_tracked_example(live_path):
     assert result.returncode == 0, f"{example} exists but is not tracked by git"
 
 
-@pytest.mark.parametrize("rel_path", RUNTIME_STATE)
+def _needs_seed(rel_path: str) -> bool:
+    """Whether a RUNTIME_STATE path is a curated config rather than app output."""
+    return (
+        not rel_path.endswith((".db", ".sqlite", ".sqlite3"))
+        and rel_path not in APP_GENERATED_NO_SEED
+    )
+
+
+# Filtered rather than skipped inside the test. A database the app creates on
+# first run, or a file listed in APP_GENERATED_NO_SEED, has nothing to check
+# here, and as parametrize cases they only ever reported as skips on every run,
+# which reads as coverage missing where there is none to have.
+@pytest.mark.parametrize("rel_path", [p for p in RUNTIME_STATE if _needs_seed(p)])
 def test_runtime_state_has_seed_when_app_needs_one(rel_path):
     """A live file that is ignored must either be app-generated or have a seed.
 
-    Databases the app creates on first run need no seed. Hand-tuned configs do,
-    otherwise untracking them silently drops settings for fresh clones.
+    Databases the app creates on first run need no seed, and neither do the
+    files in APP_GENERATED_NO_SEED; both are left out of the parametrize list.
+    Hand-tuned configs do, otherwise untracking them silently drops settings
+    for fresh clones.
     """
-    if rel_path.endswith((".db", ".sqlite", ".sqlite3")):
-        pytest.skip("app creates its own database on first run")
-    if rel_path in APP_GENERATED_NO_SEED:
-        pytest.skip("app generates this file; see APP_GENERATED_NO_SEED")
     example = REPO_ROOT / f"{rel_path}.example"
     assert example.is_file(), (
         f"{rel_path} is ignored but has no {example.name} seed, so a fresh "
