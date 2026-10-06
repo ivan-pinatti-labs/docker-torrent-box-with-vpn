@@ -624,6 +624,7 @@
     "presharedkey",
     "prestart",
     "privkey",
+    "procs",
     "promtail",
     "protonvpn",
     "protonwire",

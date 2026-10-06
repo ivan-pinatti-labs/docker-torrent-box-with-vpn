@@ -475,6 +475,51 @@ jobs:
           rm -f "$auth"
           echo "NESTED_REGISTRY_SECRET=$name" >> "$GITHUB_ENV"
 
+      - name: Probe cgroup delegation for the nested run
+        # The nested engine keeps cgroup statistics (which the podman_exporter
+        # CPU and memory tests read) only if the outer container sits in a
+        # cgroup it may write to, and the runner process does not: it runs in
+        # the runner service's own cgroup, which belongs to root. A transient
+        # systemd scope with Delegate=yes, entered as the runner user, is a
+        # cgroup subtree handed to that user, so podman can nest containers'
+        # cgroups below it. `loginctl enable-linger` would not do this: it
+        # starts a user manager, but the runner process is not in that
+        # manager's tree, and the runner image's podman (built without
+        # systemd) would never ask it for a scope.
+        #
+        # Harmless until the runner image uses it. That image sets
+        # `cgroups = "disabled"` today (docs/TESTING.md, "What the nested run
+        # cannot cover"), so the tests keep skipping with that reason either
+        # way; this only makes the cgroup available for when it stops. The
+        # probe prints what the outer container sees, outside the scope and
+        # inside it (owner 0 of cgroup.procs means the container owns its
+        # cgroup), and the suite step enters the scope only if the probe ran
+        # in it. A probe that fails for any reason leaves the suite running
+        # exactly as before, and this step cannot fail the job.
+        #
+        # Takes effect only once on main or in the merge queue: a
+        # `/run-tests` comment runs main's copy of this workflow, never the
+        # pull request's.
+        timeout-minutes: 3
+        continue-on-error: true
+        shell: bash
+        run: |
+          image=$(sed -n 's/^NESTED_IMAGE ?= //p' Makefile)
+          # shellcheck disable=SC2016 # expanded by the container's shell
+          probe=(podman run --rm --network=none --security-opt unmask=ALL \
+            --entrypoint sh "$image" -c \
+            'echo "cgroup.procs owner: $(stat -c %u /sys/fs/cgroup/cgroup.procs)"; echo "controllers: $(cat /sys/fs/cgroup/cgroup.controllers)"')
+          echo "Outside a delegated scope:"
+          "${probe[@]}" || true
+          echo "Inside a delegated scope:"
+          if sudo --preserve-env systemd-run --scope --quiet --collect \
+            --uid="$(id -u)" --gid="$(id -g)" -p Delegate=yes \
+            -- env "PATH=$PATH" "HOME=$HOME" "${probe[@]}"; then
+            echo "NESTED_SCOPE=1" >> "$GITHUB_ENV"
+          else
+            echo "::notice::No delegated scope for the nested run; the suite runs without one."
+          fi
+
       - name: Run the integration suite
         # `make test_nested` is the whole suite, the same command a bench
         # runs: it streams the checked out tree into the nested test runner,
@@ -501,8 +546,22 @@ jobs:
         #
         # No teardown step: the Makefile removes the runner container with
         # `podman rm -v` on the way out, and the runner VM goes with the job.
+        #
+        # Inside the delegated scope when the probe above could enter one,
+        # with the job's environment carried in (sudo keeps it with
+        # --preserve-env except PATH, which is passed explicitly), so
+        # NESTED_REGISTRY_SECRET and GITHUB_ACTIONS still reach the Makefile.
+        # The exit status is the suite's either way, so `Tests Verified`
+        # reads the same as before.
         timeout-minutes: 38
-        run: make test_nested NESTED_MEMORY=
+        shell: bash
+        run: |
+          if [ "${NESTED_SCOPE:-}" = 1 ]; then
+            exec sudo --preserve-env systemd-run --scope --quiet --collect \
+              --uid="$(id -u)" --gid="$(id -g)" -p Delegate=yes \
+              -- env "PATH=$PATH" "HOME=$HOME" make test_nested NESTED_MEMORY=
+          fi
+          make test_nested NESTED_MEMORY=
 
   publish:
     name: Publish the result

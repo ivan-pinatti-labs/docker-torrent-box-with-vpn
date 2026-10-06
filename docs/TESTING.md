@@ -274,7 +274,9 @@ without saying why. These are the known gaps of the nested run CI makes
   `test_podman_exporter_memory_metrics` ask the engine first (`podman info`
   for the controllers, the exporter container's `HostConfig.Cgroups` for the
   mode) and skip with that reason only when cgroups are missing, so they run
-  wherever cgroups exist. The rest of the exporter (scrape target up,
+  wherever cgroups exist. `integration-tests.yml` already runs the suite in a
+  delegated systemd scope when the runner grants one, so CI picks the series
+  up as soon as the image stops disabling cgroups. The rest of the exporter (scrape target up,
   container names present) is checked either way.
 - **nzbget.** Off in CI on purpose: `NZBGET_PROFILE` stays disabled in
   `.env.tests` because its nginx location in
