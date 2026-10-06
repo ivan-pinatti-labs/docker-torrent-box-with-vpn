@@ -70,7 +70,9 @@ Every test that currently skips without a real VPN key becomes
 exercisable, most notably `tests/test_vpn_killswitch.py`, which only
 requires gluetun and the probe container to be genuinely healthy: it has
 no idea whether the tunnel behind that health state is a real provider or
-a local mock.
+a local mock. The one exception is jDownloader2's first boot self update,
+which does not complete behind the mock; docs/TESTING.md lists it under
+"What the nested run cannot cover".
 
 ## Never for a real deployment
 

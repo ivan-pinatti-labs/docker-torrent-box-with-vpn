@@ -80,8 +80,11 @@ anonymously with a retry instead.
 
 The VPN is the credential-free mock (see [docs/VPN_MOCK.md](VPN_MOCK.md)) on
 every run, fork or not. There is no real provider credential in CI and there is
-not meant to be one. Nothing is lost by that: `make test_nested` excludes the
-`killswitch` tier, which is the only one that exercises a real VPN credential.
+not meant to be one. Almost nothing needs one: the `killswitch` tier runs
+against the mock (it stops and starts gluetun and asks whether the probe
+container can still reach out), and `make test_nested` leaves it out because it
+belongs to the serial tier, not because of the VPN. The one test the mock cannot
+serve is listed under "What the nested run cannot cover" below.
 
 CI and a bench run the suite the same way, in the nested test runner (see
 "Where the suite runs" below), so there is no longer a podman version that
@@ -246,6 +249,47 @@ The Makefile's variables, set on the command line:
 
 The `suite_*` targets in the Makefile are the tiers themselves. They refuse to
 run anywhere but inside the runner.
+
+## What the nested run cannot cover, and what covers it instead
+
+The aim is to test everything that can be tested, and where an environment
+cannot, to isolate, mock or reduce rather than to leave a test that skips
+without saying why. These are the known gaps of the nested run CI makes
+(`make test_nested`), each with its reason and what stands in for it.
+
+- **jDownloader2's first boot.** jDownloader2 runs a mandatory self update on
+  its first boot, before its `RemoteAPIConfig.json`, and so its API, exists at
+  all. Behind the mock VPN that update never completes (it stalls on its own
+  "No Connection to the Internet" dialog, confirmed live), so
+  `tests/test_jdownloader2.py::test_mylar_reaches_jdownloader2_api` skips
+  whenever gluetun points at the mock, which in the nested runner is every run.
+  Nothing automated covers it; it runs on a bench whose gluetun holds a real
+  provider credential. See [docs/JDOWNLOADER2.md](JDOWNLOADER2.md).
+- **podman_exporter's CPU and memory series.** `podman stats`, and so the
+  exporter, reads them from each container's cgroup, and the nested engine has
+  none unless the host delegates a cgroup to the outer container and the
+  runner image creates its containers with one (devcontainer-airlock's
+  `docs/IMAGES.md`, "The nested test runner"). The image sets
+  `cgroups = "disabled"` today. `test_podman_exporter_cpu_metrics` and
+  `test_podman_exporter_memory_metrics` ask the engine first (`podman info`
+  for the controllers, the exporter container's `HostConfig.Cgroups` for the
+  mode) and skip with that reason only when cgroups are missing, so they run
+  wherever cgroups exist. The rest of the exporter (scrape target up,
+  container names present) is checked either way.
+- **nzbget.** Off in CI on purpose: `NZBGET_PROFILE` stays disabled in
+  `.env.tests` because its nginx location in
+  `configs/nginx/templates/default.conf.template` is commented out as a legacy
+  endpoint, so its proxied tests could never pass. SABnzbd is the usenet client
+  the stack enables and the suite covers.
+- **The tiers CI does not run yet.** `make test_nested` runs tiers 1 and 2
+  plus `wiring_readonly`. The `rotation`, `pw_rotation`, state changing
+  `wiring` and `killswitch` tests (the serial tier 3) and `rinse_and_repeat`
+  run on a bench through `make test`, `make test_extended` and
+  `make bootstrap_tests`, which is the bar before a release. They are left out
+  of CI because back to back restarts of dozens of apps overran their wait
+  budgets on a shared hosted runner (see "Markers and tiers"), not because they
+  need anything CI lacks. A follow up splits them into parallel CI jobs, each
+  with a stack of its own, so the serial tier stops being one long run.
 
 ## The unit tier
 
