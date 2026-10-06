@@ -316,7 +316,13 @@ jobs:
     # request that had changed nothing but a comment. Normal variance on a busy
     # runner is wide, so anything close to the observed maximum will fail honest
     # runs more often than it catches real hangs.
-    timeout-minutes: 25
+    #
+    # Raised to 55 while the suite moves into a nested runner: `/run-tests`
+    # runs this default branch copy, so the pull request that moves it is
+    # judged here, where `make test_ci` stands a nested stack up after the
+    # host stack above. The pull request that switches this workflow to the
+    # nested path sets its own limit.
+    timeout-minutes: 55
     # One suite per pull request: a second `/run-tests`, or a push to a bot's
     # branch, supersedes the first rather than standing a competing stack up on
     # the same runner pool. That matters more on the bot path than the comment
@@ -804,7 +810,8 @@ jobs:
         # The wiring_readonly subset does run here: it reads back what the
         # wire_connections step above just wired, and restarts nothing. See
         # the Makefile's own comment on test_ci.
-        timeout-minutes: 12
+        # 40, not 12, for the same transition as the job limit above.
+        timeout-minutes: 40
         run: make test_ci
 
       - name: Tear down
