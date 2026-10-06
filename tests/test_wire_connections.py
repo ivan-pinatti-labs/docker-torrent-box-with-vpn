@@ -579,7 +579,14 @@ def test_jellyfin_connection_points_at_a_reachable_jellyfin(app, running_contain
     """Jellyfin is on the media network and the *arr apps are not, so the
     connection has to reach the port Jellyfin publishes on the host. The
     address is probed at wiring time rather than assumed, so assert the
-    result is usable rather than equal to any particular value."""
+    result is usable.
+
+    And that it is LAN_IP, which tests/ci-suite.sh sets to the runner's own
+    address. wire-connections.sh falls back to host.containers.internal,
+    which from inside the runner can name the machine running it, so a
+    Jellyfin published there by a stack outside this one would answer the
+    probe and every check below would pass against the wrong stack. CI did
+    exactly that while its runner also ran a stack of its own."""
     if not is_enabled(app) or not is_enabled("jellyfin"):
         pytest.skip("app or jellyfin profile is disabled")
     connection = _jellyfin_connection(app, running_containers)
@@ -589,6 +596,10 @@ def test_jellyfin_connection_points_at_a_reachable_jellyfin(app, running_contain
     host = _field(connection, "host")
     port = _field(connection, "port")
     assert host, f"[{app}] Jellyfin connection has no host"
+    assert host == _env("LAN_IP"), (
+        f"[{app}] Jellyfin connection points at {host}, not at this stack's own "
+        f"LAN_IP {_env('LAN_IP')}, so it may reach a Jellyfin outside the stack under test"
+    )
     assert port == int(_env("JELLYFIN_HTTP_PORT"))
     assert _field(connection, "urlBase") == _env("JELLYFIN_BASE_URL")
     assert _field(connection, "updateLibrary") is True, (

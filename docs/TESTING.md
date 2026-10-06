@@ -212,6 +212,20 @@ the Makefile as `NESTED_IMAGE`, and Renovate moves the digest). It is not
 network isolation from the host: under rootless podman's default networking
 the outer container can still reach a service listening on this machine.
 
+The nested stack reaches itself the way a deployment does, through the ports
+it publishes on the machine it runs on, which here is the outer container.
+`tests/ci-suite.sh` sets `LAN_IP` to that container's own address (found the
+way `make bootstrap` finds a host's), and `scripts/wire-connections.sh` tries
+`LAN_IP` first when it points the *arr apps at Jellyfin's published port. Its
+fallback, `host.containers.internal`, is no good here: in a runner started by
+an engine using slirp4netns (the podman on CI's runners) it names the machine
+running the runner, so it reaches either nothing or a stack outside the one
+under test, and a pass against that stack is a false one.
+`test_jellyfin_connection_points_at_a_reachable_jellyfin` therefore requires
+every Jellyfin connection to point at `LAN_IP`. The download clients need none
+of this: they reach gluetun at its fixed address on the stack's own
+`services` network.
+
 The run uses the flags the image documents (devcontainer-airlock's
 `docs/IMAGES.md`, "The nested test runner"): `--user podman`, `/dev/fuse` and
 `/dev/net/tun`, `--security-opt label=type:container_engine_t` and

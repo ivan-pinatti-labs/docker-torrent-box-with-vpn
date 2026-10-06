@@ -100,10 +100,20 @@ podman volume prune --force >/dev/null
 
 step "Create .env"
 cp .env.example .env
-# generate_certificate rejects the LAN_IP placeholder (OpenSSL needs a real
-# address for the subjectAltName); any RFC 1918 address works, since nothing
-# resolves it here.
-set_env LAN_IP 192.168.1.100
+# LAN_IP is the runner's own address, found the way `make bootstrap` finds a
+# host's (scripts/detect-system-values.sh), because it is what it is on a real
+# host: the address the stack's published ports listen on. wire-connections.sh
+# points the *arr apps at Jellyfin's published port through it, and the nested
+# engine publishes on this container's addresses, so the stack reaches itself.
+# A placeholder sent that probe to the host.containers.internal fallback,
+# which inside a runner started under slirp4netns (CI's podman) names the
+# machine running the runner, so it reached no Jellyfin at all, or the
+# Jellyfin of a stack outside this one. generate_certificate also needs a real
+# address here, for the subjectAltName.
+lan_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i=="src") print $(i+1)}' || true)"
+[[ -n "$lan_ip" ]] || fail "Could not find the runner's own address for LAN_IP (no IPv4 default route)."
+set_env LAN_IP "$lan_ip"
+echo "[.env] LAN_IP=$lan_ip"
 # The runner's own account, which is what owns the nested socket three
 # observability services mount from /run/user/${UID}/podman.
 set_env UID "$(id -u)"

@@ -1032,7 +1032,9 @@ ensure_sabnzbd_client() {
 # LAN_IP first, because that is what a hand-configured install ends up using
 # and it keeps working if the host alias is unavailable. Then podman's own
 # alias for the host, which is what works when LAN_IP is still the
-# .env.example placeholder, CI being the case that matters. host.docker
+# .env.example placeholder. (Not in CI: tests/ci-suite.sh sets LAN_IP, since
+# inside the nested runner this alias can name the machine running it rather
+# than the runner, docs/TESTING.md.) host.docker
 # .internal covers RUNTIME=docker.
 # Sets JELLYFIN_REACHABLE_HOST as a side effect rather than printing the
 # candidate to stdout, the same reasoning as detect_jellyfin_base_url's own
