@@ -21,6 +21,7 @@ Run explicitly with:
 """
 
 import json
+import os
 import subprocess
 import time
 from datetime import UTC
@@ -581,7 +582,7 @@ def test_jellyfin_connection_points_at_a_reachable_jellyfin(app, running_contain
     address is probed at wiring time rather than assumed, so assert the
     result is usable.
 
-    And that it is LAN_IP, which tests/ci-suite.sh sets to the runner's own
+    In the nested runner, also that it is LAN_IP, which tests/ci-suite.sh sets to the runner's own
     address. wire-connections.sh falls back to host.containers.internal,
     which from inside the runner can name the machine running it, so a
     Jellyfin published there by a stack outside this one would answer the
@@ -596,10 +597,15 @@ def test_jellyfin_connection_points_at_a_reachable_jellyfin(app, running_contain
     host = _field(connection, "host")
     port = _field(connection, "port")
     assert host, f"[{app}] Jellyfin connection has no host"
-    assert host == _env("LAN_IP"), (
-        f"[{app}] Jellyfin connection points at {host}, not at this stack's own "
-        f"LAN_IP {_env('LAN_IP')}, so it may reach a Jellyfin outside the stack under test"
-    )
+    # Only in the nested runner, where tests/ci-suite.sh sets LAN_IP: run
+    # directly against a deployment, host.containers.internal is a legitimate
+    # answer while .env still carries the placeholder LAN_IP.
+    if os.environ.get("NESTED_RUNNER") == "1":
+        assert host == _env("LAN_IP"), (
+            f"[{app}] Jellyfin connection points at {host}, not at this stack's "
+            f"own LAN_IP {_env('LAN_IP')}, so it may reach a Jellyfin outside "
+            "the stack under test"
+        )
     assert port == int(_env("JELLYFIN_HTTP_PORT"))
     assert _field(connection, "urlBase") == _env("JELLYFIN_BASE_URL")
     assert _field(connection, "updateLibrary") is True, (
