@@ -83,20 +83,134 @@ reviews:
       # as it stands. CodeRabbit surfaced one of them on consecutive reviews, and
       # acting on it separates a key from the others it belongs with.
       enabled: false
+  # How hard to look. assertive raises more than chill does; this stack
+  # exists to keep download traffic behind a VPN and to merge dependency bumps
+  # unattended, so a missed leak or a widened bot lane costs more than an
+  # extra comment.
+  profile: assertive
+
+  # Review guidance. The first two entries are the organization's
+  # public-repository rules, kept the same in every ivan-pinatti-labs
+  # repository; the rest are specific to docker-torrent-box-with-vpn.
+  # Pre-commit already runs the linters, so these ask for judgment the hooks
+  # cannot make.
   path_instructions:
+    - path: "**"
+      instructions: |
+        This repository is public. Flag, as a blocking issue, anything in the
+        diff that should not be published:
+        - secrets, tokens, keys, passwords, session cookies, connection
+          strings, or anything that looks like one, even in tests or docs;
+        - personal data: names other than the maintainer's public handle,
+          email addresses other than a users.noreply.github.com one, phone
+          numbers, physical addresses;
+        - machine specific details: absolute home paths (/home/<user>,
+          /Users/<user>), host names, LAN or private IP addresses, internal
+          domains, cloud account IDs, ARNs, AWS profile names, cluster
+          contexts, and details of anyone's own deployment;
+        - AI attribution in any file, commit message or the pull request
+          text: a Co-Authored-By trailer naming an AI agent, a "Generated
+          with" line, an agent session link, or any other line that names
+          or links the agent that wrote the change.
+        Also check that every behavior change comes with tests that would
+        fail without it, and that the docs describe the new behavior. The
+        organization's rule is 100% test coverage of the code it ships:
+        flag, as a blocking issue, any new or changed line or branch of code
+        (not docs or configuration) that no test exercises, and name the
+        test that would cover it. Do not comment on formatting the
+        pre-commit hooks already enforce.
+    - path: "**/*.md"
+      instructions: |
+        Prose does not use a hyphen, em dash or en dash as punctuation; use
+        commas, parentheses or separate sentences (hyphens inside compound
+        words, code, paths and flags are fine). Point out claims the code in
+        this pull request does not back up.
     - path: ".env.example"
       instructions: >
         Keys are deliberately grouped by function, with comments explaining
         each group, rather than sorted alphabetically. Do not suggest
         reordering them.
     - path: "docker-compose-*.yml"
-      instructions: >
+      instructions: |
         Service blocks must follow the key order documented in
         docs/COMPOSE_CONVENTIONS.md. Flag any service block whose keys
         are out of that order.
+        The VPN killswitch is structural and must fail closed (see
+        docs/NETWORKING.md and docs/HARDENING.md): a download client
+        (qbittorrent, sabnzbd, jdownloader2, legacy nzbget) or any service
+        routed through the VPN shares gluetun's namespace with
+        `network_mode: container:${VPN_PROVIDER}`. Flag, as a blocking
+        issue, any change that gives such a service its own network, a
+        published port or any other path that could reach the internet
+        if gluetun stops.
+        Flag a container losing `no-new-privileges`, `cap_drop: ALL`, the
+        IPv6 sysctls or its non-root PUID/PGID or `user:` without a
+        matching entry in docs/HARDENING.md's exceptions, and a service
+        whose real secrets are not kept out of git by the secrets override
+        pattern or Compose `secrets:` in docs/COMPOSE_CONVENTIONS.md.
+    - path: "configs/**"
+      instructions: |
+        Committed `configs/<service>/.env` files and `.example` stubs hold
+        only empty values or realistic fake placeholders; real values live
+        in the gitignored `.env.secrets` (docs/COMPOSE_CONVENTIONS.md,
+        "Secrets override pattern"). Flag a real looking credential, and a
+        `.gitignore` change that would let `.env.secrets` or a secret
+        `*.txt` file be committed.
+    - path: ".github/**"
+      instructions: |
+        Patch, minor and digest bumps merge unattended, and what keeps that
+        safe is in docs/HARDENING.md ("Unattended dependency updates") and
+        docs/MERGE_PIPELINE.md. Flag, as a blocking issue, any change that
+        weakens it: shortening or bypassing `minimumReleaseAge`, dropping
+        `pinDigests`, widening `allowed_paths` or the grammars in
+        `pin-only.yml`, letting bot-auto-merge.yml approve without the
+        published `Pin Only` status or for an author that is not a
+        dependency bot, or changing what `Review Verified` grades.
 
+  # Pull request checks shown in the walkthrough. Warnings, not errors: the
+  # merge pipeline already gates on CodeRabbit's review through Review
+  # Verified (docs/MERGE_PIPELINE.md).
+  pre_merge_checks:
+    title:
+      mode: warning
+      requirements: >-
+        Conventional Commits: type(optional scope): imperative subject,
+        lowercase, no trailing period, at most 72 characters.
+    description:
+      mode: warning
+    custom_checks:
+      - name: Public repository hygiene
+        mode: warning
+        instructions: >-
+          Fail if the diff, commit messages or pull request text add a
+          secret or something that looks like one, an email address other
+          than a users.noreply.github.com one, an absolute home path, a host
+          name, a private IP address, a cloud account ID or ARN, or details
+          of a personal deployment. Pass otherwise.
+      - name: No AI attribution
+        mode: warning
+        instructions: >-
+          Fail if any commit message, the pull request title or description,
+          or any file in the diff contains a Co-Authored-By trailer naming an
+          AI agent, a "Generated with" line, an agent session link, or any
+          other line that names or links the AI agent that made the change.
+          Pass otherwise.
+
+# Tone of review comments and chat.
+tone_instructions: >-
+  Direct and specific: lead with the defect and a concrete fix, in plain
+  words. No praise, no emoji, no hype. Skip style points a linter already
+  reports.
+
+# The repository's own rules, read as coding guidelines for every review.
 knowledge_base:
   code_guidelines:
+    enabled: true
     filePatterns:
+      - AGENTS.md
       # Not auto-detected the way AGENTS.md is, so listed explicitly.
       - "docs/COMPOSE_CONVENTIONS.md"
+      - docs/HARDENING.md
+      - docs/NETWORKING.md
+      - docs/MERGE_PIPELINE.md
+      - docs/CONTRIBUTING.md
