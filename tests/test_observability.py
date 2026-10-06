@@ -218,11 +218,14 @@ def _podman_cgroups_missing() -> str | None:
     """Why the engine running the stack keeps no cgroup statistics, or None.
 
     podman_exporter reads CPU and memory from `podman stats`, which reads them
-    from each container's cgroup. The nested test runner's engine can have
-    none: its containers.conf sets `cgroups = "disabled"`, and even without
-    that a rootless engine gets controllers only when the host delegates a
-    cgroup to the outer container (devcontainer-airlock docs/IMAGES.md). The
-    series then never exist, which says nothing about the exporter.
+    from each container's cgroup. The nested test runner's engine has them
+    only when the host delegates a cgroup v2 tree to the outer container: the
+    image's init then carves the podman account a subtree and turns cgroups on
+    with a user drop in (containers.conf.d/50-cgroups.conf), and otherwise
+    removes it, leaving the image's own containers.conf at
+    `cgroups = "disabled"` (devcontainer-airlock docs/IMAGES.md, "Cgroups for
+    the nested containers"). With them off the series never exist, which says
+    nothing about the exporter, so this skips then and only then.
 
     Asked of the engine itself, through the same podman CLI the rest of the
     suite drives, rather than inferred from where the suite runs: `podman
@@ -230,7 +233,9 @@ def _podman_cgroups_missing() -> str | None:
     container for whether containers are created with a cgroup at all (a
     libpod field, `HostConfig.Cgroups`, absent from the Docker API). An
     engine that cannot answer is not a reason to skip, so the test runs and
-    its own assertion reports.
+    its own assertion reports. Both questions go to the engine rather than to
+    the configuration files, so they answer the same whichever file set the
+    mode.
     """
     info = subprocess.run(  # nosec B607 - podman is a trusted, fixed CLI in this stack
         ["podman", "info", "--format", "json"],
@@ -265,8 +270,9 @@ def _podman_cgroups_missing() -> str | None:
     if mode.returncode == 0 and mode.stdout.strip() == "disabled":
         return (
             "the container engine creates containers without cgroups "
-            '(containers.conf cgroups = "disabled"), so podman stats has '
-            "nothing to read"
+            '(cgroups = "disabled", which the nested runner keeps when the '
+            "host delegates it no cgroup tree), so podman stats has nothing "
+            "to read"
         )
     return None
 
