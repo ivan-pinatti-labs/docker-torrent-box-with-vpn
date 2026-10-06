@@ -88,25 +88,9 @@ show_stack() {
 }
 
 step "Nested cgroups"
-# The image's init has already printed one line saying whether it gave the
-# nested engine cgroups ("podman-nested: nested cgroups on (...)" or "off
-# (...)"), before this script started. Repeated here from what the engine
-# itself reports, and as a notice on a runner, so a run's summary says whether
-# the stack's CPU and memory limits were enforced and whether the
-# podman_exporter CPU and memory tests had anything to read. The init turns
-# them on through this drop in and removes it when it leaves them off
-# (devcontainer-airlock's docs/IMAGES.md, "Cgroups for the nested containers").
-cgroups_conf="$HOME/.config/containers/containers.conf.d/50-cgroups.conf"
-cgroup_controllers="$(podman info --format json 2>/dev/null | jq -r '.host.cgroupControllers // [] | join(" ")' || true)"
-if [[ -f "$cgroups_conf" ]]; then
-  cgroups_state="on (engine controllers: ${cgroup_controllers:-none})"
-else
-  cgroups_state="off (the runner was given no delegated cgroup v2 tree, or started with --user), so no container stats or resource limits"
-fi
-echo "nested cgroups $cgroups_state"
-if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
-  echo "::notice title=Nested cgroups::$cgroups_state"
-fi
+# The image's init has already printed whether it gave the nested engine
+# cgroups; scripts/nested-cgroups-report.sh repeats it from the engine.
+scripts/nested-cgroups-report.sh
 
 step "Clear what an earlier run left in the nested storage"
 # The storage volume is kept between runs for its images, but it holds the
