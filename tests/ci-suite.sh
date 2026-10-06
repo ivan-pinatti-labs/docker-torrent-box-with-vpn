@@ -156,8 +156,10 @@ stack)
   # make start alone never seeds, and every service whose compose block
   # names a seeded secrets file fails without it. Its chromedriver
   # prerequisite also runs the first registry pull, which is why it is
-  # bounded like one.
-  timeout 480 make seed_all || fail "make seed_all failed or took over 8 minutes."
+  # bounded like one. 15 minutes, not 8: the nested engine starts from an
+  # empty image store unless its storage volume is cached, and seeding pulls
+  # images as large as calibre's, which a busy runner took over 8 minutes on.
+  timeout 900 make seed_all || fail "make seed_all failed or took over 15 minutes."
 
   step "Generate the self signed certificate"
   timeout 180 make generate_certificate || fail "make generate_certificate failed."
