@@ -227,9 +227,14 @@ of this: they reach gluetun at its fixed address on the stack's own
 `services` network.
 
 The run uses the flags the image documents (devcontainer-airlock's
-`docs/IMAGES.md`, "The nested test runner"): `--user podman`, `/dev/fuse` and
-`/dev/net/tun`, `--security-opt label=type:container_engine_t` and
-`--security-opt unmask=ALL`, a memory cap and a named storage volume. The
+`docs/IMAGES.md`, "The nested test runner"): `/dev/fuse` and `/dev/net/tun`,
+`--security-opt label=type:container_engine_t` and
+`--security-opt unmask=ALL`, a memory cap and a named storage volume. There is
+no `--user`: the image starts as container root, hands the nested engine a
+cgroup subtree where the host delegates one, and drops to its `podman` account
+before the suite runs. Its first line of output says which way that went,
+`podman-nested: nested cgroups on (...)` or `off (...)`, and
+`tests/ci-suite.sh` repeats the answer as its first step. The
 stack adds two devices of its own. cadvisor reads `/dev/kmsg`. Jellyfin maps
 its GPU device, and a container started inside another container cannot be
 handed the `/dev/dri` directory, so the outer container gets `/dev/null` at
