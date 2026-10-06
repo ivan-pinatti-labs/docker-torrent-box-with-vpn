@@ -148,6 +148,22 @@ reviews:
         matching entry in docs/HARDENING.md's exceptions, and a service
         whose real secrets are not kept out of git by the secrets override
         pattern or Compose `secrets:` in docs/COMPOSE_CONVENTIONS.md.
+    # The route overrides `make start VPN_ON=...` passes to Compose move a
+    # service into gluetun's namespace, so the same killswitch and hardening
+    # rules apply to them.
+    - path: "docker-compose.routes/*.yml"
+      instructions: |
+        These overrides route a service through the VPN when
+        `make start VPN_ON=...` passes them to Compose. The VPN killswitch
+        is structural and must fail closed (see docs/NETWORKING.md and
+        docs/HARDENING.md): a routed service shares gluetun's namespace with
+        `network_mode: container:${VPN_PROVIDER}` and depends on it being
+        healthy. Flag, as a blocking issue, any change that gives such a
+        service its own network, a published port or any other path that
+        could reach the internet if gluetun stops.
+        Flag a container losing `no-new-privileges`, `cap_drop: ALL`, the
+        IPv6 sysctls or its non-root PUID/PGID or `user:` without a
+        matching entry in docs/HARDENING.md's exceptions.
     - path: "configs/**"
       instructions: |
         Committed `configs/<service>/.env` files and `.example` stubs hold
@@ -184,9 +200,10 @@ reviews:
         instructions: >-
           Fail if the diff, commit messages or pull request text add a
           secret or something that looks like one, an email address other
-          than a users.noreply.github.com one, an absolute home path, a host
-          name, a private IP address, a cloud account ID or ARN, or details
-          of a personal deployment. Pass otherwise.
+          than a users.noreply.github.com one, an absolute home path, a
+          private or machine specific host name, a private IP address, a
+          cloud account ID or ARN, or details of a personal deployment. Pass
+          otherwise.
       - name: No AI attribution
         mode: warning
         instructions: >-
@@ -209,8 +226,7 @@ knowledge_base:
     filePatterns:
       - AGENTS.md
       # Not auto-detected the way AGENTS.md is, so listed explicitly.
-      - "docs/COMPOSE_CONVENTIONS.md"
-      - docs/HARDENING.md
-      - docs/NETWORKING.md
-      - docs/MERGE_PIPELINE.md
-      - docs/CONTRIBUTING.md
+      # Guidelines outside the root apply only to their own folder unless
+      # applyTo widens them, and these govern the whole repository.
+      - files: "docs/COMPOSE_CONVENTIONS.md,docs/HARDENING.md,docs/NETWORKING.md,docs/MERGE_PIPELINE.md,docs/CONTRIBUTING.md"
+        applyTo: "**/*"
