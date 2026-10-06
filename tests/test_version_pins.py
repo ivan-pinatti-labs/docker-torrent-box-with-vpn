@@ -361,27 +361,26 @@ def test_jellyfin_running_version_matches_pin(running_containers):
         pytest.skip("jellyfin profile is disabled")
     skip_if_not_running("jellyfin", running_containers)
 
-    jellyfin_base = service_base_url("jellyfin")
+    # Jellyfin serves its API under JELLYFIN_BASE_URL (`/jellyfin` by
+    # default), on its direct port as well as through nginx, the same way
+    # scripts/rotate-api-keys.sh builds the URL. Without the prefix the request
+    # got Jellyfin's HTML redirect to the web client, and this test skipped on
+    # the non JSON body on every run, checking nothing.
+    jellyfin_base = service_base_url("jellyfin") + env("JELLYFIN_BASE_URL")
     resp = requests.get(
         f"{jellyfin_base}/System/Info/Public", verify=False, timeout=TIMEOUT
     )
     assert resp.status_code == 200, (
         f"Jellyfin System/Info/Public returned {resp.status_code}: {resp.text[:200]}"
     )
-    # JELLYFIN_PROFILE is `enabled` in .env.example and .env.tests does not
-    # override it, so is_enabled() reads true while the test stack never
-    # stands the service up. The URL then answers, but with nginx's own
-    # response rather than Jellyfin's, and .json() raised JSONDecodeError at
-    # character 0. Skip on a non-JSON body instead of asserting against
-    # whatever happens to be listening: this test exists to catch a version
-    # mismatch, and "something else answered" is not one.
+    # A failure rather than a skip: the profile is enabled and the container
+    # is running, so anything but JSON here means Jellyfin is not serving the
+    # base URL this stack configures, which is worth knowing.
     content_type = resp.headers.get("Content-Type", "")
-    if "json" not in content_type.lower():
-        pytest.skip(
-            "Jellyfin System/Info/Public did not answer with JSON "
-            f"(Content-Type {content_type!r}), so Jellyfin is not serving "
-            "this URL in this environment"
-        )
+    assert "json" in content_type.lower(), (
+        "Jellyfin System/Info/Public did not answer with JSON "
+        f"(Content-Type {content_type!r}): {resp.text[:200]}"
+    )
     reported = resp.json().get("Version")
     assert reported, (
         f"Jellyfin System/Info/Public returned no version: {resp.text[:200]}"
@@ -485,8 +484,12 @@ def test_lazylibrarian_carries_the_calibre_mod(running_containers):
     asserted is what the digest cannot promise on its own: that the layer
     survived the build and the binary actually runs.
     """
-    if not is_enabled("lazylibrarian"):
-        pytest.skip("lazylibrarian profile is disabled")
+    # Not is_enabled(): lazylibrarian is not a SERVICES entry, so that reads no
+    # profile variable at all and always answered disabled, which skipped this
+    # test on every run. Adding it to SERVICES would parametrize it into every
+    # registry driven test as well, so read its profile directly instead.
+    if env("LAZYLIBRARIAN_PROFILE", "disabled").lower() != "enabled":
+        pytest.skip("LAZYLIBRARIAN_PROFILE is not enabled")
     skip_if_not_running("lazylibrarian", running_containers)
 
     # CALIBRE_RELEASE ships in the mod and the Dockerfile copies it in; it is
