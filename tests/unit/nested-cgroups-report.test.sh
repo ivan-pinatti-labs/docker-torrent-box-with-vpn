@@ -64,7 +64,7 @@ run PODMAN_INFO=""
 check "an engine reporting no controllers says none" out "nested cgroups on (engine controllers: none)"
 
 run
-check "an engine that does not answer still gets a report" out "nested cgroups on (engine controllers: none)"
+check "an engine that does not answer still gets a report, saying so" out "nested cgroups on (engine controllers: unknown, podman info failed)"
 
 run GITHUB_ACTIONS=true PODMAN_INFO="cpu memory"
 check "on a runner the state is also a notice" out "::notice title=Nested cgroups::on (engine controllers: cpu memory)"

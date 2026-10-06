@@ -16,9 +16,13 @@ set -o pipefail
 set -o nounset
 
 conf="${HOME}/.config/containers/containers.conf.d/50-cgroups.conf"
-controllers="$(podman info --format '{{join .Host.CgroupControllers " "}}' 2>/dev/null || true)"
+if controllers="$(podman info --format '{{join .Host.CgroupControllers " "}}' 2>/dev/null)"; then
+  controllers="${controllers:-none}"
+else
+  controllers="unknown, podman info failed"
+fi
 if [[ -f "${conf}" ]]; then
-  state="on (engine controllers: ${controllers:-none})"
+  state="on (engine controllers: ${controllers})"
 else
   state="off (the runner was given no delegated cgroup v2 tree, or started with --user), so no container stats or resource limits"
 fi
