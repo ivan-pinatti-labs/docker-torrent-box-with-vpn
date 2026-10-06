@@ -99,7 +99,7 @@ STOP_COMPOSE_FILES := --file docker-compose.yml $(foreach route_file,$(STOP_ROUT
 .PHONY: install_requirements pull_docker_images pre_commit
 .PHONY: restore-configs restore-full
 .PHONY: restart sanity_fast sanity_full start start_library start_observability
-.PHONY: stop stop_all update_containers update_pre_commit test test_nested test_extended test_prerequisites
+.PHONY: stop stop_all update_containers update_pre_commit test test_ci test_nested test_extended test_prerequisites
 .PHONY: test_no_rotate_passwords nested_only suite_ci suite_full suite_no_rotate_passwords suite_prerequisites suite_rinse
 .PHONY: suite_marker test_marker
 .PHONY: coverage print-shell-scripts
@@ -1115,6 +1115,12 @@ test_prerequisites: ## Run the pre-flight and repository checks in the nested ru
 
 test_nested: ## Stand a nested stack up and run the CI tiers; what integration-tests.yml runs
 	$(call nested_suite,stack suite_ci)
+
+# The CI tiers under the name integration-tests.yml used before it called
+# test_nested. `/run-tests` always runs the default branch's copy of that
+# workflow, so a pull request that changes the workflow is tested by the old
+# copy, which still calls this name.
+test_ci: test_nested
 
 test: ## Stand a nested stack up and run the full suite
 	$(call nested_suite,stack suite_full)
