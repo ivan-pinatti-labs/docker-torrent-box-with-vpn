@@ -598,6 +598,152 @@ jobs:
             make test_nested NESTED_MEMORY=
           fi
 
+  tiers:
+    # The serial tiers `make test_nested` leaves out (docs/TESTING.md,
+    # "Markers and tiers"), split so none of them is one long run of back to
+    # back restarts on a shared runner: each leg stands a nested stack of its
+    # own on a runner of its own, in parallel with the suite above, and runs
+    # one marker expression against it with `make test_marker`. Rotation is
+    # sharded in two, the API key rotation and the password rotation, since
+    # each restarts apps one after another; the rotation_isolated cases are
+    # already in the suite's own CI tiers and stay out of both shards.
+    #
+    # Reported, not required. These jobs publish nothing to `Tests Verified`,
+    # and `publish` below does not wait for them, so that context keeps
+    # meaning exactly what docs/MERGE_PIPELINE.md says it does: the CI tiers
+    # passed on this commit. Folding the serial tiers in would change it to
+    # something stricter and slower, and would hold every unattended
+    # dependency merge and every merge queue entry on the tiers least
+    # reliable on a hosted runner. A red leg here shows on the pull request
+    # as its own failed check for the maintainer who asked for the run, and
+    # the nightly workflow runs the same legs on main.
+    #
+    # Only on `/run-tests`: a maintainer asked and is watching. The bot path
+    # and the merge queue need `Tests Verified` alone, and the nightly run
+    # covers what merged that way.
+    #
+    # The steps are the suite job's, whose comments explain each of them.
+    name: Tier (${{ matrix.name }})
+    needs: gate
+    if: >-
+      needs.gate.outputs.authorized == 'true'
+      && github.event_name == 'issue_comment'
+    runs-on: ubuntu-latest
+    # The same 40 minute budget as the suite: one stack plus one tier.
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api key rotation
+            slug: rotation-api-keys
+            marker: rotation and not pw_rotation and not rotation_isolated
+          - name: password rotation
+            slug: rotation-passwords
+            marker: pw_rotation and not rotation_isolated
+          - name: state changing wiring
+            slug: wiring
+            marker: wiring and not wiring_readonly
+          - name: killswitch
+            slug: killswitch
+            marker: killswitch
+    # One per leg per pull request, keyed apart from the suite's group, so a
+    # newer `/run-tests` supersedes each leg without the legs cancelling each
+    # other or the suite.
+    concurrency:
+      group: ${{ github.workflow }}-tier-${{ matrix.slug }}-${{ github.event.issue.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        timeout-minutes: 2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ format('refs/pull/{0}/merge', needs.gate.outputs.pr_number) }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Prove this is the head the gate resolved
+        timeout-minutes: 1
+        env:
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+        shell: bash
+        run: |
+          tested=$(git rev-parse --verify --quiet 'HEAD^2' || true)
+          if [ "$tested" != "$HEAD_SHA" ]; then
+            echo "::error::The merge ref carries head ${tested:-none}, but the gate resolved $HEAD_SHA. The pull request moved; comment /run-tests again."
+            exit 1
+          fi
+
+      - name: Set up rootless Podman
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 "$(whoami)"
+          if [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" = 1 ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          podman system migrate
+          podman --version
+
+      - name: Log in to Docker Hub
+        # The secret's name goes to the run step as a step output rather
+        # than through GITHUB_ENV, so nothing later in the job can be handed
+        # an environment it did not ask for.
+        id: login
+        timeout-minutes: 2
+        env:
+          DOCKERHUB_USERNAME: ${{ needs.gate.outputs.is_fork == 'false' && secrets.DOCKERHUB_USERNAME || '' }}
+          DOCKERHUB_TOKEN: ${{ needs.gate.outputs.is_fork == 'false' && secrets.DOCKERHUB_TOKEN || '' }}
+        shell: bash
+        run: |
+          if [ -z "$DOCKERHUB_USERNAME" ]; then
+            echo "No Docker Hub credentials for this head; pulling anonymously."
+            exit 0
+          fi
+          auth="$RUNNER_TEMP/dockerhub-auth.json"
+          name=dockerhub-auth
+          printf '%s' "$DOCKERHUB_TOKEN" \
+            | podman login docker.io --authfile "$auth" --username "$DOCKERHUB_USERNAME" --password-stdin
+          podman secret create "$name" "$auth" >/dev/null
+          rm -f "$auth"
+          echo "secret=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Probe cgroup delegation for the nested run
+        # The suite job's probe, reduced to the answer the run acts on.
+        id: cgroups
+        timeout-minutes: 4
+        continue-on-error: true
+        shell: bash
+        run: |
+          image=$(sed -n 's/^NESTED_IMAGE ?= //p' Makefile)
+          line=$(sudo --preserve-env systemd-run --scope --quiet --collect \
+            --uid="$(id -u)" --gid="$(id -g)" -p Delegate=yes \
+            -- env "PATH=$PATH" "HOME=$HOME" \
+            timeout 120 podman run --rm --network=none --security-opt unmask=ALL "$image" true 2>&1 \
+            | grep -m1 '^podman-nested: nested cgroups' || true)
+          echo "The image inside a delegated scope: ${line:-printed no cgroups line}"
+          if [[ "$line" == "podman-nested: nested cgroups on"* ]]; then
+            echo "scope=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run the tier
+        timeout-minutes: 38
+        shell: bash
+        env:
+          SCOPE: ${{ steps.cgroups.outputs.scope }}
+          NESTED_REGISTRY_SECRET: ${{ steps.login.outputs.secret }}
+          MARKER: ${{ matrix.marker }}
+        run: |
+          if [ "$SCOPE" = true ]; then
+            sudo --preserve-env systemd-run --scope --quiet --collect \
+              --uid="$(id -u)" --gid="$(id -g)" -p Delegate=yes \
+              -- env "PATH=$PATH" "HOME=$HOME" make test_marker MARKER="$MARKER" NESTED_MEMORY=
+          else
+            make test_marker MARKER="$MARKER" NESTED_MEMORY=
+          fi
+
   publish:
     name: Publish the result
     needs: [gate, suite]

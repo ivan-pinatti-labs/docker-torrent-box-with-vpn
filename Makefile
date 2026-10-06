@@ -100,7 +100,7 @@ STOP_COMPOSE_FILES := --file docker-compose.yml $(foreach route_file,$(STOP_ROUT
 .PHONY: restore-configs restore-full
 .PHONY: restart sanity_fast sanity_full start start_library start_observability
 .PHONY: stop stop_all update_containers update_pre_commit test test_ci test_nested test_extended test_prerequisites
-.PHONY: test_no_rotate_passwords nested_only suite_ci suite_full suite_no_rotate_passwords suite_prerequisites suite_rinse
+.PHONY: test_bootstrap test_no_rotate_passwords nested_only suite_ci suite_full suite_no_rotate_passwords suite_prerequisites suite_rinse
 .PHONY: suite_marker test_marker
 .PHONY: coverage print-shell-scripts
 
@@ -1139,6 +1139,13 @@ test_no_rotate_passwords: ## Stand a nested stack up and run the full suite exce
 
 test_extended: ## Stand a nested stack up and run the full suite plus rinse-and-repeat lifecycle cycles
 	$(call nested_suite,stack suite_full suite_rinse)
+
+# `make bootstrap` from scratch, which rotates every credential on the way,
+# then the CI tiers against what it built: the part of bootstrap_tests that
+# fits one CI job's budget, run nightly by nightly-tests.yml. The full suite
+# and rinse_and_repeat on a bootstrapped stack stay with bootstrap_tests.
+test_bootstrap: ## Bootstrap a nested stack from scratch and run the CI tiers
+	$(call nested_suite,bootstrap suite_ci)
 
 test_marker: ## Stand a nested stack up and run one marker expression, MARKER=<expression>
 	@if [ -z "$(MARKER)" ]; then echo "ERROR: set MARKER, for example MARKER=security"; exit 1; fi
