@@ -98,6 +98,12 @@ successful, which would let an untested pull request merge. A status that a
 workflow chooses whether to write, and what to write, does not have that
 failure mode: absent reads as waiting, not as passed.
 
+The `Tier (...)` jobs `integration-tests.yml` starts beside the suite on
+`/run-tests`, and the legs of `nightly-tests.yml`, are deliberately not
+required and publish nothing to `Tests Verified`: that context stays the CI
+tiers passing on this commit, and the serial tiers do not hold the bot path
+or the merge queue. See [docs/TESTING.md](TESTING.md), "Markers and tiers".
+
 `SonarQube` is the `sonarqube.yml` job. It runs SonarQube Cloud's analysis on
 every pull request and every push to `main`, and fails when the quality gate
 does (`sonar.qualitygate.wait=true`). Before scanning it runs `make coverage`
