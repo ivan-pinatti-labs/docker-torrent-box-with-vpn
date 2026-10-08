@@ -9,6 +9,14 @@ x-servarr-common: &servarr-common
   restart: unless-stopped
   security_opt:
     - no-new-privileges:true
+  # Each Servarr app below also sets <APP>__SERVER__TRUSTEDNETWORKS to nginx's
+  # two addresses. Since Sonarr 4.0.20 (and the same change in Radarr,
+  # Prowlarr and Lidarr) the apps honour X-Forwarded-Proto, -Host and -For
+  # only from a trusted network, and the default trusts loopback alone, so
+  # behind nginx they built redirects as plain http on nginx's Host and lost
+  # the port. The prefix is per app, which is why it cannot live in this
+  # anchor; a version without the setting ignores it. See docs/NETWORKING.md,
+  # "Reverse proxy trust".
   environment: &servarr-env
     UMASK: "${UMASK}"
     TZ: "${TIMEZONE}"
@@ -108,6 +116,7 @@ services:
       <<: *servarr-env
       PGID: "${LIDARR_GID}"
       PUID: "${LIDARR_UID}"
+      LIDARR__SERVER__TRUSTEDNETWORKS: "${NGINX_APPS_IP},${NGINX_SERVICES_IP}"
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${CERTIFICATES_FOLDER}:/certs:ro,z
@@ -138,6 +147,7 @@ services:
       <<: *servarr-env
       PGID: "${PROWLARR_GID}"
       PUID: "${PROWLARR_UID}"
+      PROWLARR__SERVER__TRUSTEDNETWORKS: "${NGINX_APPS_IP},${NGINX_SERVICES_IP}"
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${CERTIFICATES_FOLDER}:/certs:ro,z
@@ -164,6 +174,7 @@ services:
       <<: *servarr-env
       PGID: "${RADARR_GID}"
       PUID: "${RADARR_UID}"
+      RADARR__SERVER__TRUSTEDNETWORKS: "${NGINX_APPS_IP},${NGINX_SERVICES_IP}"
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${CERTIFICATES_FOLDER}:/certs:ro,z
@@ -192,6 +203,7 @@ services:
       <<: *servarr-env
       PGID: "${READARR_GID}"
       PUID: "${READARR_UID}"
+      READARR__SERVER__TRUSTEDNETWORKS: "${NGINX_APPS_IP},${NGINX_SERVICES_IP}"
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${CERTIFICATES_FOLDER}:/certs:ro,z
@@ -243,6 +255,7 @@ services:
       <<: *servarr-env
       PGID: "${SONARR_GID}"
       PUID: "${SONARR_UID}"
+      SONARR__SERVER__TRUSTEDNETWORKS: "${NGINX_APPS_IP},${NGINX_SERVICES_IP}"
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${CERTIFICATES_FOLDER}:/certs:ro,z
@@ -303,6 +316,7 @@ services:
       <<: *servarr-env
       PGID: "${WHISPARR_GID}"
       PUID: "${WHISPARR_UID}"
+      WHISPARR__SERVER__TRUSTEDNETWORKS: "${NGINX_APPS_IP},${NGINX_SERVICES_IP}"
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${CERTIFICATES_FOLDER}:/certs:ro,z

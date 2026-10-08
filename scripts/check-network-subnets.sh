@@ -64,15 +64,25 @@ env_value() {
 project="$(env_value COMPOSE_PROJECT_NAME)"
 [[ -n "$project" ]] || project="$(basename "$PWD")"
 
-problems=0
+problems=()
 
-# Only the three that declare a subnet. apps, wan and edge are created without
-# one, so podman picks a free range and there is nothing to disagree about.
+# The four that declare a subnet. wan and edge are created without one, so
+# podman picks a free range and there is nothing to disagree about.
+#
+# apps joined them later, so most existing deployments have an apps network
+# podman numbered itself, and a .env seeded before then has no APPS_SUBNET.
+# The Makefile fills that in from .env.example and exports it, which is why a
+# variable missing from .env falls back to the environment: otherwise the
+# check would skip exactly the network it now has to catch.
 check() {
   local suffix="$1" var="$2"
   local name="${project}_${suffix}"
-  local want actual
+  local want source="${ENV_FILE}" actual
   want="$(env_value "$var")"
+  if [[ -z "$want" ]]; then
+    want="${!var:-}"
+    source="the environment (it is not in ${ENV_FILE})"
+  fi
   [[ -n "$want" ]] || return 0
   network_exists "$name" || return 0
   actual="$(network_subnet "$name")"
@@ -86,26 +96,29 @@ check() {
     return 0
   fi
   if [[ "$actual" != "$want" ]]; then
-    echo "ERROR: network ${name} is on ${actual}, but ${var} in ${ENV_FILE} asks for ${want}." >&2
-    problems=$((problems + 1))
+    echo "ERROR: network ${name} is on ${actual}, but ${var} in ${source} asks for ${want}." >&2
+    problems+=("$name")
   fi
 }
 
+check apps APPS_SUBNET
 check services SERVICES_SUBNET
 check observability OBSERVABILITY_SUBNET
 check media MEDIA_SUBNET
 
-if [[ "$problems" -gt 0 ]]; then
+if [[ "${#problems[@]}" -gt 0 ]]; then
   cat >&2 <<EOF
 
 Containers would be given an ipv4_address outside the network they attach to.
-Stop this stack and remove the networks above so they are recreated on the
-subnets ${ENV_FILE} now declares:
+Remove this stack's containers, then the networks above, so they are recreated
+on the subnets now declared:
 
-  make stop_all
-  ${RUNTIME} network rm ${project}_services ${project}_observability ${project}_media
+  make down
+  ${RUNTIME} network rm ${problems[*]}
 
-Check nothing else is attached first: another checkout sharing these subnets is
+Under podman \`make down\` already removes the networks, so the second line is
+only needed for any it left behind. A stopped container still holds its
+network, which is why \`make stop_all\` alone is not enough. Check nothing else is attached first: another checkout sharing these subnets is
 why they are worth changing in the first place.
 EOF
   exit 1

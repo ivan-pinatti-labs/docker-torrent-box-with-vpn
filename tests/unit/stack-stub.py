@@ -278,6 +278,10 @@ FILTERS = {
     '.apiKeys[] | select(.name == "wire-connections")': lambda d, a: [
         k for k in d["apiKeys"] if k["name"] == "wire-connections"
     ],
+    ".web_ui_reverse_proxy_enabled == true and .web_ui_reverse_proxies_list == $ip": lambda d, a: [
+        d.get("web_ui_reverse_proxy_enabled") is True
+        and d.get("web_ui_reverse_proxies_list") == a["ip"]
+    ],
     '{name: "wire-connections", userId: $userId, isActive: true}': lambda d, a: [
         {"name": "wire-connections", "userId": a["userId"], "isActive": True}
     ],

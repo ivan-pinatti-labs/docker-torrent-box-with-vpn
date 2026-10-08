@@ -16,6 +16,11 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
+# The script falls back to the environment for a subnet .env does not set, and
+# the Makefile exports the four it fills in. `make coverage` would hand those
+# to every case below, so start from none.
+unset APPS_SUBNET SERVICES_SUBNET OBSERVABILITY_SUBNET MEDIA_SUBNET
+
 __script="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/check-network-subnets.sh"
 __bash="$(command -v bash)"
 __scratch="$(mktemp -d)"
@@ -34,16 +39,18 @@ stub() {
 }
 
 # podman: proj_services is on the subnet .env asks for, proj_observability is
-# not, proj_media answers no subnet at all, and nothing else exists.
+# not, proj_media answers no subnet at all, proj_apps is on the range podman
+# picked for it before apps had a subnet of its own, and nothing else exists.
 podman_bin="${__scratch}/podman-bin"
 mkdir -p "${podman_bin}"
 # shellcheck disable=SC2016 # expanded by the stub, not here
 stub "${podman_bin}" podman 'name="$3"
 case "$2:$name" in
-exists:proj_services | exists:proj_observability | exists:proj_media) exit 0 ;;
+exists:proj_services | exists:proj_observability | exists:proj_media | exists:proj_apps) exit 0 ;;
 exists:*) exit 1 ;;
 inspect:proj_services) echo 10.1.0.0/24 ;;
 inspect:proj_observability) echo 10.9.0.0/24 ;;
+inspect:proj_apps) echo 10.89.0.0/24 ;;
 esac
 exit 0'
 
@@ -95,11 +102,23 @@ printf '%s\n' COMPOSE_PROJECT_NAME=proj 'SERVICES_SUBNET="10.1.0.0/24"' \
 run "${__scratch}/podman" "${podman_bin}"
 check "names a network on the wrong subnet" 1 "ERROR: network proj_observability is on 10.9.0.0/24, but OBSERVABILITY_SUBNET in .env asks for 10.3.0.0/24."
 check "warns about a subnet it cannot read" 1 "WARNING: could not read proj_media's subnet"
-check "says how to recreate the networks" 1 "podman network rm proj_services proj_observability proj_media"
+check "names only the mismatched networks to remove" 1 "podman network rm proj_observability"
 if grep --quiet "ERROR: network proj_services" "${__scratch}/out"; then
   echo "FAIL flagged a network on the right subnet" >&2
   __failures=$((__failures + 1))
 fi
+if grep --quiet "proj_apps" "${__scratch}/out"; then
+  echo "FAIL checked apps with no APPS_SUBNET anywhere" >&2
+  __failures=$((__failures + 1))
+fi
+
+# A .env seeded before apps had a subnet: APPS_SUBNET comes from the
+# environment, where the Makefile puts .env.example's value.
+export APPS_SUBNET=10.6.0.0/24
+run "${__scratch}/podman" "${podman_bin}"
+unset APPS_SUBNET
+check "checks apps against the subnet from the environment" 1 "ERROR: network proj_apps is on 10.89.0.0/24, but APPS_SUBNET in the environment (it is not in .env) asks for 10.6.0.0/24."
+check "lists apps with the other networks to remove" 1 "podman network rm proj_apps proj_observability"
 
 mkdir -p "${__scratch}/checkout"
 printf '%s\n' SERVICES_SUBNET=10.2.0.0/24 OBSERVABILITY_SUBNET= >"${__scratch}/checkout/.env"

@@ -19,6 +19,9 @@ set -euo pipefail
 # CertificateValidation for internal addresses, since download client
 # creation needs both and nothing else in this stack sets them up.
 #
+# qBittorrent is also told to trust nginx's services address, and nothing
+# else, as its reverse proxy (see ensure_qbittorrent_reverse_proxy).
+#
 # It also attempts the first-run setup that Jellyfin, Audiobookshelf,
 # Calibre's content server, and Calibre-Web each need before they have any
 # usable account at all (see the "First-run setup" section below), since
@@ -83,6 +86,14 @@ JELLYFIN_BASE_URL="$(env_value JELLYFIN_BASE_URL)"
 AUDIOBOOKSHELF_HTTP_PORT="$(env_value AUDIOBOOKSHELF_HTTP_PORT)"
 CALIBREWEB_VERSION="$(env_value CALIBREWEB_VERSION)"
 FLARESOLVERR_HTTP_PORT="$(env_value FLARESOLVERR_HTTP_PORT)"
+# nginx's address on services, the only reverse proxy qBittorrent trusts. A
+# .env seeded before it existed lacks the key, so `|| true` keeps the grep's
+# miss from ending the script, and the value make exports from .env.example
+# fills the gap; ensure_qbittorrent_reverse_proxy skips when neither has it.
+NGINX_SERVICES_IP_INHERITED="${NGINX_SERVICES_IP:-}"
+NGINX_SERVICES_IP="$(env_value NGINX_SERVICES_IP || true)"
+NGINX_SERVICES_IP="${NGINX_SERVICES_IP:-$NGINX_SERVICES_IP_INHERITED}"
+readonly NGINX_SERVICES_IP
 readonly LAN_IP GLUETUN_SERVICES_IP QBITTORRENT_HTTPS_PORT SABNZBD_HTTP_PORT \
   SONARR_HTTP_PORT RADARR_HTTPS_PORT LIDARR_HTTPS_PORT READARR_HTTPS_PORT \
   WHISPARR_HTTPS_PORT PROWLARR_HTTPS_PORT LAZYLIBRARIAN_HTTP_PORT MYLAR_HTTPS_PORT \
@@ -958,6 +969,61 @@ ensure_qbittorrent_client() {
   echo "[$app_name] Created."
 }
 
+# qBittorrent's WebUI is reached through nginx, which connects from its fixed
+# services address. With reverse proxy support off, qBittorrent sees every
+# browser as nginx: its five failed logins ban (WebUI\BanDuration) lands on
+# nginx's address and locks everyone out for an hour, and its own log names
+# nginx as the client of every request. Turning support on with nginx as the
+# only trusted proxy makes it read the real client from X-Forwarded-For, and
+# from nobody else. Set through the live API rather than qBittorrent.conf,
+# which qBittorrent rewrites on shutdown, and from .env rather than the
+# .example, whose addresses are fixed at seed time (#121).
+ensure_qbittorrent_reverse_proxy() {
+  if [[ -z "$NGINX_SERVICES_IP" ]]; then
+    echo "[qBittorrent] NGINX_SERVICES_IP is not set, skipping reverse proxy trust."
+    return 0
+  fi
+  if ! podman container exists "$(cname qbittorrent)" 2>/dev/null; then
+    echo "[qBittorrent] Container doesn't exist, skipping."
+    return 0
+  fi
+
+  local base_url="https://${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}/api/v2"
+  # Per run: two wiring runs at once would otherwise share, and remove, one jar.
+  local jar="/tmp/qbt_wire_cookies.${BASHPID}.txt"
+  local username password preferences
+  username=$(<"$QBITTORRENT_USERNAME_FILE")
+  password=$(<"$QBITTORRENT_PASSWORD_FILE")
+  if ! retry 120 "[qBittorrent]" container_curl qbittorrent -sk --fail -c "$jar" -o /dev/null \
+    --data-urlencode "username=${username}" --data-urlencode "password=${password}" "${base_url}/auth/login"; then
+    echo "[qBittorrent] Not reachable, skipping reverse proxy trust."
+    return 0
+  fi
+
+  # A refused login still answers 200 (see rotate-passwords.sh), so the
+  # session is proven by this read succeeding, not by the login's status.
+  if ! preferences=$(container_curl qbittorrent -sk --fail -b "$jar" "${base_url}/app/preferences"); then
+    echo "[qBittorrent] WARNING: could not read its preferences, so reverse proxy trust was not checked."
+    podman exec "$(cname qbittorrent)" rm -f "$jar"
+    return 1
+  fi
+  if echo "$preferences" | jq -e --arg ip "$NGINX_SERVICES_IP" \
+    '.web_ui_reverse_proxy_enabled == true and .web_ui_reverse_proxies_list == $ip' >/dev/null; then
+    echo "[qBittorrent] Already trusts only nginx (${NGINX_SERVICES_IP}) as its reverse proxy, skipping."
+  else
+    echo "[qBittorrent] Trusting only nginx (${NGINX_SERVICES_IP}) as its reverse proxy..."
+    if ! container_curl qbittorrent -sk --fail -b "$jar" -o /dev/null \
+      --data-urlencode "json={\"web_ui_reverse_proxy_enabled\":true,\"web_ui_reverse_proxies_list\":\"${NGINX_SERVICES_IP}\"}" \
+      "${base_url}/app/setPreferences"; then
+      echo "[qBittorrent] WARNING: setPreferences failed, so reverse proxy trust was not applied."
+      podman exec "$(cname qbittorrent)" rm -f "$jar"
+      return 1
+    fi
+    echo "[qBittorrent] Done."
+  fi
+  podman exec "$(cname qbittorrent)" rm -f "$jar"
+}
+
 # Args: app_name container scheme port api_ver api_key category
 ensure_sabnzbd_client() {
   local app_name="$1" container="$2" scheme="$3" port="$4" api_ver="$5" api_key="$6" category="$7"
@@ -1724,11 +1790,11 @@ ensure_prowlarr_application() {
 # docs/ROTATION.md for the sibling rotation scripts.
 # ---------------------------------------------------------------------------
 
-# All ten jobs are launched together, immediately after this one combined
+# All eleven jobs are launched together, immediately after this one combined
 # header, and their output streams live rather than being sorted into
 # separate per-section headers: every echo in these functions already
 # prefixes its own app name (e.g. "[Jellyfin] ..."), so a single stream of
-# self-labeled lines from ten concurrent jobs stays readable without needing
+# self-labeled lines from eleven concurrent jobs stays readable without needing
 # a fixed section to sort each line under. Waiting on the jobs afterward
 # just lets the script exit only once everything is actually done; the
 # order below doesn't gate when each job's output appears on screen.
@@ -1746,8 +1812,9 @@ start_job readarr wire_arr_app readarr readarr https "$READARR_HTTPS_PORT" v1 re
 start_job sonarr wire_arr_app sonarr sonarr http "$SONARR_HTTP_PORT" v3 sonarr tv
 start_job whisparr wire_arr_app whisparr whisparr https "$WHISPARR_HTTPS_PORT" v3 whisparr mature
 start_job prowlarr wire_prowlarr_apps
+start_job qbittorrent ensure_qbittorrent_reverse_proxy
 
-for name in audiobookshelf calibre calibre-web jellyfin prowlarr; do
+for name in audiobookshelf calibre calibre-web jellyfin prowlarr qbittorrent; do
   wait_job "$name" || true
 done
 

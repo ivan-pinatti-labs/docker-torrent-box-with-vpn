@@ -8,9 +8,9 @@ the default `make test` run because they create real, persistent state.
 Unlike the rotation tests, there is no restore-after-test: a wired connection
 is meant to stay, not act as a temporary probe value.
 
-The Jellyfin cases at the bottom are additionally marked `wiring_readonly`:
-they only read the wiring back, so they skip the script run and CI does run
-them. See pytest.ini and the Makefile's comment on suite_ci.
+The Jellyfin and qBittorrent cases at the bottom are additionally marked
+`wiring_readonly`: they only read the wiring back, so they skip the script
+run and CI does run them. See pytest.ini and the Makefile's comment on suite_ci.
 
 App ports are not published to the host, so all API calls run curl inside the
 target container (see conftest.container_http), matching how the wiring
@@ -672,4 +672,71 @@ def test_jellyfin_connection_passes_the_apps_own_test(app, running_containers):
     )
     assert status in (200, 202), (
         f"[{app}] Jellyfin connection failed its own Test: {status} {body[:300]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# qBittorrent reverse proxy trust
+#
+# wire-connections.sh turns qBittorrent's reverse proxy support on with
+# nginx's services address as the only trusted proxy, so the client address
+# its login ban and its log see is the browser's rather than nginx's. Read
+# back over its own API, so this is wiring_readonly too.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.wiring_readonly
+def test_qbittorrent_trusts_only_nginx(running_containers):
+    """Reverse proxy support is on, and nginx is the one proxy it trusts."""
+    if not is_enabled("qbittorrent"):
+        pytest.skip("qbittorrent profile is disabled")
+    skip_if_not_running("qbittorrent", running_containers)
+
+    container = container_name("qbittorrent")
+    base = (
+        f"https://{_env('GLUETUN_SERVICES_IP')}:{_env('QBITTORRENT_HTTPS_PORT')}/api/v2"
+    )
+    jar = "/tmp/qbt_test_cookies.txt"  # nosec B108 - a path inside the container
+    username = (
+        (REPO_ROOT / "configs/qbittorrent/secrets/username.txt").read_text().strip()
+    )
+    password = (
+        (REPO_ROOT / "configs/qbittorrent/secrets/password.txt").read_text().strip()
+    )
+    try:
+        status, _ = container_http(
+            container,
+            f"{base}/auth/login",
+            extra_args=[
+                "-c",
+                jar,
+                "--data-urlencode",
+                f"username={username}",
+                "--data-urlencode",
+                f"password={password}",
+            ],
+            timeout=TIMEOUT,
+        )
+        assert 200 <= status < 300, f"qBittorrent login failed: {status}"
+        status, body = container_http(
+            container,
+            f"{base}/app/preferences",
+            extra_args=["-b", jar],
+            timeout=TIMEOUT,
+        )
+        assert status == 200, f"GET app/preferences failed: {status} {body[:200]}"
+    finally:
+        subprocess.run(  # nosec B603 B607 - fixed arguments, no user input
+            ["podman", "exec", container, "rm", "-f", jar], check=False
+        )
+
+    preferences = json.loads(body)
+    assert preferences.get("web_ui_reverse_proxy_enabled") is True, (
+        "qBittorrent's reverse proxy support is off, so it sees every client as nginx"
+    )
+    assert preferences.get("web_ui_reverse_proxies_list") == _env(
+        "NGINX_SERVICES_IP"
+    ), (
+        f"qBittorrent trusts {preferences.get('web_ui_reverse_proxies_list')!r}, "
+        f"not nginx alone ({_env('NGINX_SERVICES_IP')})"
     )

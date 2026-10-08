@@ -120,7 +120,7 @@ echo "[vpn_mock] No real VPN key found; starting the local mock WireGuard endpoi
 # external (make start creates them itself, see its own network create
 # calls): this runs before that, same ordering issue as above, so vpn_mock
 # (which attaches to services) needs them pre-created too, confirmed live.
-"$RUNTIME" network exists ${COMPOSE_PROJECT_NAME}_apps || "$RUNTIME" network create ${COMPOSE_PROJECT_NAME}_apps
+"$RUNTIME" network exists ${COMPOSE_PROJECT_NAME}_apps || "$RUNTIME" network create --subnet "$(env_value APPS_SUBNET)" --ip-range "$(env_value APPS_DYNAMIC_IP_RANGE)" ${COMPOSE_PROJECT_NAME}_apps
 "$RUNTIME" network exists ${COMPOSE_PROJECT_NAME}_services || "$RUNTIME" network create --internal --subnet "$(env_value SERVICES_SUBNET)" --ip-range "$(env_value SERVICES_DYNAMIC_IP_RANGE)" ${COMPOSE_PROJECT_NAME}_services
 "$RUNTIME" network exists ${COMPOSE_PROJECT_NAME}_media || "$RUNTIME" network create --subnet "$(env_value MEDIA_SUBNET)" --ip-range "$(env_value MEDIA_DYNAMIC_IP_RANGE)" ${COMPOSE_PROJECT_NAME}_media
 "$RUNTIME" network exists ${COMPOSE_PROJECT_NAME}_observability || "$RUNTIME" network create --internal --subnet "$(env_value OBSERVABILITY_SUBNET)" ${COMPOSE_PROJECT_NAME}_observability
