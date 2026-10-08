@@ -131,6 +131,10 @@ services:
       services: {}
     sysctls: ["net.ipv6.conf.all.disable_ipv6=1", net.ipv6.conf.default.disable_ipv6=1, net.ipv6.conf.lo.disable_ipv6=1]
     restart: unless-stopped
+    # NZBHydra2 compacts its H2 database on a graceful shutdown, and the v9
+    # release notes ask for 120s in docker. A kill does not corrupt the
+    # database, it only skips the compaction, so the file stays larger.
+    stop_grace_period: 120s
     security_opt:
       - no-new-privileges:true
     env_file: ["${CONFIG_FOLDER}/nzbhydra2/.env"]
