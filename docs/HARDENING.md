@@ -315,12 +315,12 @@ What is placed against it instead:
   every changed line differs in nothing but a version or a digest *in a pin
   position*, across the files its `allowed_paths` lists. The qualifier is
   the point: a number that is not a pin is not substitutable, so `PUID=1000`
-  becoming `PUID=0`,
-  which would run every container as root, is refused like any other
-  structural change. This is aimed at the bot identity rather than the
-  upstream: without it, approving on the strength of the author means a
-  compromised Renovate could rewrite a workflow and be approved for it, and two
-  of those five paths execute what they contain.
+  becoming `PUID=0`, which would run every container as root, is refused like
+  any other structural change. This is aimed at the bot identity rather than
+  the upstream: without it, approving on the strength of the author means a
+  compromised Renovate could rewrite a workflow and be approved for it, and
+  three of those paths (the workflows, the `Makefile` and
+  `.devcontainer/l2/Dockerfile`) execute what they contain.
 - **CodeRabbit as the reader, gated by `Review Verified` rather than by
   `CodeRabbit` itself** (#114). A pin-only diff passes unattended since
   CodeRabbit never reviews a bot's pull request at all (#113); anything that

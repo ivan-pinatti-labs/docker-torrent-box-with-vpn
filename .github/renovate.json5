@@ -686,12 +686,15 @@
     // pin sat on the digest #230 introduced while other consumers of the
     // same image took several bumps.
     //
-    // timestamp-optional lets the update be offered. The seven day window is
-    // not given up, it is applied upstream: devcontainer-airlock ages its own
-    // inputs through the same window and publishes only from a reviewed merge
-    // to main, so a digest arriving here has already served it. Scoped by
-    // package name rather than by file, so a third image of ours picks this
-    // up without another rule, and nothing from another publisher does.
+    // timestamp-optional lets the update be offered. The alternative is not a
+    // seven day wait but no update at all, which leaves the image to rot. The
+    // window is applied upstream instead: devcontainer-airlock ages its own
+    // Renovate managed inputs (the base image digests and the pinned tools)
+    // through the same seven days, and builds only from its reviewed main
+    // branch. What a rebuild adds on top of those is packages from the
+    // distribution's own signed archives. Scoped by package name rather
+    // than by file, so a third image of ours picks this up without another
+    // rule, and nothing from another publisher does.
     {
       matchDatasources: ["docker"],
       matchPackageNames: ["ghcr.io/ivan-pinatti-labs/**"],
