@@ -64,8 +64,8 @@ Prometheus and Loki share the telemetry limits by default. Increase
 ## Shutdown grace periods
 
 Compose gives a container ten seconds between SIGTERM and SIGKILL. Three get
-longer through `stop_grace_period`, and `tests/test_containers.py` checks the
-running containers carry it:
+longer through `stop_grace_period`, and `tests/test_compose_config.py` checks
+the compose files still say so:
 
 | Service | Grace | Why |
 | --- | --- | --- |
@@ -73,10 +73,19 @@ running containers carry it:
 | `prometheus` | `30s` | Set with the observability stack, reason not recorded; Prometheus writes its head block and write ahead log on shutdown. |
 | `alloy` | `30s` | Set with the observability stack, reason not recorded; Alloy flushes its buffered telemetry on shutdown. |
 
-The value covers `make stop_all`, `make restart` and a plain compose stop or
-restart. `make down` and the rotation and wiring scripts stop the stack with
-their own 60 second timeout, which takes precedence, so under them NZBHydra2
-can still be killed before it finishes compacting.
+Which ways of stopping honour it depends on who sends the signal:
+
+- `make stop_all`, `make restart` and a plain `podman-compose stop`, `restart`
+  or `down` do: podman-compose passes the value to `podman stop -t` itself.
+- A bare `podman stop` or `podman restart`, and podman's own restart policy,
+  do not. podman-compose 1.6.0, the latest release, does not hand the value to
+  `podman create`, so the container's own stop timeout stays at podman's ten
+  seconds (`podman inspect --format '{{.Config.StopTimeout}}'`). Its main
+  branch does (containers/podman-compose#1485), so this closes once a release
+  carries it and the stack is recreated.
+- `make down`, and the rotation and wiring scripts, use their own 60 second
+  timeout, so under them NZBHydra2 can still be killed before it finishes
+  compacting.
 
 ---
 

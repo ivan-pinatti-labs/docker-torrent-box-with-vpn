@@ -1,6 +1,7 @@
 import configparser
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -224,3 +225,27 @@ def test_nginx_scopes_mylar_and_lazylibrarian_cookies():
         assert f"proxy_cookie_path            / /{app}/;" in block, (
             f"/{app}/ location is missing its proxy_cookie_path rewrite"
         )
+
+
+# The services given longer than the default ten seconds between SIGTERM and
+# SIGKILL. docs/CONTAINER_LIMITS.md, "Shutdown grace periods", says why each
+# needs it and which ways of stopping the stack honour it.
+STOP_GRACE_PERIODS = [
+    ("docker-compose-nzb.yml", "nzbhydra2", "120s"),
+    ("docker-compose-observability.yml", "alloy", "30s"),
+    ("docker-compose-observability.yml", "prometheus", "30s"),
+]
+
+
+@pytest.mark.parametrize(("compose_file", "service", "grace"), STOP_GRACE_PERIODS)
+def test_stop_grace_period(compose_file, service, grace):
+    """Read from the compose file, not the running container.
+
+    podman-compose 1.6.0, the latest release, passes stop_grace_period as `-t`
+    to its own stop, restart and down, which is what `make stop_all` and
+    `make restart` use, but does not give it to `podman create`, so the
+    container's own StopTimeout stays at podman's ten seconds. The compose
+    file is the one place the setting is guaranteed to be.
+    """
+    compose = yaml.safe_load((REPO_ROOT / compose_file).read_text())
+    assert compose["services"][service].get("stop_grace_period") == grace
