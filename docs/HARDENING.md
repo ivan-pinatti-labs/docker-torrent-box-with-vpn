@@ -313,8 +313,9 @@ What is placed against it instead:
   approval and the `Review Verified` status below read that published result
   rather than each running the script again. The approval is withheld unless
   every changed line differs in nothing but a version or a digest *in a pin
-  position*, across five allowed files. The qualifier is the point: a number
-  that is not a pin is not substitutable, so `PUID=1000` becoming `PUID=0`,
+  position*, across the files its `allowed_paths` lists. The qualifier is
+  the point: a number that is not a pin is not substitutable, so `PUID=1000`
+  becoming `PUID=0`,
   which would run every container as root, is refused like any other
   structural change. This is aimed at the bot identity rather than the
   upstream: without it, approving on the strength of the author means a
