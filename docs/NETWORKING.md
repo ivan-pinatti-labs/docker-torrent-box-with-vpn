@@ -302,8 +302,11 @@ five failed logins lands on nginx and locks everyone out for an hour.
 values from `.env.example` (the Makefile fills them in), but the `apps` network it already
 has carries a range podman picked, so `make start` stops on the subnet check and names it.
 Run `make down`, then `make start`, to recreate it, then `make wire_connections` for
-qBittorrent. If `SERVICES_SUBNET` was moved off its default, set `NGINX_SERVICES_IP` in
-`.env` to an address inside it, below `SERVICES_DYNAMIC_IP_RANGE`.
+qBittorrent. Under podman `make down` removes the stack's networks itself; under Docker it
+leaves them, since compose does not remove an external network, so run
+`docker network rm <COMPOSE_PROJECT_NAME>_apps` between the two. If `SERVICES_SUBNET` was
+moved off its default, set `NGINX_SERVICES_IP` in `.env` to an address inside it, below
+`SERVICES_DYNAMIC_IP_RANGE`.
 
 ### Post deploy verification
 

@@ -7,12 +7,14 @@ run directly on app networks or through Gluetun route overrides.
 
 import socket
 from urllib.parse import urlsplit
+from xml.etree import ElementTree  # nosec B405 - parses this checkout's own config.xml
 
 import pytest
 import requests
 import urllib3
 
 from conftest import (
+    REPO_ROOT,
     SERVICES,
     env,
     is_enabled,
@@ -163,6 +165,23 @@ def test_jellyfin_proxy_domain_reachable(running_containers):
 SERVARR_APPS = ["lidarr", "prowlarr", "radarr", "readarr", "sonarr", "whisparr"]
 
 
+def _requires_forms_login(service_name: str) -> bool:
+    """Whether the app sends an anonymous request to its login page.
+
+    Read from the app's own config.xml, which every config.xml.example seeds as
+    Forms with authentication Enabled. Any other combination (no login, Basic,
+    or DisabledForLocalAddresses, where nginx's private address counts as
+    local) can legitimately answer without a redirect.
+    """
+    path = REPO_ROOT / "configs" / service_name / "config" / "config.xml"
+    if not path.exists():
+        return False
+    root = ElementTree.parse(path).getroot()  # nosec B314 - this checkout's own file
+    return (root.findtext("AuthenticationMethod") or "").lower() == "forms" and (
+        root.findtext("AuthenticationRequired") or ""
+    ).lower() == "enabled"
+
+
 @pytest.mark.parametrize("service_name", SERVARR_APPS)
 def test_servarr_redirect_keeps_the_original_scheme_and_port(
     service_name, running_containers
@@ -190,8 +209,13 @@ def test_servarr_redirect_keeps_the_original_scheme_and_port(
         verify=False,
         timeout=CONNECT_TIMEOUT,
     )
-    if not resp.is_redirect:
-        pytest.skip(f"{service_name} answered {resp.status_code}, not a redirect")
+    if _requires_forms_login(service_name):
+        assert resp.is_redirect, (
+            f"{service_name} requires a login but answered {resp.status_code}, "
+            "not a redirect to its login page"
+        )
+    elif not resp.is_redirect:
+        pytest.skip(f"{service_name} does not require a forms login here")
     # requests leaves the default port out of Host, and nginx forwards Host as
     # it arrived, so on 443 the app sees, and names, the bare host.
     expected = HOST if NGINX_HTTPS_PORT == 443 else f"{HOST}:{NGINX_HTTPS_PORT}"

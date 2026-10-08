@@ -195,7 +195,7 @@ check "qBittorrent trusts only nginx" 0 out \
   "[qBittorrent] Trusting only nginx (10.0.0.5) as its reverse proxy..." "[qBittorrent] Done."
 check "qBittorrent is given nginx's address" 0 log \
   'json={"web_ui_reverse_proxy_enabled":true,"web_ui_reverse_proxies_list":"10.0.0.5"}' \
-  "podman exec qbittorrent rm -f /tmp/qbt_wire_cookies.txt"
+  "podman exec qbittorrent rm -f /tmp/qbt_wire_cookies."
 check "a fresh stack is wired" 0 out \
   "[Audiobookshelf] Creating initial root user..." "[Audiobookshelf] Creating initial API key..." "[Audiobookshelf] Done." \
   "[Calibre] Creating content server user..." "[Calibre] Done." \

@@ -989,7 +989,8 @@ ensure_qbittorrent_reverse_proxy() {
   fi
 
   local base_url="https://${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}/api/v2"
-  local jar=/tmp/qbt_wire_cookies.txt
+  # Per run: two wiring runs at once would otherwise share, and remove, one jar.
+  local jar="/tmp/qbt_wire_cookies.${BASHPID}.txt"
   local username password preferences
   username=$(<"$QBITTORRENT_USERNAME_FILE")
   password=$(<"$QBITTORRENT_PASSWORD_FILE")
