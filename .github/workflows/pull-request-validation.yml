@@ -281,7 +281,7 @@ jobs:
         continue-on-error: true
         run: |
           # renovate: datasource=pypi depName=checkov
-          pip install checkov==3.3.20 --only-binary=:all:
+          pip install checkov==3.3.22 --only-binary=:all:
           checkov --quiet --compact --skip-check CKV_DOCKER_2 \
             --skip-framework secrets \
             --skip-path configs --skip-path data --skip-path storage \
