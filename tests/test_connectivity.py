@@ -6,6 +6,7 @@ run directly on app networks or through Gluetun route overrides.
 """
 
 import socket
+from urllib.parse import urlsplit
 
 import pytest
 import requests
@@ -155,3 +156,48 @@ def test_jellyfin_proxy_domain_reachable(running_containers):
         f"jellyfin domain backend unreachable via nginx proxy {proxy_domain}: "
         f"HTTP {resp.status_code}"
     )
+
+
+# The Servarr apps behind nginx, each trusting nginx's addresses through
+# <APP>__SERVER__TRUSTEDNETWORKS (docker-compose-servarr.yml).
+SERVARR_APPS = ["lidarr", "prowlarr", "radarr", "readarr", "sonarr", "whisparr"]
+
+
+@pytest.mark.parametrize("service_name", SERVARR_APPS)
+def test_servarr_redirect_keeps_the_original_scheme_and_port(
+    service_name, running_containers
+):
+    """A Servarr app's own redirect must lead back to nginx as the browser saw it.
+
+    Since Sonarr 4.0.20 the Servarr apps read X-Forwarded-Proto and -Host only
+    from a trusted network. Without nginx in that list they answered the
+    unauthenticated /<app>/ with `http://localhost/<app>/login`, which drops
+    both https and nginx's port, so a browser on any port but 80 never reached
+    the login page. An absolute redirect has to name nginx's own scheme and
+    host:port; a relative one is fine as it stands.
+    """
+    if not is_enabled(service_name):
+        pytest.skip(f"{service_name} profile is disabled")
+    skip_if_not_running(service_name, running_containers)
+    skip_if_not_running("nginx", running_containers)
+    if not tcp_connect(HOST, NGINX_HTTPS_PORT):
+        pytest.skip("nginx HTTPS port is not reachable")
+
+    proxy_path = SERVICES[service_name].get("proxy_path", f"/{service_name}")
+    resp = requests.get(
+        f"https://{HOST}:{NGINX_HTTPS_PORT}{proxy_path}/",
+        allow_redirects=False,
+        verify=False,
+        timeout=CONNECT_TIMEOUT,
+    )
+    if not resp.is_redirect:
+        pytest.skip(f"{service_name} answered {resp.status_code}, not a redirect")
+    # requests leaves the default port out of Host, and nginx forwards Host as
+    # it arrived, so on 443 the app sees, and names, the bare host.
+    expected = HOST if NGINX_HTTPS_PORT == 443 else f"{HOST}:{NGINX_HTTPS_PORT}"
+    location = urlsplit(resp.headers["Location"])
+    if location.scheme or location.netloc:
+        assert (location.scheme, location.netloc) == ("https", expected), (
+            f"{service_name} redirected to {resp.headers['Location']}, not back to "
+            f"https://{expected}: it is not trusting nginx's forwarded headers"
+        )

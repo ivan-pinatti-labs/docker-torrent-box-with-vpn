@@ -242,9 +242,10 @@ Declaring a subnet only fixes the address for containers that request it explici
 to some other container that has no static IP of its own. Docker/Podman's default dynamic
 allocator has no notion of "reserved" addresses, only "already taken" ones, so a container
 without a static IP can be assigned a low, seemingly-reserved address before its intended
-owner ever claims it. Both `services` and `media` carve out an explicit `ip_range` for
-dynamic allocation (`SERVICES_DYNAMIC_IP_RANGE`, `MEDIA_DYNAMIC_IP_RANGE` in `.env`) that
-excludes their static addresses, so this can't happen. Confirmed live, twice, before
+owner ever claims it. `services`, `media` and `apps` each carve out an explicit `ip_range`
+for dynamic allocation (`SERVICES_DYNAMIC_IP_RANGE`, `MEDIA_DYNAMIC_IP_RANGE`,
+`APPS_DYNAMIC_IP_RANGE` in `.env`) that excludes their static addresses, so this can't
+happen. Confirmed live, twice, before
 `SERVICES_DYNAMIC_IP_RANGE` existed: a container with no static IP of its own was
 dynamically handed `vpn_mock`'s reserved address on the `services` network, leaving gluetun
 dialing an endpoint nothing was listening on. See `docs/VPN_MOCK.md`.
@@ -275,9 +276,34 @@ as `vpn`, so normal indexers keep direct egress.
 Docker would not install a default route on these bridges, so gluetun's bridge NICs cannot
 send traffic to the internet through them.
 
-**qBittorrent reverse proxy trust.** `WebUI\TrustedReverseProxiesList` is set to
-`172.16.0.0/12` (all Docker bridge private ranges) so it remains valid even if the subnet
-assignment ever changes.
+**Reverse proxy trust.** Every app behind nginx that reads forwarded headers trusts them
+from nginx's own address and from nothing else, so no other container on a shared bridge
+can claim to be the browser:
+
+| App                                                 | Trusts                               | Set by                                                                   |
+| --------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------ |
+| Sonarr, Radarr, Lidarr, Prowlarr, Readarr, Whisparr | `NGINX_APPS_IP`, `NGINX_SERVICES_IP` | `<APP>__SERVER__TRUSTEDNETWORKS` in `docker-compose-servarr.yml`         |
+| qBittorrent                                         | `NGINX_SERVICES_IP`                  | `scripts/wire-connections.sh`, through its API (`make wire_connections`) |
+| Jellyfin                                            | `NGINX_MEDIA_IP`                     | `KnownProxies`, `make configure_jellyfin_network`                        |
+
+nginx holds a fixed address on each of those networks (`docker-compose-proxy.yml`), which
+is why `apps` has a subnet of its own (`APPS_SUBNET`, with `APPS_DYNAMIC_IP_RANGE` keeping
+`NGINX_APPS_IP` out of the dynamic pool). A Servarr app is reached on `apps`, or on
+`services` when it is routed through gluetun, so it trusts both of nginx's addresses.
+
+Each one is a real fix, not tidiness. Since Sonarr 4.0.20, and the same change in Radarr,
+Prowlarr and Lidarr, the Servarr apps honour `X-Forwarded-Proto` and `-Host` only from a
+trusted network, and the default trusts loopback alone; behind an untrusted nginx they
+redirected to `http://localhost/<app>/login`, losing https and nginx's port.
+qBittorrent with reverse proxy support off sees every browser as nginx, so its ban after
+five failed logins lands on nginx and locks everyone out for an hour.
+
+**Upgrading an existing deployment.** A `.env` from before these variables takes their
+values from `.env.example` (the Makefile fills them in), but the `apps` network it already
+has carries a range podman picked, so `make start` stops on the subnet check and names it.
+Run `make down`, then `make start`, to recreate it, then `make wire_connections` for
+qBittorrent. If `SERVICES_SUBNET` was moved off its default, set `NGINX_SERVICES_IP` in
+`.env` to an address inside it, below `SERVICES_DYNAMIC_IP_RANGE`.
 
 ### Post deploy verification
 

@@ -62,7 +62,8 @@ fresh_work() {
   printf '%s\n' VPN_MOCK_PROFILE=enabled VPN_MOCK_IP=172.25.0.11 CONTAINER_PREFIX=dev_ \
     SERVICES_SUBNET=172.25.0.0/24 SERVICES_DYNAMIC_IP_RANGE=172.25.0.128/25 \
     MEDIA_SUBNET=172.26.0.0/24 MEDIA_DYNAMIC_IP_RANGE=172.26.0.128/25 \
-    OBSERVABILITY_SUBNET=172.27.0.0/24 >"${__work}/.env"
+    OBSERVABILITY_SUBNET=172.27.0.0/24 \
+    APPS_SUBNET=172.24.0.0/24 APPS_DYNAMIC_IP_RANGE=172.24.0.128/25 >"${__work}/.env"
   stub "${__work}/scripts" seed-configs.sh "echo \"seed-configs \$*\" >>'${__scratch}/log'
 printf '%s\n' VPN_SERVICE_PROVIDER=protonvpn VPN_TYPE=openvpn VPN_PORT_FORWARDING=on SERVER_COUNTRIES=Netherlands WIREGUARD_ENDPOINT_PORT=1 >\"\${1}\""
   printf '%s\n' '[Interface]' 'Address = 10.13.13.2' 'PrivateKey = private-key' \
@@ -117,7 +118,7 @@ fresh_work
 echo COMPOSE_PROJECT_NAME=from-env >>"${__work}/.env"
 COMPOSE_PROJECT_NAME=inherited run "${bin}"
 check "seeds gluetun's .env first" 0 log "seed-configs configs/gluetun/.env"
-check ".env's project name wins" 0 log "podman network create from-env_apps"
+check ".env's project name wins" 0 log "podman network create --subnet 172.24.0.0/24 --ip-range 172.24.0.128/25 from-env_apps"
 check "creates the services network" 0 log "podman network create --internal --subnet 172.25.0.0/24 --ip-range 172.25.0.128/25 from-env_services"
 check "creates the media network" 0 log "podman network create --subnet 172.26.0.0/24 --ip-range 172.26.0.128/25 from-env_media"
 check "creates the observability network" 0 log "podman network create --internal --subnet 172.27.0.0/24 from-env_observability"
@@ -151,7 +152,7 @@ touch "${__scratch}/slow"
 rm "${__scratch}/peer"
 run "${bin}"
 check "redoes a run that never reached gluetun's .env" 1 log "docker compose --file docker-compose.yml"
-check "falls back to the directory name" 1 log "docker network create work_apps"
+check "falls back to the directory name" 1 log "docker network create --subnet 172.24.0.0/24 --ip-range 172.24.0.128/25 work_apps"
 check "gives up when the peer config never appears" 1 err "was not generated after 60s"
 check "points at the container's logs" 1 err "podman logs dev_vpn_mock"
 

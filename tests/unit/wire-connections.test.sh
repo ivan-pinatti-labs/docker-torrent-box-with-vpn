@@ -21,6 +21,10 @@ __script_name=wire-connections.sh
 # shellcheck source=tests/unit/stack-stubs.bash
 source "$(dirname "${BASH_SOURCE[0]}")/stack-stubs.bash"
 
+# The script falls back to an inherited NGINX_SERVICES_IP when .env has none,
+# and `make coverage` exports one; each run below says which it wants.
+unset NGINX_SERVICES_IP
+
 readonly ARR_APPS=(sonarr radarr lidarr readarr whisparr)
 # Prowlarr's application schema, one implementation per app it can register.
 APPLICATIONS_SCHEMA="$(
@@ -29,7 +33,8 @@ APPLICATIONS_SCHEMA="$(
   done | python3 -c 'import json, sys; print(json.dumps([json.loads(line) for line in sys.stdin]))'
 )"
 readonly APPLICATIONS_SCHEMA
-readonly ALL_CONTAINERS=(audiobookshelf calibre calibre-web jellyfin "${ARR_APPS[@]}" prowlarr flaresolverr lazylibrarian mylar)
+readonly ALL_CONTAINERS=(audiobookshelf calibre calibre-web jellyfin "${ARR_APPS[@]}" prowlarr flaresolverr lazylibrarian mylar qbittorrent)
+readonly QBT_PREFERENCES='exec qbittorrent curl -sk --fail -b \S+ \S+/api/v2/app/preferences$'
 
 # calibre_web_db [<library dir>] [<users>]: Calibre-Web's app.db with its
 # settings row, or with no settings table at all when given "none".
@@ -91,6 +96,7 @@ JELLYFIN_BASE_URL=/jellyfin
 AUDIOBOOKSHELF_HTTP_PORT=13378
 CALIBREWEB_VERSION=0.6
 FLARESOLVERR_HTTP_PORT=8191
+NGINX_SERVICES_IP=10.0.0.5
 EOF
   containers "${ALL_CONTAINERS[@]}"
   local app k
@@ -142,6 +148,8 @@ EOF
   rule 'exec (lidarr|radarr|readarr|sonarr) curl -sk --fail -H X-Api-Key: \S+ \S+/api/v[13]/indexer$' 0 '[{"id": 1}]'
   # Mylar answering.
   rule 'mylar curl -sk --max-time 10 -o /dev/null' 0 200
+  # qBittorrent, already trusting only nginx as its reverse proxy.
+  rule "${QBT_PREFERENCES}" 0 '{"web_ui_reverse_proxy_enabled": true, "web_ui_reverse_proxies_list": "10.0.0.5"}'
 }
 
 # Run A: nothing is set up yet.
@@ -181,7 +189,13 @@ rule 'prowlarr curl -sk --fail -X POST .*/prowlarr/api/v1/indexer$' 0 '{"id": 3,
 rule '/prowlarr/api/v1/indexerstatus$' 0 '[{"id": 3}]' 6
 rule 'exec sonarr curl -sk --fail -H X-Api-Key: \S+ \S+/api/v3/indexer$' 0 '[]' 1
 rule 'mylar curl -sk --max-time 10 -o /dev/null' 0 000 7
+rule "${QBT_PREFERENCES}" 0 '{"web_ui_reverse_proxy_enabled": false, "web_ui_reverse_proxies_list": ""}'
 run
+check "qBittorrent trusts only nginx" 0 out \
+  "[qBittorrent] Trusting only nginx (10.0.0.5) as its reverse proxy..." "[qBittorrent] Done."
+check "qBittorrent is given nginx's address" 0 log \
+  'json={"web_ui_reverse_proxy_enabled":true,"web_ui_reverse_proxies_list":"10.0.0.5"}' \
+  "podman exec qbittorrent rm -f /tmp/qbt_wire_cookies.txt"
 check "a fresh stack is wired" 0 out \
   "[Audiobookshelf] Creating initial root user..." "[Audiobookshelf] Creating initial API key..." "[Audiobookshelf] Done." \
   "[Calibre] Creating content server user..." "[Calibre] Done." \
@@ -238,8 +252,10 @@ check "a wired stack is left alone" 0 out \
   "[Prowlarr] FlareSolverr indexer proxy already exists, skipping." \
   "[Prowlarr] Application 'Sonarr' already exists, skipping." \
   "[Prowlarr] Indexer 'Internet Archive' already exists, skipping." \
-  "[Prowlarr] Indexers present in every enabled arr app." "[Mylar] Already has comics, skipping placeholder."
+  "[Prowlarr] Indexers present in every enabled arr app." "[Mylar] Already has comics, skipping placeholder." \
+  "[qBittorrent] Already trusts only nginx (10.0.0.5) as its reverse proxy, skipping."
 refute "nothing is created" out "Creating"
+refute "qBittorrent's preferences are left alone" log "setPreferences"
 refute "nothing is updated" log "-X PUT"
 refute "nothing is restarted" log "podman restart"
 
@@ -252,7 +268,7 @@ check "missing containers are skipped" 0 out \
   "[Calibre-Web] Container doesn't exist, skipping." "[Jellyfin] Container doesn't exist, skipping." \
   "[sonarr] Container does not exist, skipping." \
   "[Prowlarr] Container doesn't exist (PROWLARR_PROFILE=disabled), skipping." \
-  "[Mylar] Container doesn't exist, skipping."
+  "[Mylar] Container doesn't exist, skipping." "[qBittorrent] Container doesn't exist, skipping."
 
 # Run D: most things fail.
 deployment
@@ -291,8 +307,10 @@ rule 'prowlarr curl -sk --fail -X POST .*/prowlarr/api/v1/indexer$' 22 ""
 rule '/prowlarr/api/v1/indexerstatus$' 0 '[{"id": 3}]'
 rule 'exec (lidarr|radarr|readarr|sonarr) curl -sk --fail -H X-Api-Key: \S+ \S+/api/v[13]/indexer$' 0 '[]'
 rule 'mylar curl -sk --max-time 10 -o /dev/null' 28 000
+rule 'exec qbittorrent curl .*/api/v2/auth/login$' 7 ""
 run
 check "failures are reported and the rest carries on" 0 out \
+  "[qBittorrent] ...still waiting (30s/120s)" "[qBittorrent] Not reachable, skipping reverse proxy trust." \
   "[Audiobookshelf] ...still waiting (30s/180s)" "[Audiobookshelf] Not reachable, skipping." \
   "[Calibre-Web] app.db not initialized yet after 180s, skipping." \
   "[Jellyfin] Not reachable, skipping." "[whisparr] Not reachable, skipping." \
@@ -337,8 +355,13 @@ rule 'exec radarr curl -sk --fail -H X-Api-Key: \S+ \S+/downloadclient$' 0 '[
   {"id": 2, "implementation": "Sabnzbd", "fields": [{"name": "host", "value": "10.9.9.9"}, {"name": "port", "value": 8080}, {"name": "apiKey", "value": "kept"}]}]'
 rule 'exec radarr curl -sk --fail -X PUT .*/downloadclient/2$' 22 "curl: (22) The requested URL returned error: 400"
 rule 'prowlarr curl .*/system/status$' 7 ""
+# A refused login still answers, so the preferences read is what fails. The
+# login rule wins over Audiobookshelf's, which matches any /login.
+rule 'exec qbittorrent curl .*/api/v2/auth/login$' 0 ""
+rule "${QBT_PREFERENCES}" 22 ""
 run
 check "half set up" 0 out \
+  "[qBittorrent] WARNING: could not read its preferences, so reverse proxy trust was not checked." \
   "[Audiobookshelf] Could not authenticate as the placeholder root user, skipping API key check." \
   "[Calibre-Web] Configuring library path..." \
   "[Jellyfin] Startup/User did not succeed after 180s, skipping the rest of setup." \
@@ -354,7 +377,10 @@ refute "no Jellyfin failures" out "[Jellyfin]   -"
 # apps reach it, or not, in their own ways.
 deployment
 sed -i 's/^LAN_IP=.*/LAN_IP=192.168.1.50/' "${__repo}/.env"
-containers jellyfin sonarr radarr lidarr whisparr prowlarr lazylibrarian mylar
+containers jellyfin sonarr radarr lidarr whisparr prowlarr lazylibrarian mylar qbittorrent
+# qBittorrent trusts some other proxy, and will not take nginx's address.
+rule "${QBT_PREFERENCES}" 0 '{"web_ui_reverse_proxy_enabled": true, "web_ui_reverse_proxies_list": "172.16.0.0/12"}'
+rule 'exec qbittorrent curl .*/api/v2/app/setPreferences$' 22 ""
 # Jellyfin refuses the placeholder login: curl --fail exits 22 on a 401.
 rule '/Users/AuthenticateByName$' 22 ""
 for app in sonarr radarr whisparr; do
@@ -371,7 +397,8 @@ check "Jellyfin without its placeholder login" 0 out \
   "[radarr] WARNING: failed to create the Jellyfin connection: curl: (22)" \
   "[whisparr] Created." "[Jellyfin]   - sonarr" "[Jellyfin]   - radarr" \
   "[Prowlarr] FlareSolverr container doesn't exist, skipping indexer proxy." \
-  "[Prowlarr] Readarr container doesn't exist, skipping registration."
+  "[Prowlarr] Readarr container doesn't exist, skipping registration." \
+  "[qBittorrent] WARNING: setPreferences failed, so reverse proxy trust was not applied."
 check "the LAN address is tried first" 0 log "podman exec whisparr curl -s --fail --max-time 5 http://192.168.1.50:8096/jellyfin/System/Info/Public"
 refute "no download client failed" out "[arr]"
 
@@ -388,5 +415,16 @@ refute "and that worked" out "WARNING"
 rule 'prowlarr curl -sk --fail -X PUT .*/indexerproxy/4$' 22 ""
 run
 check "a proxy that will not take the tag is reported" 0 out "[Prowlarr] WARNING: failed to tag the existing FlareSolverr indexer proxy."
+
+# Run H: a .env seeded before NGINX_SERVICES_IP existed.
+deployment
+sed -i '/^NGINX_SERVICES_IP=/d' "${__repo}/.env"
+containers
+run
+check "qBittorrent is skipped without nginx's address" 0 out \
+  "[qBittorrent] NGINX_SERVICES_IP is not set, skipping reverse proxy trust."
+NGINX_SERVICES_IP=10.0.0.7 run
+check "the address make exports stands in for .env" 0 out "[qBittorrent] Container doesn't exist, skipping."
+refute "and is not reported missing" out "NGINX_SERVICES_IP is not set"
 
 finish

@@ -83,10 +83,15 @@ services:
     image: docker.io/nginx:${NGINX_VERSION}
     container_name: ${CONTAINER_PREFIX}nginx
     profiles: ["${NGINX_PROFILE}"]
+    # Fixed wherever an upstream trusts nginx by address: Jellyfin on media,
+    # the Servarr apps on apps and services, qBittorrent on services. See
+    # docs/NETWORKING.md, "Reverse proxy trust".
     networks:
       edge: {}
-      apps: {}
-      services: {}
+      apps:
+        ipv4_address: ${NGINX_APPS_IP}
+      services:
+        ipv4_address: ${NGINX_SERVICES_IP}
       observability: {}
       media:
         ipv4_address: ${NGINX_MEDIA_IP}

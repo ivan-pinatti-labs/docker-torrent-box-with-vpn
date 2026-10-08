@@ -24,6 +24,18 @@ include .env certs/cert.conf
 JELLYFIN_BASE_URL ?= /jellyfin
 JELLYFIN_KNOWN_PROXY ?= $(NGINX_MEDIA_IP)
 
+# The apps subnet and nginx's two trusted addresses arrived after most .env
+# files were seeded, and seed-configs.sh never rewrites an existing .env. A
+# .env without them takes .env.example's values instead of handing
+# `network create --subnet` and nginx's `ipv4_address:` an empty string.
+# Exported so compose and check-network-subnets.sh see the same values.
+env_example_default = $(shell grep -m1 '^$(1)=' .env.example | cut -d= -f2-)
+APPS_SUBNET ?= $(call env_example_default,APPS_SUBNET)
+APPS_DYNAMIC_IP_RANGE ?= $(call env_example_default,APPS_DYNAMIC_IP_RANGE)
+NGINX_APPS_IP ?= $(call env_example_default,NGINX_APPS_IP)
+NGINX_SERVICES_IP ?= $(call env_example_default,NGINX_SERVICES_IP)
+export APPS_SUBNET APPS_DYNAMIC_IP_RANGE NGINX_APPS_IP NGINX_SERVICES_IP
+
 # CONTAINER_RUNTIME can be set in .env to 'podman' or 'docker'.
 # If not set, auto-detect: Podman takes priority when available.
 CONTAINER_RUNTIME ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
@@ -877,7 +889,7 @@ start: storage_guard permissions_repair
 	fi
 	@echo "Ensuring required networks exist..."
 	@./scripts/check-network-subnets.sh
-	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_apps || $(RUNTIME) network create $(COMPOSE_PROJECT_NAME)_apps
+	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_apps || $(RUNTIME) network create --subnet ${APPS_SUBNET} --ip-range ${APPS_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_apps
 	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_services || $(RUNTIME) network create --internal --subnet ${SERVICES_SUBNET} --ip-range ${SERVICES_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_services
 	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_media || $(RUNTIME) network create --subnet ${MEDIA_SUBNET} --ip-range ${MEDIA_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_media
 	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_observability || $(RUNTIME) network create --internal --subnet ${OBSERVABILITY_SUBNET} $(COMPOSE_PROJECT_NAME)_observability
@@ -917,7 +929,7 @@ start: storage_guard permissions_repair
 start_library: storage_guard permissions_repair
 	@echo "Starting Media Library containers..."
 	@./scripts/check-network-subnets.sh
-	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_apps || $(RUNTIME) network create $(COMPOSE_PROJECT_NAME)_apps
+	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_apps || $(RUNTIME) network create --subnet ${APPS_SUBNET} --ip-range ${APPS_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_apps
 	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_services || $(RUNTIME) network create --internal --subnet ${SERVICES_SUBNET} --ip-range ${SERVICES_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_services
 	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_media || $(RUNTIME) network create --subnet ${MEDIA_SUBNET} --ip-range ${MEDIA_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_media
 	@$(COMPOSE) --file docker-compose.yml --file docker-compose-media-library.yml --profile enabled up --detach --no-recreate
@@ -925,7 +937,7 @@ start_library: storage_guard permissions_repair
 start_observability: storage_guard permissions_repair
 	@echo "Starting Observability containers..."
 	@./scripts/check-network-subnets.sh
-	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_apps || $(RUNTIME) network create $(COMPOSE_PROJECT_NAME)_apps
+	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_apps || $(RUNTIME) network create --subnet ${APPS_SUBNET} --ip-range ${APPS_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_apps
 	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_services || $(RUNTIME) network create --internal --subnet ${SERVICES_SUBNET} --ip-range ${SERVICES_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_services
 	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_observability || $(RUNTIME) network create --internal --subnet ${OBSERVABILITY_SUBNET} $(COMPOSE_PROJECT_NAME)_observability
 	@$(COMPOSE) --file docker-compose-observability.yml --profile enabled up --detach
@@ -942,7 +954,7 @@ update_containers:
 
 	@echo "Ensuring required networks exist..."
 	@./scripts/check-network-subnets.sh
-	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_apps || $(RUNTIME) network create $(COMPOSE_PROJECT_NAME)_apps
+	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_apps || $(RUNTIME) network create --subnet ${APPS_SUBNET} --ip-range ${APPS_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_apps
 	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_services || $(RUNTIME) network create --internal --subnet ${SERVICES_SUBNET} --ip-range ${SERVICES_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_services
 	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_observability || $(RUNTIME) network create --internal --subnet ${OBSERVABILITY_SUBNET} $(COMPOSE_PROJECT_NAME)_observability
 
