@@ -23,7 +23,9 @@
 # tests/requirements.txt, which is not a lock, keeps the default grammars.
 # scripts/requirements.in and its lock, the pyyaml integration-tests.yml
 # installs before seeding the stack, are graded the same way as the unit
-# tier's pair.
+# tier's pair. The L2 image the hooks run in is pinned by digest on the
+# `ARG L2_IMAGE=<image>@sha256:<digest>` line of .devcontainer/l2/Dockerfile,
+# so only that digest may move there.
 allowed_paths:
   - .env.example
   - .pre-commit-config.yaml
@@ -34,6 +36,7 @@ allowed_paths:
   - scripts/requirements.in
   - scripts/requirements.txt
   - Makefile
+  - .devcontainer/l2/Dockerfile
 
 rules:
   # Same packages, only versions and hashes moved, and every new hash one PyPI
@@ -49,6 +52,8 @@ rules:
     grammars: [requirement_line]
   - path: Makefile
     grammars: [digest]
+  - path: .devcontainer/l2/Dockerfile
+    grammars: [image_digest]
   - path: .github/workflows/
     grammars:
       - digest_strip

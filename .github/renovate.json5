@@ -673,6 +673,34 @@
       matchUpdateTypes: ["major", "minor", "patch"],
       enabled: false,
     },
+    // The organization's own images: the L2 image the hooks run in
+    // (.devcontainer/l2/Dockerfile) and the nested test runner above
+    // (NESTED_IMAGE in the Makefile), both built by
+    // ivan-pinatti-labs/devcontainer-airlock and pinned by digest.
+    //
+    // GHCR returns no release timestamp for a digest, so under Renovate's
+    // default minimumReleaseAgeBehaviour (timestamp-required) the seven day
+    // window above holds every one of their digest bumps forever, and with
+    // internalChecksFilter strict the pull request is never opened. Nothing
+    // goes red and the dashboard only lists the update as pending: the L2
+    // pin sat on the digest #230 introduced while other consumers of the
+    // same image took several bumps.
+    //
+    // timestamp-optional lets the update be offered. The alternative is not a
+    // seven day wait but no update at all, which leaves the image to rot. So
+    // this is an exception to the window here, and only part of it is made up
+    // upstream: devcontainer-airlock ages its own Renovate managed inputs (the
+    // base image digests and the pinned tools) through the same seven days,
+    // and builds only from its reviewed main branch. The packages a rebuild
+    // installs from the distribution's signed archives, and so the digest
+    // itself, are not aged by anything. Scoped by package name rather
+    // than by file, so a third image of ours picks this up without another
+    // rule, and nothing from another publisher does.
+    {
+      matchDatasources: ["docker"],
+      matchPackageNames: ["ghcr.io/ivan-pinatti-labs/**"],
+      minimumReleaseAgeBehaviour: "timestamp-optional",
+    },
   ],
 
   customManagers: [
