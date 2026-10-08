@@ -687,12 +687,13 @@
     // same image took several bumps.
     //
     // timestamp-optional lets the update be offered. The alternative is not a
-    // seven day wait but no update at all, which leaves the image to rot. The
-    // window is applied upstream instead: devcontainer-airlock ages its own
-    // Renovate managed inputs (the base image digests and the pinned tools)
-    // through the same seven days, and builds only from its reviewed main
-    // branch. What a rebuild adds on top of those is packages from the
-    // distribution's own signed archives. Scoped by package name rather
+    // seven day wait but no update at all, which leaves the image to rot. So
+    // this is an exception to the window here, and only part of it is made up
+    // upstream: devcontainer-airlock ages its own Renovate managed inputs (the
+    // base image digests and the pinned tools) through the same seven days,
+    // and builds only from its reviewed main branch. The packages a rebuild
+    // installs from the distribution's signed archives, and so the digest
+    // itself, are not aged by anything. Scoped by package name rather
     // than by file, so a third image of ours picks this up without another
     // rule, and nothing from another publisher does.
     {
