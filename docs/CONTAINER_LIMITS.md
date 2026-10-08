@@ -61,6 +61,23 @@ memory stays within the 1 GB container ceiling.
 Prometheus and Loki share the telemetry limits by default. Increase
 `TELEMETRY_MEMORY` if metrics or logs retention grows.
 
+## Shutdown grace periods
+
+Compose gives a container ten seconds between SIGTERM and SIGKILL. Three get
+longer through `stop_grace_period`, and `tests/test_containers.py` checks the
+running containers carry it:
+
+| Service | Grace | Why |
+| --- | --- | --- |
+| `nzbhydra2` | `120s` | NZBHydra2 v9 compacts its H2 database on a graceful shutdown, and its release notes ask docker users for 120s. A kill does not corrupt the database, it only skips the compaction, so the file stays larger than it needs to be. |
+| `prometheus` | `30s` | Set with the observability stack, reason not recorded; Prometheus writes its head block and write ahead log on shutdown. |
+| `alloy` | `30s` | Set with the observability stack, reason not recorded; Alloy flushes its buffered telemetry on shutdown. |
+
+The value covers `make stop_all`, `make restart` and a plain compose stop or
+restart. `make down` and the rotation and wiring scripts stop the stack with
+their own 60 second timeout, which takes precedence, so under them NZBHydra2
+can still be killed before it finishes compacting.
+
 ---
 
 See also: [README.md](../README.md), [docs/MAKE_COMMANDS.md](MAKE_COMMANDS.md)

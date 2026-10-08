@@ -1,5 +1,7 @@
 """Container health: all enabled services must be running with no restart loops."""
 
+import subprocess
+
 import pytest
 
 from conftest import SERVICES, skip_if_disabled, skip_if_not_running, wait_for_healthy
@@ -75,3 +77,37 @@ def test_vpn_container_running(running_containers):
     skip_if_not_running(vpn_provider, running_containers)
     container = running_containers[vpn_provider]
     assert container.status == "running"
+
+
+# The services given longer than compose's default ten seconds between SIGTERM
+# and SIGKILL, and how long. docs/CONTAINER_LIMITS.md, "Shutdown grace
+# periods", says why each one needs it.
+STOP_GRACE_SECONDS = {"alloy": 30, "nzbhydra2": 120, "prometheus": 30}
+
+
+@pytest.mark.parametrize(
+    ("service_name", "seconds"), sorted(STOP_GRACE_SECONDS.items())
+)
+def test_stop_grace_period(service_name, seconds, running_containers):
+    """The container carries its stop_grace_period, so a plain stop waits for it.
+
+    Read from podman rather than the compose file: what matters is the timeout
+    the running container was created with, which is what `make stop_all` and
+    a compose restart honour.
+    """
+    skip_if_not_running(service_name, running_containers)
+    result = subprocess.run(  # nosec B603 B607 - podman is a trusted, fixed CLI in this stack
+        [
+            "podman",
+            "inspect",
+            running_containers[service_name].name,
+            "--format",
+            "{{.Config.StopTimeout}}",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == str(seconds), (
+        f"Container '{service_name}' stops after {result.stdout.strip()}s, expected {seconds}s"
+    )
