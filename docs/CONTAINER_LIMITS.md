@@ -85,7 +85,8 @@ Which ways of stopping honour it depends on who sends the signal:
   carries it and the stack is recreated.
 - `make down`, and the rotation and wiring scripts, use their own 60 second
   timeout, so under them NZBHydra2 can still be killed before it finishes
-  compacting.
+  compacting. The scripts exempt `mylar`, whose init never forwards SIGTERM:
+  they stop it with a bare `podman stop`, so it gets podman's ten seconds.
 
 ---
 
