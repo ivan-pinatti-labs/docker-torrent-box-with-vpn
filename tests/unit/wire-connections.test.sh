@@ -34,6 +34,8 @@ APPLICATIONS_SCHEMA="$(
 )"
 readonly APPLICATIONS_SCHEMA
 readonly ALL_CONTAINERS=(audiobookshelf calibre calibre-web jellyfin "${ARR_APPS[@]}" prowlarr flaresolverr lazylibrarian mylar qbittorrent)
+# What bootstrap seeds Jellyfin's key file with, a key Jellyfin never issued.
+readonly JELLYFIN_PLACEHOLDER=0123456789abcdef0123456789abcdef # pragma: allowlist secret
 readonly QBT_PREFERENCES='exec qbittorrent curl -sk --fail -b \S+ \S+/api/v2/app/preferences$'
 
 # calibre_web_db [<library dir>] [<users>]: Calibre-Web's app.db with its
@@ -67,6 +69,32 @@ conn.execute(
 )
 for i in range(int(sys.argv[2])):
     conn.execute("INSERT INTO comics (ComicID) VALUES (?)", (str(i),))
+conn.commit()
+EOF
+}
+
+# arr_db <path> <api key>: an arr app's database holding a Jellyfin
+# (MediaBrowser) connection that stores that key.
+arr_db() {
+  rm -f "${__repo}/${1}"
+  mkdir -p "$(dirname "${__repo}/${1}")"
+  python3 - "${__repo}/${1}" "${2}" <<'EOF'
+import json, sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+conn.execute("CREATE TABLE Notifications (Id INTEGER PRIMARY KEY, Implementation TEXT, Settings TEXT)")
+conn.execute("INSERT INTO Notifications VALUES (4, 'MediaBrowser', ?)", (json.dumps({"host": "x", "apiKey": sys.argv[2]}),))
+conn.commit()
+EOF
+}
+
+# arr_db_settings <path> <settings>: the same, with Settings exactly as given,
+# or SQL NULL for the word NULL.
+arr_db_settings() {
+  arr_db "${1}" unused
+  python3 - "${__repo}/${1}" "${2}" <<'EOF'
+import sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+conn.execute("UPDATE Notifications SET Settings = ?", (None if sys.argv[2] == "NULL" else sys.argv[2],))
 conn.commit()
 EOF
 }
@@ -110,6 +138,12 @@ EOF
   put configs/qbittorrent/secrets/password.txt qbittorrent-password # pragma: allowlist secret
   put configs/sabnzbd/secrets/api_key.txt sabnzbd-key
   put configs/jellyfin/secrets/api_key.txt jellyfin-key
+  put configs/jellyfin/secrets/api_key.txt.example "${JELLYFIN_PLACEHOLDER}"
+  # Each Jellyfin connection the rules below report holds the current key.
+  arr_db configs/sonarr/config/sonarr.db jellyfin-key
+  arr_db configs/radarr/config/radarr.db jellyfin-key
+  arr_db configs/lidarr/config/lidarr.db jellyfin-key
+  arr_db configs/whisparr/config/whisparr3.db jellyfin-key
   put configs/audiobookshelf/secrets/api_key.txt abs-key
   put configs/calibre/secrets/password.txt calibre-password
   calibre_web_db
@@ -136,6 +170,12 @@ EOF
     {"id": 1, "implementation": "QBittorrent", "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 8443}]},
     {"id": 2, "implementation": "Sabnzbd", "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 8080}]}]'
   rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/notification$' 0 '[{"implementation": "MediaBrowser"}]'
+  rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/notification/schema$' 0 \
+    '[{"implementation": "MediaBrowser", "fields": [{"name": "host"}, {"name": "apiKey"}]}]'
+  # Connections are sent without --fail, so the app's answer survives: its
+  # body, then the status curl's -w appends.
+  rule 'curl -sSk -X POST .*/notification$' 0 $'{"id": 7}\n201'
+  rule 'curl -sSk -X PUT .*/notification/[0-9]+$' 0 $'{"id": 4}\n202'
   rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/config/development$' 0 '{"id": 1, "metadataSource": "https://api.bookinfo.pro"}'
   # Prowlarr, with its tagged proxy, every application, the indexer, and
   # that indexer in every arr app.
@@ -258,6 +298,27 @@ refute "nothing is created" out "Creating"
 refute "qBittorrent's preferences are left alone" log "setPreferences"
 refute "nothing is updated" log "-X PUT"
 refute "nothing is restarted" log "podman restart"
+
+# Sonarr's database cannot say which key its connection holds: it is left
+# alone, and said so.
+rm -f "${__repo}/configs/sonarr/config/sonarr.db"
+run
+check "an unreadable stored key is reported" 0 out \
+  "[sonarr] WARNING: could not read the Jellyfin key its connection holds from its database; leaving the connection as it is."
+refute "and the connection is not rewritten" log "podman exec sonarr curl -sSk -X PUT"
+
+# Settings that hold no object to read a key from: SQL NULL, JSON null, and
+# text that is not JSON at all. Each is the same warning, never a crash.
+arr_db_settings configs/sonarr/config/sonarr.db NULL
+arr_db_settings configs/radarr/config/radarr.db null
+arr_db_settings configs/lidarr/config/lidarr.db '{not json'
+run
+check "settings with no key in them are reported" 0 out \
+  "[sonarr] WARNING: could not read the Jellyfin key" \
+  "[radarr] WARNING: could not read the Jellyfin key" \
+  "[lidarr] WARNING: could not read the Jellyfin key"
+refute "and none of them is rewritten" log "curl -sSk -X PUT"
+refute "nor does the read crash" err "Traceback"
 
 # Run C: no containers at all.
 deployment
@@ -388,13 +449,13 @@ for app in sonarr radarr whisparr; do
   rule "exec ${app} curl -sk --fail -H X-Api-Key: \\S+ \\S+/notification/schema\$" 0 '[{"implementation": "MediaBrowser", "fields": []}]'
 done
 rule 'exec sonarr curl -s --fail --max-time 5' 7 ""
-rule 'exec radarr curl -sk --fail -X POST .*/notification$' 22 "curl: (22) The requested URL returned error: 400"
+rule 'exec radarr curl -sSk -X POST .*/notification$' 0 $'[{"propertyName": "ApiKey", "errorMessage": "Invalid API Key"}]\n400'
 run
 check "Jellyfin without its placeholder login" 0 out \
   "[Jellyfin] Could not authenticate as the placeholder user, skipping API key/BaseUrl check." \
   "[sonarr] ...still waiting (30s/120s)" \
   "[sonarr] WARNING: Jellyfin is running but not reachable from this container; skipping its connection." \
-  "[radarr] WARNING: failed to create the Jellyfin connection: curl: (22)" \
+  '[radarr] WARNING: failed to create the Jellyfin connection: [{"propertyName": "ApiKey", "errorMessage": "Invalid API Key"}]' \
   "[whisparr] Created." "[Jellyfin]   - sonarr" "[Jellyfin]   - radarr" \
   "[Prowlarr] FlareSolverr container doesn't exist, skipping indexer proxy." \
   "[Prowlarr] Readarr container doesn't exist, skipping registration." \
@@ -426,5 +487,47 @@ check "qBittorrent is skipped without nginx's address" 0 out \
 NGINX_SERVICES_IP=10.0.0.7 run
 check "the address make exports stands in for .env" 0 out "[qBittorrent] Container doesn't exist, skipping."
 refute "and is not reported missing" out "NGINX_SERVICES_IP is not set"
+
+# Run I: the key file still holds the seeded placeholder when the run starts,
+# the race that stored it in Lidarr and Radarr in CI. Jellyfin's own job
+# replaces it, and every connection is made after that job, with the real key.
+deployment
+containers jellyfin sonarr radarr
+put configs/jellyfin/secrets/api_key.txt "${JELLYFIN_PLACEHOLDER}"
+rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/notification$' 0 '[]'
+run
+check "connections wait for Jellyfin's real key" 0 out \
+  "[Jellyfin] Creating initial API key..." "[sonarr] Created." "[radarr] Created."
+check "and carry it" 0 log '"value": "other-key"'
+refute "never the placeholder" log "\"value\": \"${JELLYFIN_PLACEHOLDER}\""
+
+# Jellyfin cannot replace the placeholder (its own login is refused), so there
+# is no key to give anyone.
+deployment
+containers jellyfin sonarr
+put configs/jellyfin/secrets/api_key.txt "${JELLYFIN_PLACEHOLDER}"
+rule '/Users/AuthenticateByName$' 22 ""
+run
+check "the placeholder is not a key" 0 out "[sonarr] No Jellyfin API key yet, skipping its connection."
+refute "nothing is sent with it" log "curl -sSk -X POST"
+
+# Run J: connections an earlier run left holding a key Jellyfin no longer
+# issues: Sonarr's is repaired, Radarr refuses the update, Whisparr's already
+# matches. The API masks the key, so the databases are what tell them apart.
+deployment
+containers jellyfin sonarr radarr whisparr
+arr_db configs/sonarr/config/sonarr.db "${JELLYFIN_PLACEHOLDER}"
+arr_db configs/radarr/config/radarr.db revoked-key
+arr_db configs/whisparr/config/whisparr3.db jellyfin-key
+rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/notification$' 0 \
+  '[{"id": 4, "implementation": "MediaBrowser", "fields": [{"name": "host", "value": "x"}, {"name": "apiKey", "value": "********"}]}]'
+rule 'exec radarr curl -sSk -X PUT .*/notification/4$' 0 $'[{"errorMessage": "Unable to send test message"}]\n400'
+run
+check "a stale key is replaced" 0 out \
+  "[sonarr] Jellyfin connection holds a key Jellyfin no longer issues, updating it..." "[sonarr] Updated." \
+  '[radarr] WARNING: failed to update the Jellyfin connection'"'"'s key: [{"errorMessage": "Unable to send test message"}]' \
+  "[whisparr] Jellyfin connection already exists, skipping." "[Jellyfin]   - radarr"
+check "with the current key, in place" 0 log "podman exec sonarr curl -sSk -X PUT" '"value": "jellyfin-key"'
+refute "a matching key is left alone" log "podman exec whisparr curl -sSk -X PUT"
 
 finish
