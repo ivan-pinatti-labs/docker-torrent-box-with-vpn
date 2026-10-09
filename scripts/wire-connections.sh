@@ -1285,7 +1285,7 @@ ensure_jellyfin_connection() {
 
 # An existing connection is kept, unless the key it holds is not Jellyfin's
 # current one: the placeholder an earlier run stored before the real key
-# existed (see JELLYFIN_SETUP_DONE), or a key `rotate-api-keys.sh jellyfin`
+# existed (see wire_arr_jellyfin), or a key `rotate-api-keys.sh jellyfin`
 # has since revoked. Either way Jellyfin answers its rescans with 401 and
 # nothing says so, so a re-run of this script is what repairs it.
 # Args: app_name container base_url api_key existing_json jellyfin_key
