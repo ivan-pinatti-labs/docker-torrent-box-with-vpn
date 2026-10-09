@@ -1329,8 +1329,10 @@ try:
     row = conn.execute(
         "SELECT Settings FROM Notifications WHERE Implementation = 'MediaBrowser' LIMIT 1"
     ).fetchone()
-    if row:
-        print(json.loads(row[0]).get("apiKey") or "")
+    # Settings can be NULL, or JSON that is not an object; neither holds a key.
+    settings = json.loads(row[0] or "null") if row else None
+    if isinstance(settings, dict):
+        print(settings.get("apiKey") or "")
 except (sqlite3.Error, ValueError):
     pass
 PYEOF

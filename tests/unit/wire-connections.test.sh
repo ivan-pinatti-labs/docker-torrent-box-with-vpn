@@ -87,6 +87,18 @@ conn.commit()
 EOF
 }
 
+# arr_db_settings <path> <settings>: the same, with Settings exactly as given,
+# or SQL NULL for the word NULL.
+arr_db_settings() {
+  arr_db "${1}" unused
+  python3 - "${__repo}/${1}" "${2}" <<'EOF'
+import sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+conn.execute("UPDATE Notifications SET Settings = ?", (None if sys.argv[2] == "NULL" else sys.argv[2],))
+conn.commit()
+EOF
+}
+
 query() {
   python3 -c 'import sqlite3, sys; print(sqlite3.connect(sys.argv[1]).execute(sys.argv[2]).fetchall())' "${__repo}/${1}" "${2}"
 }
@@ -294,6 +306,19 @@ run
 check "an unreadable stored key is reported" 0 out \
   "[sonarr] WARNING: could not read the Jellyfin key its connection holds from its database; leaving the connection as it is."
 refute "and the connection is not rewritten" log "podman exec sonarr curl -sSk -X PUT"
+
+# Settings that hold no object to read a key from: SQL NULL, JSON null, and
+# text that is not JSON at all. Each is the same warning, never a crash.
+arr_db_settings configs/sonarr/config/sonarr.db NULL
+arr_db_settings configs/radarr/config/radarr.db null
+arr_db_settings configs/lidarr/config/lidarr.db '{not json'
+run
+check "settings with no key in them are reported" 0 out \
+  "[sonarr] WARNING: could not read the Jellyfin key" \
+  "[radarr] WARNING: could not read the Jellyfin key" \
+  "[lidarr] WARNING: could not read the Jellyfin key"
+refute "and none of them is rewritten" log "curl -sSk -X PUT"
+refute "nor does the read crash" err "Traceback"
 
 # Run C: no containers at all.
 deployment
