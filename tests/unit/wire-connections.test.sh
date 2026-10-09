@@ -127,6 +127,11 @@ EOF
   put configs/sabnzbd/secrets/api_key.txt sabnzbd-key
   put configs/jellyfin/secrets/api_key.txt jellyfin-key
   put configs/jellyfin/secrets/api_key.txt.example "${JELLYFIN_PLACEHOLDER}"
+  # Each Jellyfin connection the rules below report holds the current key.
+  arr_db configs/sonarr/config/sonarr.db jellyfin-key
+  arr_db configs/radarr/config/radarr.db jellyfin-key
+  arr_db configs/lidarr/config/lidarr.db jellyfin-key
+  arr_db configs/whisparr/config/whisparr3.db jellyfin-key
   put configs/audiobookshelf/secrets/api_key.txt abs-key
   put configs/calibre/secrets/password.txt calibre-password
   calibre_web_db
@@ -281,6 +286,14 @@ refute "nothing is created" out "Creating"
 refute "qBittorrent's preferences are left alone" log "setPreferences"
 refute "nothing is updated" log "-X PUT"
 refute "nothing is restarted" log "podman restart"
+
+# Sonarr's database cannot say which key its connection holds: it is left
+# alone, and said so.
+rm -f "${__repo}/configs/sonarr/config/sonarr.db"
+run
+check "an unreadable stored key is reported" 0 out \
+  "[sonarr] WARNING: could not read the Jellyfin key its connection holds from its database; leaving the connection as it is."
+refute "and the connection is not rewritten" log "podman exec sonarr curl -sSk -X PUT"
 
 # Run C: no containers at all.
 deployment

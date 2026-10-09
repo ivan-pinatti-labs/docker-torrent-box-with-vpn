@@ -1293,9 +1293,14 @@ ensure_jellyfin_connection_key() {
   local app_name="$1" container="$2" base_url="$3" api_key="$4" existing="$5" jellyfin_key="$6"
   local stored
   stored=$(stored_jellyfin_key "$app_name")
-  # Empty means the database could not be read; leave a connection alone
-  # rather than rewrite it on a guess.
-  if [[ -z "$stored" || "$stored" == "$jellyfin_key" ]]; then
+  # Empty means the database could not be read or held no usable key: leave
+  # the connection alone rather than rewrite it on a guess, but say so, since
+  # a stale key then stays stale.
+  if [[ -z "$stored" ]]; then
+    echo "[$app_name] WARNING: could not read the Jellyfin key its connection holds from its database; leaving the connection as it is."
+    return 0
+  fi
+  if [[ "$stored" == "$jellyfin_key" ]]; then
     echo "[$app_name] Jellyfin connection already exists, skipping."
     return 0
   fi
@@ -1324,10 +1329,10 @@ try:
     row = conn.execute(
         "SELECT Settings FROM Notifications WHERE Implementation = 'MediaBrowser' LIMIT 1"
     ).fetchone()
-except sqlite3.Error:
-    row = None
-if row:
-    print(json.loads(row[0]).get("apiKey") or "")
+    if row:
+        print(json.loads(row[0]).get("apiKey") or "")
+except (sqlite3.Error, ValueError):
+    pass
 PYEOF
 }
 
