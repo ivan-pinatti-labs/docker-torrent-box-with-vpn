@@ -114,8 +114,10 @@ readonly QBITTORRENT_USERNAME_FILE="configs/qbittorrent/secrets/username.txt"
 readonly QBITTORRENT_PASSWORD_FILE="configs/qbittorrent/secrets/password.txt" # pragma: allowlist secret
 readonly SABNZBD_API_KEY_FILE="configs/sabnzbd/secrets/api_key.txt"           # pragma: allowlist secret
 
-readonly JELLYFIN_API_KEY_FILE="configs/jellyfin/secrets/api_key.txt"             # pragma: allowlist secret
-readonly AUDIOBOOKSHELF_API_KEY_FILE="configs/audiobookshelf/secrets/api_key.txt" # pragma: allowlist secret
+readonly JELLYFIN_API_KEY_FILE="configs/jellyfin/secrets/api_key.txt" # pragma: allowlist secret
+# What bootstrap seeds the file above from, a key Jellyfin never issued.
+readonly JELLYFIN_API_KEY_PLACEHOLDER_FILE="configs/jellyfin/secrets/api_key.txt.example" # pragma: allowlist secret
+readonly AUDIOBOOKSHELF_API_KEY_FILE="configs/audiobookshelf/secrets/api_key.txt"         # pragma: allowlist secret
 readonly CALIBRE_USERS_DB_CONTAINER_PATH="/config/.config/calibre/server-users.sqlite"
 readonly CALIBRE_PASSWORD_FILE="configs/calibre/secrets/password.txt" # pragma: allowlist secret
 readonly CALIBREWEB_DB="configs/calibre-web/config/app.db"
@@ -1121,10 +1123,9 @@ jellyfin_host_for() {
 }
 
 # Names of arr apps whose Jellyfin connection did not succeed this run, so
-# the end of the run can report them instead of letting wire_arr_app's own
-# handling of ensure_jellyfin_connection make a partial result look
+# the end of the run can report them instead of letting a partial result look
 # identical to a complete one, matching PROWLARR_FAILED's own reasoning
-# above.
+# above. Filled from wire_arr_jellyfin's status.
 JELLYFIN_FAILED=()
 
 # Names of arr apps whose qBittorrent and/or SABnzbd client creation did not
@@ -1142,12 +1143,12 @@ DOWNLOAD_CLIENT_FAILED=()
 # distinguishable at all.
 ARR_JOB_FAILED=()
 
-# Exit status bits wire_arr_app ORs together and adds to ARR_JOB_STATUS_BASE
-# when one or both of a download client / the Jellyfin connection fail but
-# the job otherwise ran to completion, so the caller can tell "this specific
-# step failed" apart from "the job died early from something unguarded"
-# without losing the ability to report both failing in the same run. Bits
-# rather than the plain JELLYFIN_WIRING_FAILED=90 sentinel this replaced:
+# The exit status bit wire_arr_app adds to ARR_JOB_STATUS_BASE when a download
+# client fails but the job otherwise ran to completion, so the caller can tell
+# "this specific step failed" apart from "the job died early from something
+# unguarded". The Jellyfin connection had a bit of its own until it moved out
+# of wire_arr_app into wire_arr_jellyfin, whose own status says the same. A
+# bit rather than the plain JELLYFIN_WIRING_FAILED=90 sentinel this replaced:
 # ensure_qbittorrent_client/ensure_sabnzbd_client used to be called as bare
 # statements, so under `set -e` a failure there killed this function before
 # ensure_jellyfin_connection or, for Readarr, ensure_readarr_metadata_source
@@ -1160,7 +1161,6 @@ ARR_JOB_FAILED=()
 # to 165 range it reserves for "cannot execute", "not found" and fatal
 # signals, with headroom above it for every combination of the bits below.
 readonly ARR_JOB_STATUS_BASE=100
-readonly ARR_JOB_JELLYFIN_FAILED_BIT=1
 readonly ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT=2
 
 jellyfin_connection_jq() {
@@ -1193,11 +1193,6 @@ ensure_jellyfin_connection() {
     echo "[$app_name] Jellyfin is not running, skipping its connection."
     return 0
   fi
-  if [[ ! -s "$JELLYFIN_API_KEY_FILE" ]]; then
-    echo "[$app_name] No Jellyfin API key yet, skipping its connection."
-    return 0
-  fi
-
   # Both API reads below are checked rather than left bare. This function is
   # called in an `||` list, which suspends `set -e` for everything inside it,
   # so an unguarded `existing=$(...)` that failed would carry on with an empty
@@ -1209,10 +1204,6 @@ ensure_jellyfin_connection() {
   if ! existing=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "$base_url" | jq 'map(select(.implementation == "MediaBrowser")) | first'); then
     echo "[$app_name] WARNING: could not read its notification list; skipping its Jellyfin connection."
     return 1
-  fi
-  if [[ -n "$existing" && "$existing" != "null" ]]; then
-    echo "[$app_name] Jellyfin connection already exists, skipping."
-    return 0
   fi
 
   local schema
@@ -1235,6 +1226,21 @@ ensure_jellyfin_connection() {
   if [[ -z "$schema" || "$schema" == "null" ]]; then
     echo "[$app_name] Does not support Jellyfin connections, skipping."
     return 0
+  fi
+
+  # The seeded placeholder is not a key, whatever the file says; see
+  # wire_arr_jellyfin for how a run used to store it.
+  local jellyfin_key placeholder_key
+  jellyfin_key=$(cat "$JELLYFIN_API_KEY_FILE" 2>/dev/null || true)
+  placeholder_key=$(cat "$JELLYFIN_API_KEY_PLACEHOLDER_FILE" 2>/dev/null || true)
+  if [[ -z "$jellyfin_key" || "$jellyfin_key" == "$placeholder_key" ]]; then
+    echo "[$app_name] No Jellyfin API key yet, skipping its connection."
+    return 0
+  fi
+
+  if [[ -n "$existing" && "$existing" != "null" ]]; then
+    ensure_jellyfin_connection_key "$app_name" "$container" "$base_url" "$api_key" "$existing" "$jellyfin_key"
+    return
   fi
 
   # Confirmed live (GitHub Actions runs 32176749677 and 32179005406, both on
@@ -1264,17 +1270,78 @@ ensure_jellyfin_connection() {
   # app what it supports is the only version-proof way to enable the ones that
   # mean "the library changed on disk".
   local payload
-  payload=$(echo "$schema" | jq --arg host "$jellyfin_host" --arg port "$JELLYFIN_HTTP_PORT" --arg url_base "$JELLYFIN_BASE_URL" --arg key "$(cat "$JELLYFIN_API_KEY_FILE")" "$(jellyfin_connection_jq)")
+  payload=$(echo "$schema" | jq --arg host "$jellyfin_host" --arg port "$JELLYFIN_HTTP_PORT" --arg url_base "$JELLYFIN_BASE_URL" --arg key "$jellyfin_key" "$(jellyfin_connection_jq)")
 
   # Same reasoning as ensure_qbittorrent_client: caught here rather than left
-  # to --fail under set -e, which stops applying inside a function the caller
-  # guarded with `|| warn`.
+  # to set -e, which stops applying inside a function the caller guarded with
+  # `|| warn`.
   local response
-  if ! response=$(container_curl "$container" -sk --fail -X POST -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" -d "$payload" "$base_url" 2>&1); then
+  if ! response=$(send_arr_connection "$container" POST "$base_url" "$api_key" "$payload"); then
     echo "[$app_name] WARNING: failed to create the Jellyfin connection: ${response:0:300}"
     return 1
   fi
   echo "[$app_name] Created."
+}
+
+# An existing connection is kept, unless the key it holds is not Jellyfin's
+# current one: the placeholder an earlier run stored before the real key
+# existed (see JELLYFIN_SETUP_DONE), or a key `rotate-api-keys.sh jellyfin`
+# has since revoked. Either way Jellyfin answers its rescans with 401 and
+# nothing says so, so a re-run of this script is what repairs it.
+# Args: app_name container base_url api_key existing_json jellyfin_key
+ensure_jellyfin_connection_key() {
+  local app_name="$1" container="$2" base_url="$3" api_key="$4" existing="$5" jellyfin_key="$6"
+  local stored
+  stored=$(stored_jellyfin_key "$app_name")
+  # Empty means the database could not be read; leave a connection alone
+  # rather than rewrite it on a guess.
+  if [[ -z "$stored" || "$stored" == "$jellyfin_key" ]]; then
+    echo "[$app_name] Jellyfin connection already exists, skipping."
+    return 0
+  fi
+
+  echo "[$app_name] Jellyfin connection holds a key Jellyfin no longer issues, updating it..."
+  local id updated response
+  id=$(echo "$existing" | jq -r '.id')
+  updated=$(echo "$existing" | jq --arg key "$jellyfin_key" '.fields |= map(if .name == "apiKey" then .value = $key else . end)')
+  if ! response=$(send_arr_connection "$container" PUT "${base_url}/${id}" "$api_key" "$updated"); then
+    echo "[$app_name] WARNING: failed to update the Jellyfin connection's key: ${response:0:300}"
+    return 1
+  fi
+  echo "[$app_name] Updated."
+}
+
+# The Jellyfin key an arr app's connection holds, from its database: the API
+# masks every API key field as "********", so it cannot say. Read only, the
+# same way rotate-passwords.sh reads these databases. Args: app_name
+stored_jellyfin_key() {
+  local db="configs/$1/config/$1.db"
+  [[ "$1" == whisparr ]] && db="configs/whisparr/config/whisparr3.db"
+  python3 - "$db" <<'PYEOF'
+import json, sqlite3, sys
+try:
+    conn = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+    row = conn.execute(
+        "SELECT Settings FROM Notifications WHERE Implementation = 'MediaBrowser' LIMIT 1"
+    ).fetchone()
+except sqlite3.Error:
+    row = None
+if row:
+    print(json.loads(row[0]).get("apiKey") or "")
+PYEOF
+}
+
+# POST or PUT an arr app connection, keeping the app's answer: --fail would
+# drop the body, and the body is where the app says why it refused one. The
+# warning on 2026-10-08 read "failed to create the Jellyfin connection: "
+# and nothing more. Prints the body (or curl's own error); succeeds only on a
+# 2xx. Args: container method url api_key payload
+send_arr_connection() {
+  local container="$1" method="$2" url="$3" api_key="$4" payload="$5" out code
+  out=$(container_curl "$container" -sSk -X "$method" -w '\n%{http_code}' -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" -d "$payload" "$url" 2>&1) || true
+  code=${out##*$'\n'}
+  printf '%s' "${out%$'\n'*}"
+  [[ "$code" == 2?? ]]
 }
 
 wire_arr_app() {
@@ -1299,8 +1366,8 @@ wire_arr_app() {
 
   # Not left as bare statements under this script's `set -e`: qBittorrent and
   # SABnzbd are two independent download clients, neither one's success or
-  # failure has anything to do with the other, or with the Jellyfin
-  # connection and (for Readarr) the metadata source fix below. A bare
+  # failure has anything to do with the other, or with (for Readarr) the
+  # metadata source fix below. A bare
   # statement would let either one's failure kill this whole function before
   # those unrelated steps ever ran, which is exactly what used to happen to
   # Readarr's SABnzbd client (works every time) on the back of its
@@ -1314,8 +1381,8 @@ wire_arr_app() {
   ensure_sabnzbd_client "$app_name" "$container" "$scheme" "$port" "$api_ver" "$key" "$sab_category" ||
     status_bits=$((status_bits | ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT))
 
-  ensure_jellyfin_connection "$app_name" "$container" "$scheme" "$port" "$api_ver" "$key" ||
-    status_bits=$((status_bits | ARR_JOB_JELLYFIN_FAILED_BIT))
+  # The Jellyfin connection is not made here but by wire_arr_jellyfin, once
+  # this job and Jellyfin's own have both finished; see that function.
 
   if [[ "$app_name" == "readarr" ]]; then
     ensure_readarr_metadata_source "$container" "$scheme" "$port" "$api_ver" "$key" || true
@@ -1325,6 +1392,36 @@ wire_arr_app() {
     return "$((ARR_JOB_STATUS_BASE + status_bits))"
   fi
   return 0
+}
+
+# An arr app's Jellyfin connection, made in a second batch that starts only
+# once every job of the first has finished, the Jellyfin job included.
+#
+# The connection carries Jellyfin's API key, and on a first run it is the
+# Jellyfin job that creates that key. Made inside wire_arr_app, concurrently
+# with it, an arr job could read the key file before the real key existed and
+# store the seeded placeholder: Lidarr and Radarr did exactly that in a CI run
+# on 2026-10-08, a second before Jellyfin created its key. Older Servarr
+# versions save such a connection anyway, since their connection test only
+# sends a notification, which Jellyfin answers with 404, so the stored key is
+# silently wrong and every rescan it exists for gets a 401. Sonarr 4.0.20 tests
+# the key itself and refused the connection outright. Waiting for the Jellyfin
+# job with wait_job is the one ordering that cannot race, and it costs only
+# these few requests at the end of the run.
+#
+# Returns non-zero only when the connection itself failed; an app that is
+# absent, unreachable or cannot hold one is skipped, as wire_arr_app already
+# reported. Args: app_name container scheme port api_ver
+wire_arr_jellyfin() {
+  local app_name="$1" container="$2" scheme="$3" port="$4" api_ver="$5"
+  local key
+  key=$(get_xml_apikey "configs/${app_name}/config/config.xml" 2>/dev/null) || key=""
+  if ! podman container exists "$(cname "$container")" 2>/dev/null ||
+    ! container_curl "$container" -sk --fail -o /dev/null -H "X-Api-Key: ${key}" \
+      "${scheme}://127.0.0.1:${port}/${app_name}/api/${api_ver}/system/status" 2>/dev/null; then
+    return 0
+  fi
+  ensure_jellyfin_connection "$app_name" "$container" "$scheme" "$port" "$api_ver" "$key"
 }
 
 # ---------------------------------------------------------------------------
@@ -1818,33 +1915,37 @@ for name in audiobookshelf calibre calibre-web jellyfin prowlarr qbittorrent; do
   wait_job "$name" || true
 done
 
-# Each of these five ran wire_arr_app, which now reports whether its own
-# download clients and Jellyfin connection succeeded (see
-# ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT/ARR_JOB_JELLYFIN_FAILED_BIT above), so
-# their status is worth decoding instead of discarding like the jobs above.
-# Only a status wire_arr_app could actually have returned (ARR_JOB_STATUS_BASE
-# plus one or both bits, so 101 to 103) means the job ran to completion and
-# one or both of those specific steps failed; anything else non-zero,
-# including a signal-terminated job (bash reports those as 128+signal, e.g.
-# 137 for SIGKILL, which is also >= ARR_JOB_STATUS_BASE), is a job that died
-# earlier, before it could even report which step, and is recorded
-# separately rather than decoded incorrectly into a false Jellyfin/
-# download-client bit and left out of ARR_JOB_FAILED entirely.
-readonly ARR_JOB_STATUS_MAX=$((ARR_JOB_STATUS_BASE + ARR_JOB_JELLYFIN_FAILED_BIT + ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT))
-for name in lidarr radarr readarr sonarr whisparr; do
+# Each of these five ran wire_arr_app, which reports whether its own download
+# clients succeeded (see ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT above), so their
+# status is worth decoding instead of discarding like the jobs above. Only
+# the status wire_arr_app could actually have returned for that
+# (ARR_JOB_STATUS_BASE plus the bit, so 102) means the job ran to completion
+# and a download client failed; anything else non-zero, including a
+# signal-terminated job (bash reports those as 128+signal, e.g. 137 for
+# SIGKILL, which is also >= ARR_JOB_STATUS_BASE), is a job that died earlier,
+# before it could even report which step, and is recorded separately rather
+# than decoded incorrectly into a false download-client failure and left out
+# of ARR_JOB_FAILED entirely.
+readonly ARR_APPS=(lidarr radarr readarr sonarr whisparr)
+for name in "${ARR_APPS[@]}"; do
   arr_status=0
   wait_job "$name" || arr_status=$?
-  if [[ "$arr_status" -gt "$ARR_JOB_STATUS_BASE" && "$arr_status" -le "$ARR_JOB_STATUS_MAX" ]]; then
-    status_bits=$((arr_status - ARR_JOB_STATUS_BASE))
-    if ((status_bits & ARR_JOB_JELLYFIN_FAILED_BIT)); then
-      JELLYFIN_FAILED+=("$name")
-    fi
-    if ((status_bits & ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT)); then
-      DOWNLOAD_CLIENT_FAILED+=("$name")
-    fi
+  if [[ "$arr_status" -eq $((ARR_JOB_STATUS_BASE + ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT)) ]]; then
+    DOWNLOAD_CLIENT_FAILED+=("$name")
   elif [[ "$arr_status" -ne 0 ]]; then
     ARR_JOB_FAILED+=("$name (exit ${arr_status})")
   fi
+done
+
+# The second batch: every arr app's Jellyfin connection, now that the Jellyfin
+# job and the arr jobs have all finished. See wire_arr_jellyfin.
+start_job lidarr-jellyfin wire_arr_jellyfin lidarr lidarr https "$LIDARR_HTTPS_PORT" v1
+start_job radarr-jellyfin wire_arr_jellyfin radarr radarr https "$RADARR_HTTPS_PORT" v3
+start_job readarr-jellyfin wire_arr_jellyfin readarr readarr https "$READARR_HTTPS_PORT" v1
+start_job sonarr-jellyfin wire_arr_jellyfin sonarr sonarr http "$SONARR_HTTP_PORT" v3
+start_job whisparr-jellyfin wire_arr_jellyfin whisparr whisparr https "$WHISPARR_HTTPS_PORT" v3
+for name in "${ARR_APPS[@]}"; do
+  wait_job "${name}-jellyfin" || JELLYFIN_FAILED+=("$name")
 done
 
 if [[ ${#JELLYFIN_FAILED[@]} -gt 0 ]]; then

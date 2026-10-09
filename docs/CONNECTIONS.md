@@ -114,9 +114,22 @@ first that answers Jellyfin's `/System/Info/Public`:
 If none of them answer, the app is skipped with a warning rather than left with
 a connection that cannot work.
 
+The connection carries Jellyfin's API key, so it is made only after Jellyfin's
+own setup has finished, in a second step at the end of the run: on a first run
+that setup is what creates the key. Until 2026-10 the two ran side by side, and
+an app could store the seeded placeholder from `api_key.txt.example` before
+the real key existed. Older \*arr versions save such a connection anyway, so it
+looked wired while every rescan it sent got a 401. A re-run now repairs one: an
+existing connection whose stored key is not Jellyfin's current one, the
+placeholder or a key `make rotate_all SERVICE=jellyfin` has since revoked, gets
+the current key. The apps' API masks the key, so the script reads it from each
+app's database.
+
 To check it by hand, open the app, go to Settings > Connect, click
 `Emby / Jellyfin` and press **Test**; it should report success. That is the
-same call `tests/test_wire_connections.py` makes.
+same call `tests/test_wire_connections.py` makes. On versions older than
+Sonarr 4.0.20 that Test only sends a notification, which Jellyfin answers with
+404 whatever the key, so it passes with a wrong key too.
 
 ### Readarr → Metadata Provider Source
 
