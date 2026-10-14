@@ -302,7 +302,14 @@ What is placed against it instead:
   yanked before we saw it". Seven rather than fourteen because this stack faces
   the internet and being a fortnight behind on ordinary fixes is its own risk.
   `vulnerabilityAlerts` clears the window, so a fix for a known vulnerability is
-  never held back by it.
+  never held back by it. The organization's own releases
+  (`ivan-pinatti-labs/**`: the shared workflows, the pre-commit hooks) skip it
+  too. Each is cut by a workflow from a reviewed merge to its `main` and ages
+  its own third party inputs through the same seven days before anything
+  reaches a release, so the window has already been applied once, upstream.
+  Skipping it changes when Renovate offers the bump, not whether it merges
+  unattended: that is still `Pin Only` and the suite below. The reasoning is in
+  ivan-pinatti-labs/.github's README.md, "Dependency policy".
 - **Digest pinning** (`pinDigests`). Every image that names a version is pinned
   to its manifest-list digest, so a republished tag cannot change what runs
   without a pull request saying so.
@@ -340,7 +347,8 @@ What is placed against it instead:
   its own throwaway commit before anything merges.
 
 What remains, and is accepted: the two bot identities are trusted to be
-themselves, and an upstream release that survives seven days, produces a
+themselves, and an upstream release that survives seven days (or an
+organization release cut from a reviewed merge), produces a
 pin-only diff, and passes the suite will merge. There is no configuration that
 removes that; only reviewing every dependency bump by hand would, at the cost of
 the bumps not happening.
