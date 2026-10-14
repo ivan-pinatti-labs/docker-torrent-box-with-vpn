@@ -701,6 +701,22 @@
       matchPackageNames: ["ghcr.io/ivan-pinatti-labs/**"],
       minimumReleaseAgeBehaviour: "timestamp-optional",
     },
+    // The organization's own releases (ivan-pinatti-labs/gh-actions,
+    // pre-commit-checklists, agent-policy and the rest) skip the seven day
+    // window. It exists to give a compromised or broken third party release
+    // time to be noticed before it lands here. These are cut by a workflow
+    // from a reviewed merge to main, and each of them ages its own third
+    // party inputs through the same window before anything reaches a
+    // release, so the window has already been applied once, upstream, and a
+    // second wait here only holds back fixes. The organization's own images
+    // are already treated this way, for the same reason.
+    // Whether a bump merges unattended is unchanged: that is still the
+    // automerge rules above. ivan-pinatti-labs/.github's README.md,
+    // "Dependency policy".
+    {
+      matchPackageNames: ["ivan-pinatti-labs/**"],
+      minimumReleaseAge: null,
+    },
   ],
 
   customManagers: [
