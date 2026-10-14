@@ -1015,7 +1015,7 @@ update_pre_commit:
 # image declares anonymous volumes that only -v removes.
 #
 # renovate: datasource=docker depName=ghcr.io/ivan-pinatti-labs/airlock-podman-nested
-NESTED_IMAGE ?= ghcr.io/ivan-pinatti-labs/airlock-podman-nested:latest@sha256:276173199680803eb5c654b1bc460d0cdbd7d110d2e3b31ada5a3d85d02cd824
+NESTED_IMAGE ?= ghcr.io/ivan-pinatti-labs/airlock-podman-nested:latest@sha256:2ac4df848f2a002a4f89a08f7a52de5c3bf750a3f8ec2ddb71bbf4d2f9c20c69
 NESTED_RUNTIME ?= podman
 NESTED_MEMORY ?= 8g
 NESTED_LABEL ?= type:container_engine_t
@@ -1208,7 +1208,7 @@ COVERAGE_PYTHON_IMAGE ?= docker.io/library/python:3.14-slim@sha256:51dafde81dbdb
 # renovate: datasource=docker depName=docker.io/kcov/kcov
 COVERAGE_KCOV_IMAGE ?= docker.io/kcov/kcov:latest@sha256:481289ae32e55e5b733019515acd10948a4f76dfed381765577db909664fc603
 # renovate: datasource=docker depName=docker.io/library/node
-COVERAGE_NODE_IMAGE ?= docker.io/library/node:24-trixie@sha256:be40f6a87b9b22215ddb20da0a2320a5c6d583fe3ee3b0024d9fa4f05b40c8fd
+COVERAGE_NODE_IMAGE ?= docker.io/library/node:24-trixie@sha256:1278a37eb510ec1606fba0e80f554bcc941ae0b44f35ae373c4822ae7717c64d
 # How a shell script is found: a file git would commit (tracked, plus new ones
 # not ignored; a path deleted in the working tree is dropped before awk opens
 # it) whose name ends in .sh or .bash, or whose first line is a shebang running
