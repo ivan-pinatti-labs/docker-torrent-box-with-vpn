@@ -73,7 +73,7 @@ while looking thorough:
     LinuxServer commit/build tag rather than an application version, and
     jackett has no compose service at all to query.
 
-    Everything else pinned in `.env.example` (the exporters, cAdvisor,
+    Everything else pinned in `versions.env` (the exporters, cAdvisor,
     node_exporter, Loki, Alloy, nginx_exporter, homepage, flaresolverr,
     notifiarr, nzbhydra2, korsync, calibre, calibre-web, audiobookshelf,
     gluetun, wireguard/vpn_mock, log_rotator, jdownloader-2) was not

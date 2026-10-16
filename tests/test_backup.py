@@ -20,6 +20,8 @@ def _fixture(root: Path) -> None:
     # Make fails immediately with "No rule to make target '.env.example'"
     # before backup-configs/restore-configs ever runs.
     _write(root / ".env.example", "APP_ENV=fixture\n")
+    # Included ahead of .env, and committed, so it has no rule to make it.
+    _write(root / "versions.env", "FIXTURE_VERSION=1.0\n")
     _write(root / "certs/cert.conf.example", "CERT_FQDN=fixture.local\n")
     _write(root / ".env", "APP_ENV=fixture\n")
     _write(root / "certs/cert.conf", "CERT_FQDN=fixture.local\n")

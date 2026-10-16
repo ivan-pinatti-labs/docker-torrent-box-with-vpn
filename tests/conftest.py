@@ -12,7 +12,12 @@ import yaml
 from dotenv import dotenv_values
 
 REPO_ROOT = Path(__file__).parent.parent
-ENV = dotenv_values(REPO_ROOT / ".env")
+# The image pins live in versions.env, and one .env sets wins, the way the
+# Makefile reads them (see the header of versions.env).
+ENV = {
+    **dotenv_values(REPO_ROOT / "versions.env"),
+    **dotenv_values(REPO_ROOT / ".env"),
+}
 
 # Which checkout's containers this suite is allowed to see, derived the way the
 # Makefile derives it: COMPOSE_PROJECT_NAME when .env sets one, otherwise the

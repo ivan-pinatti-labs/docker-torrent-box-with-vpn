@@ -129,7 +129,13 @@ reviews:
       instructions: >
         Keys are deliberately grouped by function, with comments explaining
         each group, rather than sorted alphabetically. Do not suggest
-        reordering them.
+        reordering them. Image versions do not belong here: they live in
+        versions.env, and a pin added here would be copied into every new
+        .env and override that file.
+    - path: "versions.env"
+      instructions: >
+        Every image pin the stack runs. Each `# renovate:` annotation must sit
+        on the line directly above its pin, or Renovate cannot read it.
     - path: "docker-compose-*.yml"
       instructions: |
         Service blocks must follow the key order documented in

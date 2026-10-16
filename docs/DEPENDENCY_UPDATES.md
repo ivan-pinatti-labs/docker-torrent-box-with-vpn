@@ -21,11 +21,17 @@ manifest of their own.
 | pip, test suite | native, `pip_requirements` | `tests/requirements.txt` |
 | pip, unit tier | native, `pip-compile` | `tests/unit/requirements.in`, and the hash lock `tests/unit/requirements.txt` compiled from it |
 | pip, the scripts' pyyaml | native, `pip-compile` | `scripts/requirements.in`, and the hash lock `scripts/requirements.txt` compiled from it |
-| Docker image versions | custom | `.env.example`, behind a `# renovate: depName=...` annotation |
+| Docker image versions | custom | `versions.env`, behind a `# renovate: depName=...` annotation |
 | pip, inline in a workflow | custom | A `pip install pkg==x` line, behind a `# renovate:` annotation |
 | Go module and pypi pins in pre-commit | custom | `additional_dependencies` in `.pre-commit-config.yaml` |
 | Docker images pinned inside a hook `entry:` | custom | `.pre-commit-config.yaml` and the workflow SARIF job |
 | `make coverage` images | custom | The `Makefile`, behind a `# renovate:` annotation; digest only |
+
+An image bump merged into `versions.env` reaches a deployment with its next
+`make update` ([MAKE_COMMANDS.md](MAKE_COMMANDS.md#updating)). The pins used to
+live in `.env.example`, which a deployment copies to `.env` once at setup, so
+every bump stopped there and a deployment that pulled after each merge still ran
+the images its `.env` was seeded with.
 
 The first three used to be Dependabot's, reading the same three files it did; only the tool
 reading them changed; see "Retiring Dependabot" below. `pre-commit` is Renovate's own name for
@@ -35,7 +41,7 @@ leave hook revisions unwatched), switched on in `.github/renovate.json5`.
 
 The last five stay `customManagers` because none of them has a manifest file a native manager
 could read: a bare regex is what covers an annotation sitting in the middle of a line other
-tooling owns, whether that line is `.env.example`, a workflow's `run:` step, a pre-commit
+tooling owns, whether that line is `versions.env`, a workflow's `run:` step, a pre-commit
 hook's `entry:` or a Makefile variable. The split is now entirely about manifest versus inline
 pin, not about which bot is reading which half. It exists because Renovate's own
 `pip_requirements` manager only reads requirements files. It would never see
@@ -299,7 +305,7 @@ what closes it. Nothing here is stated as fully "only Renovate" until that setti
 That coverage has a real gap, and it is worth stating plainly rather than leaving it implicit.
 The dependency graph GitHub builds for this repository holds 17 packages, all GitHub Actions and
 pip, and zero container images: GitHub raises no vulnerability alert for a container image at
-all, so the images in `.env.example` get no security signal from this mechanism, ever, and never
+all, so the images in `versions.env` get no security signal from this mechanism, ever, and never
 did. Scanning the images themselves was considered and deliberately declined, because they are
 third party and not ours to patch: nothing here can fix a vulnerability inside a published
 image, only wait for upstream to. The practical consequence is that the seven day
@@ -381,7 +387,7 @@ in `.github/renovate.json5` matches `# renovate: depName=` only, so that one ext
 whole pin invisible while reading exactly like every other line in the file. `datasource` was
 redundant anyway, because the manager sets `datasourceTemplate: "docker"` for every pin it reads.
 That is the case the new test's fourth check exists for: it runs the manager's own regex against
-`.env.example` and fails when the annotations present in the file and the ones Renovate can
+`versions.env` and fails when the annotations present in the file and the ones Renovate can
 actually parse are not the same set.
 
 ## Images held at a fixed version

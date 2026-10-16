@@ -153,7 +153,7 @@ checks: every image version variable a compose file interpolates carries a
 `# renovate:` annotation unless the tag deliberately floats, every annotated
 pin carries a digest unless it cannot hold one, that annotation names the image
 the compose file actually pulls, the `customManagers` regex in
-`.github/renovate.json5` captures every annotation in `.env.example`, and
+`.github/renovate.json5` captures every annotation in `versions.env`, and
 every `matchPackageNames` entry names a package some annotation declares, and
 every service running a file bind mounted out of `patches/` has its image held
 at a fixed version. Twelve pins once sat there unannotated and froze, and one

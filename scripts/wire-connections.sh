@@ -61,6 +61,12 @@ env_value() {
   grep -m1 "^${key}=" .env | cut -d= -f2-
 }
 
+# An image pin: the one .env holds back on purpose if there is one, else the
+# committed one in versions.env (see its header).
+pin_value() {
+  awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' .env versions.env
+}
+
 # Container names carry CONTAINER_PREFIX, which is empty for a deployment and
 # set in a second checkout's .env so its containers do not collide with the
 # deployment's on podman's global container namespace. Service names stay
@@ -84,7 +90,7 @@ MYLAR_HTTPS_PORT="$(env_value MYLAR_HTTPS_PORT)"
 JELLYFIN_HTTP_PORT="$(env_value JELLYFIN_HTTP_PORT)"
 JELLYFIN_BASE_URL="$(env_value JELLYFIN_BASE_URL)"
 AUDIOBOOKSHELF_HTTP_PORT="$(env_value AUDIOBOOKSHELF_HTTP_PORT)"
-CALIBREWEB_VERSION="$(env_value CALIBREWEB_VERSION)"
+CALIBREWEB_VERSION="$(pin_value CALIBREWEB_VERSION)"
 FLARESOLVERR_HTTP_PORT="$(env_value FLARESOLVERR_HTTP_PORT)"
 # nginx's address on services, the only reverse proxy qBittorrent trusts. A
 # .env seeded before it existed lacks the key, so `|| true` keeps the grep's

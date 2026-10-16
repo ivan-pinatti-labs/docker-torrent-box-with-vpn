@@ -49,6 +49,7 @@ KNOWN_SCRIPTS = {
     "scripts/rotate-nginx-logs.sh",
     "scripts/rotate-passwords.sh",
     "scripts/schedule-backup.sh",
+    "scripts/schedule-update.sh",
     "scripts/seed-calibre-library.sh",
     "scripts/seed-configs.sh",
     "scripts/seed-gluetun-secret.sh",
@@ -56,6 +57,7 @@ KNOWN_SCRIPTS = {
     "scripts/seed-secrets.sh",
     "scripts/seed-vpn-mock.sh",
     "scripts/storage-mount.sh",
+    "scripts/update.sh",
     "scripts/wire-connections.sh",
 }
 

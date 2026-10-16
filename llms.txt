@@ -19,6 +19,7 @@ the shared network namespace disappears and those services lose network access.
 
 - [README.md](README.md): Full setup, operation, support, and usage documentation
 - [.env.example](.env.example): Main configurable variables and profile defaults
+- [versions.env](versions.env): Every image version the stack runs, committed so `git pull` brings updates
 - [docker-compose.yml](docker-compose.yml): Top-level Compose file and shared networks
 - [docker-compose-vpn.yml](docker-compose-vpn.yml): Gluetun VPN gateway definition
 - [docker-compose-servarr.yml](docker-compose-servarr.yml): Servarr services

@@ -19,7 +19,17 @@
 certs/cert.conf:
 	@./scripts/seed-configs.sh certs/cert.conf
 
-include .env certs/cert.conf
+# versions.env before .env, so a pin .env still sets wins: that is how a
+# deliberate hold works (see the header of versions.env).
+include versions.env .env certs/cert.conf
+
+# Every image pin versions.env names, exported so compose sees the value make
+# resolved. Compose takes the environment over .env, and podman-compose reads
+# a single --env-file, so the environment is the one channel both compose
+# implementations read from two files. Guarded, because a bare `export` with
+# nothing after it exports every variable make knows.
+VERSION_VARS := $(shell sed -n 's/^\([A-Z0-9_]*_VERSION\)=.*/\1/p' versions.env)
+$(if $(VERSION_VARS),$(eval export $(VERSION_VARS)))
 
 JELLYFIN_BASE_URL ?= /jellyfin
 JELLYFIN_KNOWN_PROXY ?= $(NGINX_MEDIA_IP)
@@ -111,7 +121,7 @@ STOP_COMPOSE_FILES := --file docker-compose.yml $(foreach route_file,$(STOP_ROUT
 .PHONY: install_requirements pull_docker_images pre_commit
 .PHONY: restore-configs restore-full
 .PHONY: restart sanity_fast sanity_full start start_library start_observability
-.PHONY: stop stop_all update_containers update_pre_commit test test_ci test_nested test_extended test_prerequisites
+.PHONY: stop stop_all update update_containers update-schedule update_pre_commit migrate_versions test test_ci test_nested test_extended test_prerequisites
 .PHONY: test_bootstrap test_no_rotate_passwords nested_only suite_ci suite_full suite_no_rotate_passwords suite_prerequisites suite_rinse
 .PHONY: suite_marker test_marker
 .PHONY: coverage print-shell-scripts
@@ -878,6 +888,9 @@ storage_guard:
 	}
 
 start: storage_guard permissions_repair
+	@# Says so when .env still carries pins that override versions.env, the
+	@# reason a deployment that pulled would otherwise keep its old images.
+	@./scripts/migrate-versions.py --check
 	@echo "Generating Homepage's services.yaml for the currently enabled profiles..."
 	@./scripts/generate-homepage-services.py
 	@if [ "$(RUNTIME)" = "podman" ]; then \
@@ -948,21 +961,28 @@ stop_all:
 	@echo "Stopping containers (if they are running)..."
 	@$(COMPOSE) $(STOP_COMPOSE_FILES) --profile enabled stop
 
-update_containers:
-	@echo "Stopping containers..."
-	@$(COMPOSE) $(STOP_COMPOSE_FILES) --profile enabled stop
+# The whole update routine, stopping at the first step that fails: refuse a
+# dirty or diverged tree, down, backup-full, fast forward, migrate_versions,
+# pull images, start, wire. Prints the old and new commit, the images that
+# moved, the backup and how to roll back. See scripts/update.sh and
+# docs/MAKE_COMMANDS.md, "Updating".
+update:
+	@RUNTIME="$(RUNTIME)" MAKE="$(MAKE)" ./scripts/update.sh
 
-	@echo "Ensuring required networks exist..."
-	@./scripts/check-network-subnets.sh
-	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_apps || $(RUNTIME) network create --subnet ${APPS_SUBNET} --ip-range ${APPS_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_apps
-	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_services || $(RUNTIME) network create --internal --subnet ${SERVICES_SUBNET} --ip-range ${SERVICES_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_services
-	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_observability || $(RUNTIME) network create --internal --subnet ${OBSERVABILITY_SUBNET} $(COMPOSE_PROJECT_NAME)_observability
+# What update_containers used to do (stop, pull, up) skipped the backup, the
+# git pull and the wiring, so it is the full routine now.
+update_containers: update
 
-	@echo "Pulling images..."
-	@$(COMPOSE) $(COMPOSE_FILES) pull
+# Installs a weekly cron entry running `make update`, logging to
+# logs/update.log. Off unless run; ARGS=--remove takes it out again.
+update-schedule:
+	@./scripts/schedule-update.sh $(ARGS)
 
-	@echo "Starting containers..."
-	@$(COMPOSE) $(COMPOSE_FILES) --profile enabled up --detach
+# Clears the image pins an older .env still carries, so versions.env applies,
+# keeping any marked as a deliberate hold. Backs .env up first. See
+# scripts/migrate-versions.py.
+migrate_versions:
+	@./scripts/migrate-versions.py
 
 update_pre_commit:
 	@echo "Updating pre-commit hooks..."

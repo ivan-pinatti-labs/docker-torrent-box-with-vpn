@@ -28,6 +28,7 @@
 # so only that digest may move there.
 allowed_paths:
   - .env.example
+  - versions.env
   - .pre-commit-config.yaml
   - .github/workflows/
   - tests/requirements.txt
