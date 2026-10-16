@@ -531,7 +531,7 @@ repos:
       # Dockerfile that fails on the legacy docker builder with "invalid
       # reference format". This uses the published image instead.
       - id: dotenv-linter
-        name: Check .env.example style
+        name: Check .env.example and versions.env style
         # renovate: datasource=docker depName=dotenvlinter/dotenv-linter
         entry: >-
           bash -c 'runtime=$(command -v docker || command -v podman) || {
@@ -539,9 +539,9 @@ repos:
           exec "$runtime" run --rm -v "$PWD:/src:ro" -w /src
           docker.io/dotenvlinter/dotenv-linter:4.0.0 check --skip-updates
           --ignore-checks UnorderedKey --ignore-checks ValueWithoutQuotes
-          .env.example'
+          .env.example versions.env'
         language: system
-        files: '^\.env\.example$'
+        files: '^(\.env\.example|versions\.env)$'
         pass_filenames: false
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2

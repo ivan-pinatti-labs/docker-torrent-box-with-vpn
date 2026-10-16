@@ -30,9 +30,75 @@ directly.
 | `make down` | Stops **and removes** all containers (state on disk is untouched). |
 | `make restart` | Restarts Gluetun first and waits for it to be healthy, then restarts everything else, avoiding a race where VPN-namespace-sharing containers (qBittorrent, SABnzbd, JDownloader2) restart concurrently with Gluetun and get left attached to its old, torn-down network namespace. |
 | `make heal_vpn_dependents` | Detects and restarts any container still attached to Gluetun's *previous* network namespace after Gluetun restarted on its own (its `restart: unless-stopped` policy, or a lost WireGuard handshake) outside of `make restart`. |
-| `make update_containers` | Stops the stack, pulls fresh images, and starts it back up. |
 | `make pull_docker_images` | Pulls every enabled image without stopping or restarting anything. |
 | `make build_images` | Builds the two custom images this stack maintains itself (LazyLibrarian, Mylar). `bootstrap` calls this automatically; run it by hand to rebuild after bumping `LAZYLIBRARIAN_VERSION`/`MYLAR_VERSION`. |
+
+## Updating
+
+| Target | What it does |
+| --- | --- |
+| `make update` | The whole update routine, stopping at the first step that fails: refuses a tree with local changes to tracked files or one that cannot fast forward, then `make down`, `make backup-full`, a fast forward to the upstream branch, `make migrate_versions`, `make pull_docker_images`, `make start` and `make wire_connections`. Ends with the old and new commit, the images that changed, the backup and the commands that roll it all back. |
+| `make update_containers` | Alias of `make update`. |
+| `make migrate_versions` | Clears the image pins an older `.env` still carries (see below), keeping any marked as a hold. Copies `.env` to `.env.backup.<timestamp>` first. `make update` runs it; `make start` only reports what it would clear. |
+| `make update-schedule` | Installs a cron entry that runs `make update` weekly (prompts for the day and time in a real terminal, defaults to Sunday at 04:00 otherwise), logging to `logs/update.log`. Off unless you run it; `make update-schedule ARGS=--remove` takes it out. |
+
+### Image versions
+
+The image every service runs is pinned in `versions.env`, which is committed.
+Renovate bumps it there, so `git pull` brings new versions with everything
+else and `make update` puts them in place. `.env` holds the deployment's own
+settings and no versions.
+
+The Makefile reads `versions.env` first and `.env` after it, so a pin you put
+in `.env` overrides the committed one for as long as it stays there. To hold
+an image back on purpose, put its line in `.env` with a comment line starting
+`# hold` directly above it:
+
+```dotenv
+# hold: Jellyfin 10.11 migrates its database one way, waiting for a backup window
+JELLYFIN_VERSION=10.10.7
+```
+
+`make migrate_versions` keeps a pin marked that way and clears every other
+one. Without the marker it reads the line as a leftover copy and removes it.
+Delete the two lines when you are ready to follow `versions.env` again.
+
+**From a checkout older than `versions.env`.** Its `.env` was copied from an
+`.env.example` that still carried every pin, so all of them override
+`versions.env` until they are cleared, which is why images stopped moving
+after a `git pull`. That checkout's Makefile has no `make update` yet, so pull
+once by hand, then run it (and use it from then on):
+
+```shell
+git pull --ff-only
+make update
+```
+
+`make update` clears the old pins on the way, so mark any you mean to keep
+before running it. `make start` prints a notice listing any still in `.env`.
+
+**Compose commands run by hand.** make exports every pin it resolved, and
+compose takes the environment over `.env`, which is how both compose
+implementations see `versions.env`. A `podman-compose` or `docker compose`
+command typed outside make sees none of them, so its image references come out
+empty and it fails. Run it with the pins exported, `.env`'s own last so a hold
+still wins:
+
+```shell
+set -a; . <(grep -hE '^[A-Z0-9_]+_VERSION=' versions.env .env); set +a
+podman-compose --file docker-compose.yml --profile enabled up -d --force-recreate jdownloader2
+```
+
+### Unattended updates
+
+`make update-schedule` is off by default for a reason: some image updates run
+one way database migrations (Jellyfin minor releases, for one), so a run that
+fails after the pull leaves a stack that cannot simply be pointed back at the
+old images. Every run takes a full backup first and prints the rollback
+commands, `make down`, `git checkout --detach <old commit>`,
+`make restore-configs BACKUP=<archive>` and `make start`, which put the
+configuration, databases and pins back as they were. Read `logs/update.log`
+after each run; a failed one is not retried.
 
 ## Credentials and wiring
 

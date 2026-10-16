@@ -67,7 +67,17 @@ cron_line="${cron_schedule} cd ${repo_root} && make backup >> ${repo_root}/logs/
 
 # Drop any previously scheduled entry from this script before adding the
 # new one, so re-running replaces rather than stacks.
-existing="$(crontab -l 2>/dev/null | grep -vF "$MARKER" || true)"
+# Only a missing table reads as empty. Any other failure to read it stops here,
+# before writing back what little was read could replace the whole table.
+if ! current="$(crontab -l 2>/dev/null)"; then
+  reason="$(LC_ALL=C crontab -l 2>&1 >/dev/null || true)"
+  if [[ "$reason" != *"no crontab"* ]]; then
+    echo "ERROR: could not read the crontab (${reason:-no reason given}), so it was left as it is." >&2
+    exit 1
+  fi
+  current=""
+fi
+existing="$(printf '%s\n' "$current" | grep -vF "$MARKER" || true)"
 {
   [[ -n "$existing" ]] && printf '%s\n' "$existing"
   printf '%s\n' "$cron_line"

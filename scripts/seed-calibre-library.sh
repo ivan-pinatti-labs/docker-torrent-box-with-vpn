@@ -31,7 +31,9 @@ if [[ -f "${LIBRARY_DIR}/metadata.db" ]]; then
   exit 0
 fi
 
-CALIBRE_VERSION="$(grep -m1 '^CALIBRE_VERSION=' .env | cut -d= -f2-)"
+# The pin .env holds back on purpose if there is one, else the committed one
+# in versions.env (see its header).
+CALIBRE_VERSION="$(awk -F= '$1 == "CALIBRE_VERSION" { sub(/^[^=]*=/, ""); print; exit }' .env versions.env)"
 readonly CALIBRE_VERSION
 
 echo "Pre-creating the Calibre library at ${LIBRARY_DIR}..."

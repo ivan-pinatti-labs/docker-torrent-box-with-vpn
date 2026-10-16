@@ -16,7 +16,7 @@
   // see the `"pip-compile"` block below.
   //
   // What remains a customManager, and why: Docker image versions pinned in
-  // .env.example behind a `# renovate: depName=...` annotation, Python
+  // versions.env behind a `# renovate: depName=...` annotation, Python
   // packages pinned inline in a workflow `run:` step, and the image tags
   // pinned inside a `repo: local` hook's `entry:` command. All three are
   // inline pins with no manifest file of their own, which is exactly the
@@ -730,14 +730,14 @@
       // Without its own group Renovate has nowhere to write an updated digest,
       // and the pins would quietly rot into permanently stale images, which is
       // worse than not pinning at all. The group is optional because two tags
-      // are deliberately left floating (see .env.example).
+      // are deliberately left floating (see versions.env).
       //
       // depName carries the full registry, not just the repository. The digest
       // has to be resolved where the image is actually fetched from: most
       // registries serve the same artifact, but prom/node-exporter v1.11.1 is
       // sha256:e9cff4fc on Docker Hub and sha256:0f422f62 on quay.io, so a
       // bare repository name would be ambiguous exactly where it matters.
-      managerFilePatterns: ["/^\\.env\\.example$/"],
+      managerFilePatterns: ["/^versions\\.env$/"],
       matchStrings: [
         "# renovate: depName=(?<depName>[^\\s\\n]+)(?:\\s+versioning=(?<versioning>[^\\s\\n]+))?\\n[A-Z0-9_]+=(?<currentValue>[^@\\n]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?",
       ],

@@ -79,7 +79,7 @@ maintainer will comment for you.
    without anyone reviewing them. Renovate opens daily pull requests for
    `.pre-commit-config.yaml` hook revs, GitHub Action versions and
    `tests/requirements.txt` (its own native managers for each), for the image
-   versions pinned in `.env.example`, and for the pins annotated inline in
+   versions pinned in `versions.env`, and for the pins annotated inline in
    workflows and pre-commit hooks. Dependabot used to open the first three
    itself, until its `updates:` config was retired; see
    [docs/DEPENDENCY_UPDATES.md](DEPENDENCY_UPDATES.md), "Retiring Dependabot".

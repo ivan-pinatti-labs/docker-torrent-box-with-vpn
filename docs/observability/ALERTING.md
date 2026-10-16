@@ -108,5 +108,6 @@ new values are picked up:
 
 ```shell
 podman stop grafana && podman rm grafana
+set -a; . <(grep -hE '^[A-Z0-9_]+_VERSION=' versions.env .env); set +a
 podman-compose -f docker-compose-observability.yml --profile enabled up --detach grafana
 ```

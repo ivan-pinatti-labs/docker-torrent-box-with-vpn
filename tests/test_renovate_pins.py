@@ -1,7 +1,7 @@
 """Static checks that every pinned container image is actually watched.
 
-A pin and a watched pin look identical in `.env.example`. Twelve pins sat in
-the `### VERSIONS` block with no `# renovate:` annotation above them, so
+A pin and a watched pin look identical in `versions.env` (`.env.example`, at the
+time). Twelve pins sat there with no `# renovate:` annotation above them, so
 nothing bumped them and they froze, several for more than a year, while the
 file still read as fully pinned. Nothing in the repository said so, which is
 the only reason it lasted. These tests make that state fail on the pull
@@ -37,22 +37,21 @@ from conftest import REPO_ROOT
 
 pytestmark = pytest.mark.prerequisites
 
+# The committed file every image pin lives in, and nothing else. PYTHON_VERSION
+# and STORAGE_CIFS_VERSION are named exactly like image pins and are not images
+# (one feeds actions/setup-python, the other is an SMB protocol level), which is
+# why they stay in .env.example and out of this file.
+VERSIONS_FILE = REPO_ROOT / "versions.env"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 RENOVATE_CONFIG = REPO_ROOT / ".github" / "renovate.json5"
 PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
-# The block heading in .env.example that holds the image pins. Scoping to it
-# matters: PYTHON_VERSION and STORAGE_CIFS_VERSION are named exactly like image
-# pins and are not images (one feeds actions/setup-python, the other is an SMB
-# protocol level), and both live outside this block.
-VERSIONS_HEADING = "### VERSIONS"
-
 # Tags deliberately left on a channel rather than a version. There is no
 # version here for Renovate to bump, so an annotation would only produce
 # lookup failures on the dashboard. Every entry has to keep earning its place:
 # test_exemption_still_covers_something fails when one names a variable
-# .env.example no longer defines.
+# versions.env no longer defines.
 FLOATING = {
     "NGINX_VERSION": "stable-alpine is a channel tag, not a version",
     "PLEX_VERSION": (
@@ -129,16 +128,8 @@ DIGEST_SUFFIX = re.compile(r"@sha256:[0-9a-f]{64}$")
 
 
 def _versions_block() -> list[str]:
-    """The lines under `### VERSIONS`, up to the next `###` heading."""
-    lines = ENV_EXAMPLE.read_text().splitlines()
-    starts = [i for i, line in enumerate(lines) if line.strip() == VERSIONS_HEADING]
-    assert starts, f"no `{VERSIONS_HEADING}` heading in {ENV_EXAMPLE.name}"
-    block = []
-    for line in lines[starts[0] + 1 :]:
-        if line.startswith("###"):
-            break
-        block.append(line)
-    return block
+    """Every line of versions.env, which holds the image pins and nothing else."""
+    return VERSIONS_FILE.read_text().splitlines()
 
 
 def _pins() -> dict[str, str]:
@@ -268,17 +259,17 @@ def _manager_matches(pattern: str, filename: str) -> bool:
 
 
 def _env_manager() -> dict:
-    """The customManagers entry that reads .env.example."""
+    """The customManagers entry that reads versions.env."""
     managers = [
         manager
         for manager in _renovate_config()["customManagers"]
         if any(
-            _manager_matches(pattern, ENV_EXAMPLE.name)
+            _manager_matches(pattern, VERSIONS_FILE.name)
             for pattern in manager["managerFilePatterns"]
         )
     ]
     assert len(managers) == 1, (
-        f"expected exactly one customManager reading {ENV_EXAMPLE.name}, "
+        f"expected exactly one customManager reading {VERSIONS_FILE.name}, "
         f"found {len(managers)}"
     )
     return managers[0]
@@ -317,7 +308,7 @@ def _package_rule_names() -> list[str]:
 
 def _annotated_dependency_names() -> set[str]:
     """Every depName any `# renovate:` annotation in the repository declares."""
-    sources = [ENV_EXAMPLE, PRE_COMMIT_CONFIG, *sorted(WORKFLOWS.glob("*.yml"))]
+    sources = [VERSIONS_FILE, PRE_COMMIT_CONFIG, *sorted(WORKFLOWS.glob("*.yml"))]
     declared = set()
     for path in sources:
         declared.update(ANNOTATION.findall(path.read_text()))
@@ -326,8 +317,8 @@ def _annotated_dependency_names() -> set[str]:
 
 def test_versions_block_holds_pins():
     """Guard the parametrized lists below against silently collecting nothing."""
-    assert len(_pins()) > 20, f"only {len(_pins())} pins found in {ENV_EXAMPLE.name}"
-    assert len(_annotations()) > 10, "almost nothing in .env.example is annotated"
+    assert len(_pins()) > 20, f"only {len(_pins())} pins found in {VERSIONS_FILE.name}"
+    assert len(_annotations()) > 10, "almost nothing in versions.env is annotated"
     assert len(_compose_image_refs()) > 20, "almost no compose image lines matched"
 
 
@@ -339,11 +330,11 @@ def test_image_pin_is_watched(variable):
     pins = _pins()
     assert variable in pins, (
         f"{variable} is interpolated by a compose file but no pin defines it "
-        f"under {VERSIONS_HEADING} in {ENV_EXAMPLE.name}"
+        f"in {VERSIONS_FILE.name}"
     )
     assert variable in _annotations(), (
         f"{variable} carries no `# renovate: depName=<image>` comment on the "
-        f"line directly above it in {ENV_EXAMPLE.name}, so Renovate cannot see "
+        f"line directly above it in {VERSIONS_FILE.name}, so Renovate cannot see "
         f"it and the pin stays frozen at {pins[variable]} forever. Add the "
         f"annotation naming the registry-qualified image the compose file "
         f"pulls, or add {variable} to FLOATING in this file if the tag is meant "
@@ -380,8 +371,8 @@ def test_exemption_still_covers_something(collection, variable):
     came back under a different name.
     """
     assert variable in _pins(), (
-        f"{collection} names {variable}, which {ENV_EXAMPLE.name} no longer "
-        f"defines under {VERSIONS_HEADING}. Drop the entry from {collection} in "
+        f"{collection} names {variable}, which {VERSIONS_FILE.name} no longer "
+        f"defines. Drop the entry from {collection} in "
         f"this file."
     )
 
@@ -394,7 +385,7 @@ def test_renovate_regex_matches_every_annotation():
     annotation that leads with `datasource=` is read by a person as watched and
     by Renovate as a comment, with no error anywhere to say so.
     """
-    text = ENV_EXAMPLE.read_text()
+    text = VERSIONS_FILE.read_text()
     captured = set()
     for pattern in _env_manager()["matchStrings"]:
         captured.update(
@@ -404,7 +395,7 @@ def test_renovate_regex_matches_every_annotation():
     declared = set(ANNOTATION.findall(text))
     assert captured == declared, (
         f"the customManager regex in {RENOVATE_CONFIG.name} does not capture "
-        f"every annotation in {ENV_EXAMPLE.name}. Annotated but not captured, "
+        f"every annotation in {VERSIONS_FILE.name}. Annotated but not captured, "
         f"so watched by nobody: {sorted(declared - captured)}. Captured but not "
         f"annotated, so the regex is reading something else: "
         f"{sorted(captured - declared)}."
@@ -424,7 +415,7 @@ def test_package_rule_names_a_real_dependency(package):
     """
     assert package in _annotated_dependency_names(), (
         f"packageRules in {RENOVATE_CONFIG.name} matches on {package!r}, which "
-        f"no `# renovate:` annotation declares in {ENV_EXAMPLE.name}, "
+        f"no `# renovate:` annotation declares in {VERSIONS_FILE.name}, "
         f"{PRE_COMMIT_CONFIG.name} or .github/workflows/. The rule therefore "
         f"applies to nothing. depName is the authority: match on the exact "
         f"string the pin's own annotation carries, registry and all."
@@ -598,4 +589,24 @@ def test_digest_exemption_is_backed_by_the_config(variable):
         f"rule in {RENOVATE_CONFIG.name}, so Renovate will add the digest this "
         f"file excuses it from. Add the package to that rule, or drop the "
         f"exemption."
+    )
+
+
+def test_env_example_carries_no_image_pins():
+    """The pins live in versions.env alone, never again in .env.example.
+
+    .env is a copy of .env.example made once at setup and never refreshed, and
+    a pin in .env overrides versions.env. A pin back in .env.example would
+    therefore be copied into every new deployment's .env and freeze it there,
+    which is the failure versions.env exists to end.
+    """
+    pinned = set(_pins())
+    in_template = [
+        line.split("=", 1)[0]
+        for line in ENV_EXAMPLE.read_text().splitlines()
+        if line.split("=", 1)[0] in pinned
+    ]
+    assert not in_template, (
+        f"{ENV_EXAMPLE.name} sets {', '.join(in_template)}, which "
+        f"{VERSIONS_FILE.name} pins. Keep image versions in {VERSIONS_FILE.name} only."
     )

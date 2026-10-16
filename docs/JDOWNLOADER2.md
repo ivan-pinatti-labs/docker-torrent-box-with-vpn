@@ -44,7 +44,8 @@ credentials come from `WEB_AUTHENTICATION_USERNAME`/`WEB_AUTHENTICATION_PASSWORD
 `configs/jdownloader2/.env.secrets` (gitignored, copy from `.env.secrets.example`), following the
 same committed-template-plus-gitignored-secrets pattern as `configs/grafana/`; see
 [COMPOSE_CONVENTIONS.md](COMPOSE_CONVENTIONS.md). Both env files are only read at container
-creation, so a password change needs a recreate, not a restart:
+creation, so a password change needs a recreate, not a restart (with the image pins exported, see
+[MAKE_COMMANDS.md](MAKE_COMMANDS.md#image-versions)):
 `podman-compose --file docker-compose.yml --profile enabled up -d --force-recreate --no-deps jdownloader2`.
 The healthcheck and the nginx reverse-proxy upstream both target `https://` for this reason.
 `make rotate_passwords SERVICE=jdownloader2` handles the password rotation and recreate; see
