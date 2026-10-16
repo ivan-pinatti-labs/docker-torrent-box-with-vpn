@@ -195,13 +195,15 @@ check "stops when the backup names no archive" 1 "${out}" "make backup-full repo
 fresh
 touch "${__state}/merge-fails"
 run
-check "stops when git cannot fast forward" 1 "${out}" "git could not fast forward to origin/main."
-check "offers the rollback once a backup exists" 1 "${out}" "make restore-configs BACKUP=backup/full-1.tar.gz"
+check "stops when git cannot fast forward" 1 "${out}" "git could not fast forward to origin/main, so nothing was updated."
+check "says make start brings the stack back" 1 "${out}" "'make start' brings it back as it was."
+refute "offers no rollback when the commit never moved" "${out}" "git checkout --detach"
 
 fresh
 touch "${__state}/fail-migrate_versions"
 run
 check "stops when the migration fails" 1 "${out}" "make migrate_versions failed."
+check "offers the rollback once the commit moved" 1 "${out}" "make restore-configs BACKUP=backup/full-1.tar.gz"
 
 fresh
 touch "${__state}/fail-pull_docker_images"

@@ -19,7 +19,17 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly MARKER="# docker-torrent-box-with-vpn: scheduled update, managed by scripts/schedule-update.sh, do not edit this line by hand"
 
-existing="$(crontab -l 2>/dev/null | grep -vF "$MARKER" || true)"
+# Only a missing table reads as empty. Any other failure to read it stops here,
+# before writing back what little was read could replace the whole table.
+if ! current="$(crontab -l 2>/dev/null)"; then
+  reason="$(LC_ALL=C crontab -l 2>&1 >/dev/null || true)"
+  if [[ "$reason" != *"no crontab"* ]]; then
+    echo "ERROR: could not read the crontab (${reason:-no reason given}), so it was left as it is." >&2
+    exit 1
+  fi
+  current=""
+fi
+existing="$(printf '%s\n' "$current" | grep -vF "$MARKER" || true)"
 
 if [[ "${1:-}" == "--remove" ]]; then
   printf '%s\n' "$existing" | crontab -

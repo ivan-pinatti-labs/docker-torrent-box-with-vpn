@@ -27,8 +27,11 @@ ln -s "${__script}" "${__scratch}/scripts/schedule-update.sh"
 for tool in dirname mkdir grep cat mv; do
   ln -s "$(command -v "${tool}")" "${__scratch}/bin/${tool}"
 done
+# crontab -l fails the way cron does when there is no table, and with another
+# error while ${__scratch}/broken exists, whether or not there is a table.
 printf '#!%s\n%s\n' "${__bash}" "if [[ \"\$1\" == -l ]]; then
-  [[ -f '${__scratch}/table' ]] || exit 1
+  [[ ! -f '${__scratch}/broken' ]] || { echo 'crontab: permission denied' >&2; exit 1; }
+  [[ -f '${__scratch}/table' ]] || { echo 'no crontab for user' >&2; exit 1; }
   cat '${__scratch}/table'
 else
   cat >'${__scratch}/table.new'
@@ -100,6 +103,25 @@ if grep --quiet "schedule-update.sh" "${__scratch}/table"; then
 else
   echo "ok --remove takes the entry out"
 fi
+
+# A table that cannot be read is never written over, by either path.
+cp "${__scratch}/table" "${__scratch}/table.kept"
+touch "${__scratch}/broken"
+for args in "" "--remove"; do
+  # shellcheck disable=SC2086 # empty on purpose, so the first round passes no argument
+  run ${args}
+  if [[ "${__status}" -ne 1 ]] || ! grep --quiet "could not read the crontab (crontab: permission denied)" "${__scratch}/out"; then
+    echo "FAIL a read error ${args:-on install} did not stop the script" >&2
+    cat "${__scratch}/out" >&2
+    __failures=$((__failures + 1))
+  elif ! cmp -s "${__scratch}/table" "${__scratch}/table.kept"; then
+    echo "FAIL a read error ${args:-on install} changed the table" >&2
+    __failures=$((__failures + 1))
+  else
+    echo "ok a read error ${args:-on install} leaves the table alone"
+  fi
+done
+rm "${__scratch}/broken"
 
 if [[ "${__failures}" -gt 0 ]]; then
   echo "${__failures} failed" >&2

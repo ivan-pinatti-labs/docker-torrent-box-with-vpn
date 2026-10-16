@@ -100,7 +100,11 @@ backup="$(sed -n 's/^Done: \(.*\) ([^)]*)$/\1/p' "$log")"
   fail "make backup-full reported no archive, so nothing was updated. The stack is down; 'make start' brings it back as it was."
 
 step "Fast forwarding to ${upstream}"
-git merge --ff-only --quiet "$new" || fail "git could not fast forward to ${upstream}."
+git merge --ff-only --quiet "$new" || {
+  # Nothing moved yet but the stack going down, so no rollback to offer.
+  backup=""
+  fail "git could not fast forward to ${upstream}, so nothing was updated. The stack is down; 'make start' brings it back as it was."
+}
 
 step "make migrate_versions"
 "$MAKE_CMD" --no-print-directory migrate_versions || fail "make migrate_versions failed."

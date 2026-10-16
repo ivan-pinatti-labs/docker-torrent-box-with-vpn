@@ -29,9 +29,11 @@ ln -s "${__script}" "${__scratch}/scripts/schedule-backup.sh"
 for tool in dirname mkdir grep; do
   ln -s "$(command -v "${tool}")" "${__scratch}/bin/${tool}"
 done
-# crontab -l prints the table, or fails when there is none; crontab - replaces it.
+# crontab -l prints the table, or fails the way cron does when there is none,
+# or with another error while ${__scratch}/broken exists; crontab - replaces it.
 printf '#!%s\n%s\n' "${__bash}" "if [[ \"\$1\" == -l ]]; then
-  [[ -f '${__scratch}/table' ]] || exit 1
+  [[ ! -f '${__scratch}/broken' ]] || { echo 'crontab: permission denied' >&2; exit 1; }
+  [[ -f '${__scratch}/table' ]] || { echo 'no crontab for user' >&2; exit 1; }
   cat '${__scratch}/table'
 else
   cat >'${__scratch}/table.new'
@@ -100,6 +102,22 @@ check "falls back to 03:00 for an out of range time" out "Scheduled: daily at 03
 
 run_tty '2\n9\n\n'
 check "falls back to Sunday for an out of range day" out "Scheduled: weekly on Sunday at 03:00"
+
+# A table that cannot be read is never written over.
+cp "${__scratch}/table" "${__scratch}/table.kept"
+touch "${__scratch}/broken"
+run
+if [[ "${__status}" -ne 1 ]] || ! grep --quiet "could not read the crontab (crontab: permission denied)" "${__scratch}/out"; then
+  echo "FAIL a read error did not stop the script" >&2
+  cat "${__scratch}/out" >&2
+  __failures=$((__failures + 1))
+elif ! cmp -s "${__scratch}/table" "${__scratch}/table.kept"; then
+  echo "FAIL a read error changed the table" >&2
+  __failures=$((__failures + 1))
+else
+  echo "ok a read error leaves the table alone"
+fi
+rm "${__scratch}/broken"
 
 if [[ "${__failures}" -gt 0 ]]; then
   echo "${__failures} failed" >&2
