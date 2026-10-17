@@ -42,13 +42,19 @@ pytestmark = [pytest.mark.rotation, pytest.mark.pw_rotation]
 TIMEOUT = 30
 SCRIPTS = REPO_ROOT / "scripts"
 
-ARR_APPS_WITH_QBT = ("sonarr", "radarr", "lidarr", "readarr", "whisparr")
+ARR_APPS = ("sonarr", "radarr", "lidarr", "readarr", "whisparr")
 
 # Whisparr v3 names its DB whisparr3.db; the others match the service name.
 ARR_DB_PATHS = {
     svc: f"configs/{svc}/config/{'whisparr3' if svc == 'whisparr' else svc}.db"
-    for svc in ARR_APPS_WITH_QBT
+    for svc in ARR_APPS
 }
+
+# The arr apps that hold a qBittorrent client. Readarr never does: its retired
+# upstream cannot log in to qBittorrent 5.2 and later, so wire-connections.sh
+# fails to create one on every run (see the comment above
+# ensure_qbittorrent_client there), and rotate-passwords.sh has none to update.
+ARR_APPS_WITH_QBT = tuple(svc for svc in ARR_APPS if svc != "readarr")
 
 # Prowlarr keeps its own qBittorrent/SABnzbd DownloadClients (for its own
 # Interactive Search), separate from the arr apps' clients above.
@@ -398,11 +404,13 @@ def test_rotate_sabnzbd_credentials_propagate(running_containers):
     old_api_key = _sabnzbd_ini_value("api_key")
     old_nzb_key = _sabnzbd_ini_value("nzb_key")
 
+    # Only the API key is compared before rotating. wire-connections.sh gives
+    # each client the key alone (SABnzbd's API authenticates by it), so on a
+    # stack that is wired but not yet rotated the client's password field is
+    # empty, not sabnzbd.ini's. The first rotation fills it, which is what the
+    # checks after the rotation below hold it to.
     sonarr_db = REPO_ROOT / ARR_DB_PATHS["sonarr"]
-    db_old_password, db_old_api_key = _read_sabnzbd_creds_from_db(sonarr_db)
-    assert db_old_password == old_password, (
-        "Sonarr DB out of sync with sabnzbd.ini before rotation"
-    )
+    _, db_old_api_key = _read_sabnzbd_creds_from_db(sonarr_db)
     assert db_old_api_key == old_api_key, (
         "Sonarr DB out of sync with sabnzbd.ini before rotation"
     )
@@ -450,7 +458,7 @@ def test_rotate_sabnzbd_credentials_propagate(running_containers):
     )
 
     # All arr DBs were updated
-    for svc in ARR_APPS_WITH_QBT:
+    for svc in ARR_APPS:
         if not is_enabled(svc):
             continue
         db_path = REPO_ROOT / ARR_DB_PATHS[svc]
@@ -545,7 +553,7 @@ def test_rotate_sabnzbd_credentials_propagate(running_containers):
     SABNZBD_API_KEY_FILE.write_text(old_api_key)
     SABNZBD_API_KEY_FILE.chmod(0o644)
 
-    for svc in ARR_APPS_WITH_QBT:
+    for svc in ARR_APPS:
         # See the matching comment in test_rotate_qbittorrent_password_
         # propagates' own restore loop: is_enabled, not db_path.exists().
         if not is_enabled(svc):
