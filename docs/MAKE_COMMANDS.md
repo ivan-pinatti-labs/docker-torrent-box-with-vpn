@@ -109,6 +109,15 @@ after each run; a failed one is not retried.
 | `make rotate_passwords` | Rotates login passwords only. Same `SERVICE=` scoping. |
 | `make wire_connections` | Wires qBittorrent/SABnzbd into the \*arr apps as download clients, and those apps into Prowlarr as Applications, all through each app's own live API. Idempotent, safe to re-run any time, including after a rotation or after enabling a previously-disabled app. See [docs/CONNECTIONS.md](CONNECTIONS.md). |
 
+The scripts behind these targets (`wire-connections.sh`, `rotate-api-keys.sh`,
+`rotate-passwords.sh`, and `rotate-certificate.sh` behind
+`make rotate_certificate`) read each setting from `.env` first. A key an older
+`.env` lacks takes the value make passed down when there is one, and
+`.env.example`'s otherwise, which are the values compose itself uses.
+`rotate-certificate.sh` reads its certificate settings the same way from
+`certs/cert.conf`, then `certs/cert.conf.example`. A key set but empty in the
+file stays empty. A key found nowhere stops the script with its name.
+
 ## Permissions
 
 See [docs/PERMISSIONS.md](PERMISSIONS.md) for the ownership model these implement.

@@ -55,10 +55,23 @@ readonly REPO_ROOT
 cd "$REPO_ROOT"
 
 # Read a variable from .env without sourcing it (.env defines UID, which is a
-# readonly bash builtin, so `source .env` fails).
+# readonly bash builtin, so `source .env` fails). A .env seeded before a key
+# existed takes the value make passed down, else .env.example's, the default
+# make and compose would apply. A key found nowhere is named before the script
+# stops: a bare grep miss under pipefail used to end it before its first line
+# of output (#299).
 env_value() {
   local key="$1"
-  grep -m1 "^${key}=" .env | cut -d= -f2-
+  if grep -q "^${key}=" .env 2>/dev/null; then
+    grep -m1 "^${key}=" .env | cut -d= -f2-
+  elif [[ -n "${!key+set}" ]]; then
+    printf '%s\n' "${!key}"
+  elif grep -q "^${key}=" .env.example 2>/dev/null; then
+    grep -m1 "^${key}=" .env.example | cut -d= -f2-
+  else
+    echo "ERROR: ${key} is set in neither .env nor .env.example, nor in the environment." >&2
+    return 1
+  fi
 }
 
 # An image pin: the one .env holds back on purpose if there is one, else the
@@ -92,13 +105,9 @@ JELLYFIN_BASE_URL="$(env_value JELLYFIN_BASE_URL)"
 AUDIOBOOKSHELF_HTTP_PORT="$(env_value AUDIOBOOKSHELF_HTTP_PORT)"
 CALIBREWEB_VERSION="$(pin_value CALIBREWEB_VERSION)"
 FLARESOLVERR_HTTP_PORT="$(env_value FLARESOLVERR_HTTP_PORT)"
-# nginx's address on services, the only reverse proxy qBittorrent trusts. A
-# .env seeded before it existed lacks the key, so `|| true` keeps the grep's
-# miss from ending the script, and the value make exports from .env.example
-# fills the gap; ensure_qbittorrent_reverse_proxy skips when neither has it.
-NGINX_SERVICES_IP_INHERITED="${NGINX_SERVICES_IP:-}"
-NGINX_SERVICES_IP="$(env_value NGINX_SERVICES_IP || true)"
-NGINX_SERVICES_IP="${NGINX_SERVICES_IP:-$NGINX_SERVICES_IP_INHERITED}"
+# nginx's address on services, the only reverse proxy qBittorrent trusts.
+# ensure_qbittorrent_reverse_proxy skips when it is set but empty.
+NGINX_SERVICES_IP="$(env_value NGINX_SERVICES_IP)"
 readonly NGINX_SERVICES_IP
 readonly LAN_IP GLUETUN_SERVICES_IP QBITTORRENT_HTTPS_PORT SABNZBD_HTTP_PORT \
   SONARR_HTTP_PORT RADARR_HTTPS_PORT LIDARR_HTTPS_PORT READARR_HTTPS_PORT \

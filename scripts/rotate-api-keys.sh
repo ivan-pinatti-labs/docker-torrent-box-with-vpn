@@ -22,9 +22,22 @@ readonly TARGET="$1"
 
 # Read the network and port variables we need from .env without sourcing it
 # (.env defines UID, which is a readonly bash builtin, so `source .env` fails).
+# A .env seeded before a key existed takes the value make passed down, else
+# .env.example's, the default make and compose would apply. A key found
+# nowhere is named before the script stops: a bare grep miss under pipefail
+# used to end it silently (#299).
 env_value() {
   local key="$1"
-  grep -m1 "^${key}=" .env | cut -d= -f2-
+  if grep -q "^${key}=" .env 2>/dev/null; then
+    grep -m1 "^${key}=" .env | cut -d= -f2-
+  elif [[ -n "${!key+set}" ]]; then
+    printf '%s\n' "${!key}"
+  elif grep -q "^${key}=" .env.example 2>/dev/null; then
+    grep -m1 "^${key}=" .env.example | cut -d= -f2-
+  else
+    echo "ERROR: ${key} is set in neither .env nor .env.example, nor in the environment." >&2
+    return 1
+  fi
 }
 
 # Container names carry CONTAINER_PREFIX, which is empty for a deployment and

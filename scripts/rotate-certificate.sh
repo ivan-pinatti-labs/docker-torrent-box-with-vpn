@@ -15,11 +15,22 @@ cd "$REPO_ROOT"
 readonly CERT_CONF="certs/cert.conf"
 
 # Read a KEY=value entry from a file without sourcing it (.env defines UID,
-# which is a readonly bash builtin, so `source .env` fails).
+# which is a readonly bash builtin, so `source .env` fails). A file seeded
+# before a key existed takes the value make passed down, else its .example's,
+# the default make applies. A key found nowhere is named before the script
+# stops: a bare grep miss under pipefail used to end it silently (#299).
 env_value() {
-  local key="$1"
-  local file="$2"
-  grep -m1 "^${key}=" "$file" | cut -d= -f2-
+  local key="$1" file="$2"
+  if grep -q "^${key}=" "$file" 2>/dev/null; then
+    grep -m1 "^${key}=" "$file" | cut -d= -f2-
+  elif [[ -n "${!key+set}" ]]; then
+    printf '%s\n' "${!key}"
+  elif grep -q "^${key}=" "$file.example" 2>/dev/null; then
+    grep -m1 "^${key}=" "$file.example" | cut -d= -f2-
+  else
+    echo "ERROR: ${key} is set in neither $file nor $file.example, nor in the environment." >&2
+    return 1
+  fi
 }
 
 CERT_COUNTRY="$(env_value CERT_COUNTRY "$CERT_CONF")"

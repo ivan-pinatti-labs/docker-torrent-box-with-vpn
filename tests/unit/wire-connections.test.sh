@@ -21,9 +21,9 @@ __script_name=wire-connections.sh
 # shellcheck source=tests/unit/stack-stubs.bash
 source "$(dirname "${BASH_SOURCE[0]}")/stack-stubs.bash"
 
-# The script falls back to an inherited NGINX_SERVICES_IP when .env has none,
-# and `make coverage` exports one; each run below says which it wants.
-unset NGINX_SERVICES_IP
+# A value make exports stands in for a key .env lacks; each run below that
+# wants one passes it.
+unset NGINX_SERVICES_IP CONTAINER_PREFIX
 
 readonly ARR_APPS=(sonarr radarr lidarr readarr whisparr)
 # Prowlarr's application schema, one implementation per app it can register.
@@ -477,16 +477,37 @@ rule 'prowlarr curl -sk --fail -X PUT .*/indexerproxy/4$' 22 ""
 run
 check "a proxy that will not take the tag is reported" 0 out "[Prowlarr] WARNING: failed to tag the existing FlareSolverr indexer proxy."
 
-# Run H: a .env seeded before NGINX_SERVICES_IP existed.
+# Run H: a .env seeded before NGINX_SERVICES_IP and CONTAINER_PREFIX existed
+# (#299), whose keys .env.example supplies when make passed nothing down.
 deployment
-sed -i '/^NGINX_SERVICES_IP=/d' "${__repo}/.env"
+sed -i '/^NGINX_SERVICES_IP=/d; /^CONTAINER_PREFIX=/d' "${__repo}/.env"
+put .env.example "$(printf '%s\n' "CONTAINER_PREFIX=" "NGINX_SERVICES_IP=198.51.100.7")"
+containers qbittorrent
+rule "${QBT_PREFERENCES}" 0 '{"web_ui_reverse_proxy_enabled": false, "web_ui_reverse_proxies_list": ""}'
+run
+check "keys an older .env lacks come from .env.example" 0 out \
+  "[qBittorrent] Trusting only nginx (198.51.100.7) as its reverse proxy..."
+check "and the container name takes .env.example's empty prefix" 0 log "podman exec qbittorrent rm -f /tmp/qbt_wire_cookies."
+# The value make exports wins over .env.example's, as it does for compose.
+NGINX_SERVICES_IP=192.0.2.7 run
+check "a value make passes down comes before .env.example's" 0 out \
+  "[qBittorrent] Trusting only nginx (192.0.2.7) as its reverse proxy..."
+
+# A key set but empty in .env is respected, not replaced.
+deployment
+sed -i 's/^NGINX_SERVICES_IP=.*/NGINX_SERVICES_IP=/' "${__repo}/.env"
+put .env.example "NGINX_SERVICES_IP=198.51.100.7"
+containers
+NGINX_SERVICES_IP=192.0.2.7 run
+check "qBittorrent is skipped when nginx's address is empty" 0 out \
+  "[qBittorrent] NGINX_SERVICES_IP is not set, skipping reverse proxy trust."
+
+# A key in neither file stops the run with its name, before any output.
+deployment
+sed -i '/^CONTAINER_PREFIX=/d' "${__repo}/.env"
 containers
 run
-check "qBittorrent is skipped without nginx's address" 0 out \
-  "[qBittorrent] NGINX_SERVICES_IP is not set, skipping reverse proxy trust."
-NGINX_SERVICES_IP=10.0.0.7 run
-check "the address make exports stands in for .env" 0 out "[qBittorrent] Container doesn't exist, skipping."
-refute "and is not reported missing" out "NGINX_SERVICES_IP is not set"
+check "a key in neither file is named" 1 err "ERROR: CONTAINER_PREFIX is set in neither .env nor .env.example, nor in the environment."
 
 # Run I: the key file still holds the seeded placeholder when the run starts,
 # the race that stored it in Lidarr and Radarr in CI. Jellyfin's own job
