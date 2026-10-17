@@ -146,6 +146,24 @@ def _qbt_stored_password_hash() -> str:
     return ""
 
 
+def _qbittorrent_widget_failures(timeout: int = 60) -> list[str]:
+    """Homepage's qBittorrent widget failures, once its first login is behind it.
+
+    Homepage's qBittorrent proxy takes any login answer but 200 as a failure,
+    and qBittorrent 5.2 answers a successful login with 204. So the first
+    widget request after Homepage starts comes back 204 (Homepage logs "HTTP
+    204 logging in to qBittorrent"), and the next one, made with the session
+    that login opened, returns the torrents. Measured in a dev stack. The
+    check is repeated until it passes or the time runs out.
+    """
+    deadline = time.time() + timeout
+    while True:
+        failures = homepage_widget_failures(only_services={"qbittorrent"})
+        if not failures or time.time() >= deadline:
+            return failures
+        time.sleep(3)
+
+
 def _qbt_restart_and_wait():
     subprocess.run(  # nosec B607 - podman is a trusted, fixed CLI in this stack
         ["podman", "restart", "qbittorrent"], check=True, capture_output=True
@@ -286,7 +304,7 @@ def test_rotate_qbittorrent_password_propagates(running_containers):
 
     if "homepage" in running_containers:
         assert wait_for_homepage_ready(), "homepage API did not respond after rotation"
-        failures = homepage_widget_failures(only_services={"qbittorrent"})
+        failures = _qbittorrent_widget_failures()
         assert not failures, (
             "Homepage qBittorrent widget broken after rotation:\n" + "\n".join(failures)
         )
@@ -316,7 +334,7 @@ def test_rotate_qbittorrent_password_propagates(running_containers):
     if "homepage" in running_containers:
         recreate_container("homepage")
         assert wait_for_homepage_ready(), "homepage API did not respond after restore"
-        failures = homepage_widget_failures(only_services={"qbittorrent"})
+        failures = _qbittorrent_widget_failures()
         assert not failures, (
             "Homepage qBittorrent widget broken after restore:\n" + "\n".join(failures)
         )
