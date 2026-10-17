@@ -414,6 +414,14 @@ def test_rotate_sabnzbd_credentials_propagate(running_containers):
     assert db_old_api_key == old_api_key, (
         "Sonarr DB out of sync with sabnzbd.ini before rotation"
     )
+    # Each client's own credentials, put back as they were after the test.
+    # Restoring sabnzbd.ini's password instead would leave a client that had
+    # none holding one.
+    db_old_creds = {
+        svc: _read_sabnzbd_creds_from_db(REPO_ROOT / ARR_DB_PATHS[svc])
+        for svc in ARR_APPS
+        if is_enabled(svc) and (REPO_ROOT / ARR_DB_PATHS[svc]).exists()
+    }
 
     result = _run_script("rotate-passwords.sh", "sabnzbd")
     assert result.returncode == 0, (
@@ -553,14 +561,13 @@ def test_rotate_sabnzbd_credentials_propagate(running_containers):
     SABNZBD_API_KEY_FILE.write_text(old_api_key)
     SABNZBD_API_KEY_FILE.chmod(0o644)
 
-    for svc in ARR_APPS:
-        # See the matching comment in test_rotate_qbittorrent_password_
-        # propagates' own restore loop: is_enabled, not db_path.exists().
-        if not is_enabled(svc):
-            continue
-        db_path = REPO_ROOT / ARR_DB_PATHS[svc]
-        if db_path.exists():
-            _set_sabnzbd_creds_in_db(db_path, old_password, old_api_key)
+    # Only the apps read before rotating: see the matching comment in
+    # test_rotate_qbittorrent_password_propagates' own restore loop for why
+    # that is is_enabled, not db_path.exists().
+    for svc, (svc_password, svc_api_key) in db_old_creds.items():
+        _set_sabnzbd_creds_in_db(
+            REPO_ROOT / ARR_DB_PATHS[svc], svc_password, svc_api_key
+        )
 
     if "homepage" in running_containers:
         recreate_container("homepage")
