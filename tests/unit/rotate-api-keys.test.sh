@@ -214,17 +214,21 @@ check "container names carry CONTAINER_PREFIX" 0 log "podman stop --time 60 dev-
 refute "no homepage, no recreate" log "podman-compose"
 
 # A .env seeded before CONTAINER_PREFIX existed takes .env.example's (#299).
+unset CONTAINER_PREFIX
 deployment
 sed -i '/^CONTAINER_PREFIX=/d' "${__repo}/.env"
 put .env.example "CONTAINER_PREFIX=dev-"
 containers dev-bazarr
 run bazarr
 check "a key .env lacks comes from .env.example" 0 log "podman stop --time 60 dev-bazarr"
+containers live-bazarr
+CONTAINER_PREFIX=live- run bazarr
+check "a value make passes down comes before .env.example's" 0 log "podman stop --time 60 live-bazarr"
 
 # A key in neither file is named, rather than ending the run silently.
 rm "${__repo}/.env.example"
 run bazarr
-check "a key in neither file is named" 1 err "ERROR: CONTAINER_PREFIX is set in neither .env nor .env.example."
+check "a key in neither file is named" 1 err "ERROR: CONTAINER_PREFIX is set in neither .env nor .env.example, nor in the environment."
 
 # Profiles and containers.
 deployment

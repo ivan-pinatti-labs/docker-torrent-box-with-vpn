@@ -56,19 +56,22 @@ cd "$REPO_ROOT"
 
 # Read a variable from .env without sourcing it (.env defines UID, which is a
 # readonly bash builtin, so `source .env` fails). A .env seeded before a key
-# existed takes .env.example's value for it, the default make and compose
-# would apply. A key in neither file is named before the script stops: a bare
-# grep miss under pipefail used to end it before its first line of output.
+# existed takes the value make passed down, else .env.example's, the default
+# make and compose would apply. A key found nowhere is named before the script
+# stops: a bare grep miss under pipefail used to end it before its first line
+# of output (#299).
 env_value() {
-  local key="$1" file
-  for file in .env .env.example; do
-    if grep -q "^${key}=" "$file" 2>/dev/null; then
-      grep -m1 "^${key}=" "$file" | cut -d= -f2-
-      return 0
-    fi
-  done
-  echo "ERROR: ${key} is set in neither .env nor .env.example." >&2
-  return 1
+  local key="$1"
+  if grep -q "^${key}=" .env 2>/dev/null; then
+    grep -m1 "^${key}=" .env | cut -d= -f2-
+  elif [[ -n "${!key+set}" ]]; then
+    printf '%s\n' "${!key}"
+  elif grep -q "^${key}=" .env.example 2>/dev/null; then
+    grep -m1 "^${key}=" .env.example | cut -d= -f2-
+  else
+    echo "ERROR: ${key} is set in neither .env nor .env.example, nor in the environment." >&2
+    return 1
+  fi
 }
 
 # An image pin: the one .env holds back on purpose if there is one, else the

@@ -198,14 +198,17 @@ check "refuses a short password length" 1 err "ERROR: ROTATE_PASSWORD_LENGTH mus
 
 # A key .env lacks comes from .env.example (#299), and one in neither file is
 # named rather than ending the run silently.
+unset ROTATE_PASSWORD_LENGTH
 deployment
 sed -i "/^ROTATE_PASSWORD_LENGTH=/d" "${__repo}/.env"
 put .env.example "ROTATE_PASSWORD_LENGTH=6"
 run all
 check "a key .env lacks comes from .env.example" 1 err "ERROR: ROTATE_PASSWORD_LENGTH must be an integer >= 8 (got '6')"
+ROTATE_PASSWORD_LENGTH=5 run all
+check "a value make passes down comes before .env.example's" 1 err "ERROR: ROTATE_PASSWORD_LENGTH must be an integer >= 8 (got '5')"
 rm "${__repo}/.env.example"
 run all
-check "a key in neither file is named" 1 err "ERROR: ROTATE_PASSWORD_LENGTH is set in neither .env nor .env.example."
+check "a key in neither file is named" 1 err "ERROR: ROTATE_PASSWORD_LENGTH is set in neither .env nor .env.example, nor in the environment."
 
 deployment
 sed -i "s/^ROTATE_PASSWORD_LENGTH=16$/ROTATE_PASSWORD_LENGTH=20/; s/^ROTATE_PASSWORD_SPECIAL_CHARS=false$/ROTATE_PASSWORD_SPECIAL_CHARS=TRUE/" "${__repo}/.env"

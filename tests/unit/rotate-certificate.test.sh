@@ -133,14 +133,17 @@ check "fails when Jellyfin's password did not change" 1 err "ERROR: CertificateP
 
 # A key a file lacks comes from its .example (#299), and one in neither is
 # named rather than ending the run silently.
+unset GLUETUN_OBSERVABILITY_IP
 fresh_repo
 sed -i '/^GLUETUN_OBSERVABILITY_IP=/d' "${__scratch}/repo/.env"
-echo GLUETUN_OBSERVABILITY_IP=172.18.0.2 >"${__scratch}/repo/.env.example"
+echo GLUETUN_OBSERVABILITY_IP=198.51.100.2 >"${__scratch}/repo/.env.example"
 run
-check "a key .env lacks comes from .env.example" 0 log "IP:172.16.0.2, IP:172.18.0.2"
+check "a key .env lacks comes from .env.example" 0 log "IP:172.16.0.2, IP:198.51.100.2"
+GLUETUN_OBSERVABILITY_IP=192.0.2.20 run
+check "a value make passes down comes before .env.example's" 0 log "IP:172.16.0.2, IP:192.0.2.20"
 rm "${__scratch}/repo/.env.example"
 run
-check "a key in neither file is named" 1 err "ERROR: GLUETUN_OBSERVABILITY_IP is set in neither .env nor .env.example."
+check "a key in neither file is named" 1 err "ERROR: GLUETUN_OBSERVABILITY_IP is set in neither .env nor .env.example, nor in the environment."
 
 if [[ "${__failures}" -gt 0 ]]; then
   echo "${__failures} failed" >&2
