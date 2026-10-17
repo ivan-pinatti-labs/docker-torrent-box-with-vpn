@@ -89,16 +89,38 @@ def live_db(path):
     middle of a CI run exactly that way (#305), the same hazard AGENTS.md
     describes for host side writes. Reading a copy of the database and its
     write ahead log from a temporary directory leaves the live one untouched.
-    A log that vanishes mid copy (the app ran a checkpoint) is not read.
+
+    The two files are copied one after the other, so a checkpoint in between
+    would pair a database from before it with a log from after it, or with
+    none. The copy is kept only when neither file changed while it was taken,
+    and taken again otherwise.
     """
     path = Path(path)
+    wal = Path(f"{path}-wal")
+
+    def stamp(file):
+        try:
+            stat = file.stat()
+        except FileNotFoundError:
+            return None
+        return stat.st_size, stat.st_mtime_ns
+
     with tempfile.TemporaryDirectory() as tmp:
         copy = Path(tmp) / path.name
-        shutil.copyfile(path, copy)
-        try:
-            shutil.copyfile(f"{path}-wal", f"{copy}-wal")
-        except FileNotFoundError:
-            pass
+        copy_wal = Path(f"{copy}-wal")
+        for _ in range(20):
+            before = stamp(path), stamp(wal)
+            shutil.copyfile(path, copy)
+            copy_wal.unlink(missing_ok=True)
+            try:
+                shutil.copyfile(wal, copy_wal)
+            except FileNotFoundError:
+                pass
+            if (stamp(path), stamp(wal)) == before:
+                break
+            time.sleep(0.25)
+        else:
+            raise AssertionError(f"{path} kept changing while it was being copied")
         conn = sqlite3.connect(copy)
         try:
             yield conn
