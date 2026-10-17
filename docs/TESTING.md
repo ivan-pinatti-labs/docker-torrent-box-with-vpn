@@ -464,9 +464,10 @@ pins in `tests/requirements.txt`, the integration suite's own environment,
 which is not a lock and is unchanged.
 
 `scripts/requirements.in` and its lock `scripts/requirements.txt` work the
-same way, from `scripts`. They hold the pyyaml that `tests/ci-suite.sh`
-installs in the nested test runner before seeding the stack, since
-`scripts/permissions.py` runs there with that interpreter directly.
+same way, from `scripts`. They hold the pyyaml and bcrypt that
+`tests/ci-suite.sh` installs in the nested test runner before seeding the
+stack, since `scripts/permissions.py` and the password hashing in
+`scripts/rotate-passwords.sh` run there with that interpreter directly.
 
 #### A security fix younger than seven days
 

@@ -65,8 +65,11 @@ the optional monitoring stack. See
 | Yq                             | >4.44.x     | <https://github.com/mikefarah/yq>                                                     |
 | XML starlet                    | >1.6.x      | <https://xmlstar.sourceforge.net/doc/UG/xmlstarlet-ug.html>                           |
 | Python 3 (with PyYAML)         | >3.9        | `pip install --user pyyaml`, or your distro's `python3-yaml`/`python3-pyyaml` package |
+| Python bcrypt                  | -           | `pip install --user bcrypt`, or your distro's `python3-bcrypt` package                |
 
-These are what the stack itself needs. The test suite needs only Podman, plus
+These are what the stack itself needs (bcrypt is for password rotation, which
+hashes the Audiobookshelf and NZBHydra2 passwords with it). The test suite
+needs only Podman, plus
 the nested test runner image the test targets pull on first use: every test
 target stands its own stack up inside that image, with its own Python and
 tools, and never touches a stack or a Python on the host. See

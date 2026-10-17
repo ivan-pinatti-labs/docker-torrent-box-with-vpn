@@ -42,13 +42,19 @@ pytestmark = [pytest.mark.rotation, pytest.mark.pw_rotation]
 TIMEOUT = 30
 SCRIPTS = REPO_ROOT / "scripts"
 
-ARR_APPS_WITH_QBT = ("sonarr", "radarr", "lidarr", "readarr", "whisparr")
+ARR_APPS = ("sonarr", "radarr", "lidarr", "readarr", "whisparr")
 
 # Whisparr v3 names its DB whisparr3.db; the others match the service name.
 ARR_DB_PATHS = {
     svc: f"configs/{svc}/config/{'whisparr3' if svc == 'whisparr' else svc}.db"
-    for svc in ARR_APPS_WITH_QBT
+    for svc in ARR_APPS
 }
+
+# The arr apps that hold a qBittorrent client. Readarr never does: its retired
+# upstream cannot log in to qBittorrent 5.2 and later, so wire-connections.sh
+# fails to create one on every run (see the comment above
+# ensure_qbittorrent_client there), and rotate-passwords.sh has none to update.
+ARR_APPS_WITH_QBT = tuple(svc for svc in ARR_APPS if svc != "readarr")
 
 # Prowlarr keeps its own qBittorrent/SABnzbd DownloadClients (for its own
 # Interactive Search), separate from the arr apps' clients above.
@@ -138,6 +144,24 @@ def _qbt_stored_password_hash() -> str:
         if line.startswith("WebUI\\Password_PBKDF2="):
             return line.split("=", 1)[1]
     return ""
+
+
+def _qbittorrent_widget_failures(timeout: int = 60) -> list[str]:
+    """Homepage's qBittorrent widget failures, once its first login is behind it.
+
+    Homepage's qBittorrent proxy takes any login answer but 200 as a failure,
+    and qBittorrent 5.2 answers a successful login with 204. So the first
+    widget request after Homepage starts comes back 204 (Homepage logs "HTTP
+    204 logging in to qBittorrent"), and the next one, made with the session
+    that login opened, returns the torrents. Measured in a dev stack. The
+    check is repeated until it passes or the time runs out.
+    """
+    deadline = time.time() + timeout
+    while True:
+        failures = homepage_widget_failures(only_services={"qbittorrent"})
+        if not failures or time.time() >= deadline:
+            return failures
+        time.sleep(3)
 
 
 def _qbt_restart_and_wait():
@@ -280,7 +304,7 @@ def test_rotate_qbittorrent_password_propagates(running_containers):
 
     if "homepage" in running_containers:
         assert wait_for_homepage_ready(), "homepage API did not respond after rotation"
-        failures = homepage_widget_failures(only_services={"qbittorrent"})
+        failures = _qbittorrent_widget_failures()
         assert not failures, (
             "Homepage qBittorrent widget broken after rotation:\n" + "\n".join(failures)
         )
@@ -310,7 +334,7 @@ def test_rotate_qbittorrent_password_propagates(running_containers):
     if "homepage" in running_containers:
         recreate_container("homepage")
         assert wait_for_homepage_ready(), "homepage API did not respond after restore"
-        failures = homepage_widget_failures(only_services={"qbittorrent"})
+        failures = _qbittorrent_widget_failures()
         assert not failures, (
             "Homepage qBittorrent widget broken after restore:\n" + "\n".join(failures)
         )
@@ -398,14 +422,24 @@ def test_rotate_sabnzbd_credentials_propagate(running_containers):
     old_api_key = _sabnzbd_ini_value("api_key")
     old_nzb_key = _sabnzbd_ini_value("nzb_key")
 
+    # Only the API key is compared before rotating. wire-connections.sh gives
+    # each client the key alone (SABnzbd's API authenticates by it), so on a
+    # stack that is wired but not yet rotated the client's password field is
+    # empty, not sabnzbd.ini's. The first rotation fills it, which is what the
+    # checks after the rotation below hold it to.
     sonarr_db = REPO_ROOT / ARR_DB_PATHS["sonarr"]
-    db_old_password, db_old_api_key = _read_sabnzbd_creds_from_db(sonarr_db)
-    assert db_old_password == old_password, (
-        "Sonarr DB out of sync with sabnzbd.ini before rotation"
-    )
+    _, db_old_api_key = _read_sabnzbd_creds_from_db(sonarr_db)
     assert db_old_api_key == old_api_key, (
         "Sonarr DB out of sync with sabnzbd.ini before rotation"
     )
+    # Each client's own credentials, put back as they were after the test.
+    # Restoring sabnzbd.ini's password instead would leave a client that had
+    # none holding one.
+    db_old_creds = {
+        svc: _read_sabnzbd_creds_from_db(REPO_ROOT / ARR_DB_PATHS[svc])
+        for svc in ARR_APPS
+        if is_enabled(svc) and (REPO_ROOT / ARR_DB_PATHS[svc]).exists()
+    }
 
     result = _run_script("rotate-passwords.sh", "sabnzbd")
     assert result.returncode == 0, (
@@ -450,7 +484,7 @@ def test_rotate_sabnzbd_credentials_propagate(running_containers):
     )
 
     # All arr DBs were updated
-    for svc in ARR_APPS_WITH_QBT:
+    for svc in ARR_APPS:
         if not is_enabled(svc):
             continue
         db_path = REPO_ROOT / ARR_DB_PATHS[svc]
@@ -545,14 +579,17 @@ def test_rotate_sabnzbd_credentials_propagate(running_containers):
     SABNZBD_API_KEY_FILE.write_text(old_api_key)
     SABNZBD_API_KEY_FILE.chmod(0o644)
 
-    for svc in ARR_APPS_WITH_QBT:
-        # See the matching comment in test_rotate_qbittorrent_password_
-        # propagates' own restore loop: is_enabled, not db_path.exists().
-        if not is_enabled(svc):
-            continue
-        db_path = REPO_ROOT / ARR_DB_PATHS[svc]
-        if db_path.exists():
-            _set_sabnzbd_creds_in_db(db_path, old_password, old_api_key)
+    # Only the apps read before rotating: see the matching comment in
+    # test_rotate_qbittorrent_password_propagates' own restore loop for why
+    # that is is_enabled, not db_path.exists().
+    for svc, (svc_password, svc_api_key) in db_old_creds.items():
+        _set_sabnzbd_creds_in_db(
+            REPO_ROOT / ARR_DB_PATHS[svc], svc_password, svc_api_key
+        )
+    for svc, saved in db_old_creds.items():
+        assert _read_sabnzbd_creds_from_db(REPO_ROOT / ARR_DB_PATHS[svc]) == saved, (
+            f"{svc} DB does not hold its own SABnzbd credentials after the restore"
+        )
 
     if "homepage" in running_containers:
         recreate_container("homepage")
