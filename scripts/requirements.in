@@ -9,3 +9,7 @@
 # directly. Keep pyyaml equal to the pins in tests/requirements.txt and
 # tests/unit/requirements.in.
 pyyaml==6.0.3
+# scripts/rotate-passwords.sh hashes the new Audiobookshelf and NZBHydra2
+# passwords with it (bcrypt_hash). Without it in the runner, the password
+# rotation tier failed on both every run (#304).
+bcrypt==5.0.0
