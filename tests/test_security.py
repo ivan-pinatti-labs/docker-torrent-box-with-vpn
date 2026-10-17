@@ -1,7 +1,6 @@
 """Container security: hardening config, non-root processes, and config file access."""
 
 import shutil
-import sqlite3
 import subprocess
 
 import pytest
@@ -12,6 +11,7 @@ from conftest import (
     env,
     fresh_container,
     is_enabled,
+    live_db,
     skip_if_disabled,
     skip_if_not_running,
 )
@@ -475,13 +475,10 @@ def test_servarr_remote_path_mappings_not_needed_for_shared_data_mount():
     for app, db in dbs.items():
         if not is_enabled(app):
             continue
-        conn = sqlite3.connect(REPO_ROOT / db)
-        try:
+        with live_db(REPO_ROOT / db) as conn:
             count = conn.execute("SELECT COUNT(*) FROM RemotePathMappings").fetchone()[
                 0
             ]
-        finally:
-            conn.close()
         assert count == 0, f"{db} contains RemotePathMappings"
 
 

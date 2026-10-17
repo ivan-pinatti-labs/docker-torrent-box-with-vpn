@@ -1,7 +1,10 @@
 import configparser
+import contextlib
 import os
 import shutil
+import sqlite3
 import subprocess
+import tempfile
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -59,14 +62,48 @@ def pytest_collection_modifyitems(config, items):
     worker, so grouping by app serialises the pair per app while different apps
     still run concurrently. Applied here rather than as a per-parameter mark so
     it covers both rotation files and anything added to them later.
+
+    Sonarr and Radarr share one group. Rotating either key rewrites Bazarr's
+    config.yaml and Recyclarr's secrets and restarts Bazarr, and so does
+    restoring it, so on two workers one case read config.yaml while the other
+    was rewriting it and got no `sonarr` section back (#305).
     """
+    shared = {"sonarr": "sonarr-radarr", "radarr": "sonarr-radarr"}
     for item in items:
         if item.get_closest_marker("rotation_isolated") is None:
             continue
         params = getattr(item, "callspec", None)
         app = params.params.get("app") if params else None
         if app:
-            item.add_marker(pytest.mark.xdist_group(app))
+            item.add_marker(pytest.mark.xdist_group(shared.get(app, app)))
+
+
+@contextlib.contextmanager
+def live_db(path):
+    """A connection to a private copy of an app's live SQLite database.
+
+    Opening the live file from the suite, even read only, lets SQLite create
+    the -wal and -shm sidecars whenever the app has just removed them, owned
+    by the suite's user rather than the app's. The app then cannot open its
+    own database: Readarr answered "unable to open database file" in the
+    middle of a CI run exactly that way (#305), the same hazard AGENTS.md
+    describes for host side writes. Reading a copy of the database and its
+    write ahead log from a temporary directory leaves the live one untouched.
+    A log that vanishes mid copy (the app ran a checkpoint) is not read.
+    """
+    path = Path(path)
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = Path(tmp) / path.name
+        shutil.copyfile(path, copy)
+        try:
+            shutil.copyfile(f"{path}-wal", f"{copy}-wal")
+        except FileNotFoundError:
+            pass
+        conn = sqlite3.connect(copy)
+        try:
+            yield conn
+        finally:
+            conn.close()
 
 
 def read_secret(owner: str, name: str):
