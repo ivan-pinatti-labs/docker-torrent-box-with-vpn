@@ -37,6 +37,10 @@ CALIBRE_VERSION="$(awk -F= '$1 == "CALIBRE_VERSION" { sub(/^[^=]*=/, ""); print;
 readonly CALIBRE_VERSION
 
 echo "Pre-creating the Calibre library at ${LIBRARY_DIR}..."
+# The same reference docker-compose-media-library.yml runs, so the image this
+# pulls is the one the stack starts later, and no second registry is involved.
+# It came from lscr.io before; a pull from there that hung for 15 minutes
+# ended a CI run (#305).
 podman run --rm -v "$(pwd)/${LIBRARY_DIR}:/library:z" --entrypoint calibredb \
-  "lscr.io/linuxserver/calibre:${CALIBRE_VERSION}" list --library-path /library >/dev/null
+  "docker.io/linuxserver/calibre:${CALIBRE_VERSION}" list --library-path /library >/dev/null
 echo "Calibre library pre-created."

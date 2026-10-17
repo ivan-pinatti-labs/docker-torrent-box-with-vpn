@@ -49,7 +49,7 @@ check() {
 run
 check "announces the new library" out "Pre-creating the Calibre library at data/media/calibre-library..."
 check "creates it with calibredb in the pinned image" log \
-  "podman run --rm -v ${__scratch}/work/data/media/calibre-library:/library:z --entrypoint calibredb lscr.io/linuxserver/calibre:v8.1.0 list --library-path /library"
+  "podman run --rm -v ${__scratch}/work/data/media/calibre-library:/library:z --entrypoint calibredb docker.io/linuxserver/calibre:v8.1.0 list --library-path /library"
 check "reports the library created" out "Calibre library pre-created."
 
 # A .env with no pin of its own takes the committed one, and a hold in .env
@@ -57,10 +57,10 @@ check "reports the library created" out "Calibre library pre-created."
 echo "CALIBRE_VERSION=v9.0.0" >"${__scratch}/work/versions.env"
 echo "LAN_IP=192.168.1.20" >"${__scratch}/work/.env"
 run
-check "takes the pin from versions.env" log "lscr.io/linuxserver/calibre:v9.0.0 list"
+check "takes the pin from versions.env" log "docker.io/linuxserver/calibre:v9.0.0 list"
 printf '%s\n' "# hold: testing" "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
 run
-check "lets a pin in .env override versions.env" log "lscr.io/linuxserver/calibre:v8.1.0 list"
+check "lets a pin in .env override versions.env" log "docker.io/linuxserver/calibre:v8.1.0 list"
 
 mkdir -p "${__scratch}/work/data/media/calibre-library"
 touch "${__scratch}/work/data/media/calibre-library/metadata.db"
