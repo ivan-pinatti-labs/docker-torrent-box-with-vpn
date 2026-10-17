@@ -16,7 +16,7 @@ import subprocess
 
 import pytest
 
-from conftest import REPO_ROOT
+from conftest import REPO_ROOT, live_db
 
 pytestmark = pytest.mark.scripts
 
@@ -159,14 +159,11 @@ def test_readarr_comic_profile_is_idempotent(tmp_path):
     if not READARR_DB.exists():
         pytest.skip("readarr database not present")
     db_copy = tmp_path / "readarr.db"
-    source = sqlite3.connect(f"file:{READARR_DB}?mode=ro", uri=True)
-    try:
+    with live_db(READARR_DB) as source:
         target = sqlite3.connect(db_copy)
         with target:
             source.backup(target)
         target.close()
-    finally:
-        source.close()
 
     env = {"READARR_DB": str(db_copy)}
     script = str(SCRIPTS / "readarr-add-comic-profile.py")

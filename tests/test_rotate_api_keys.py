@@ -14,7 +14,6 @@ Run explicitly with:
 """
 
 import json
-import sqlite3
 import subprocess
 import time
 import xml.etree.ElementTree as ET
@@ -28,6 +27,7 @@ from conftest import (
     container_http,
     homepage_widget_failures,
     is_enabled,
+    live_db,
     read_secret,
     restart_container,
     skip_if_not_running,
@@ -114,13 +114,12 @@ def _arr_prowlarr_indexer_apikeys(db_rel: str) -> dict[str, str]:
     db_path = REPO_ROOT / db_rel
     if not db_path.exists():
         return {}
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     result = {}
-    for name, settings in conn.execute("SELECT Name, Settings FROM Indexers"):
-        data = json.loads(settings)
-        if "prowlarr" in str(data.get("baseUrl", "")).lower():
-            result[name] = data.get("apiKey")
-    conn.close()
+    with live_db(db_path) as conn:
+        for name, settings in conn.execute("SELECT Name, Settings FROM Indexers"):
+            data = json.loads(settings)
+            if "prowlarr" in str(data.get("baseUrl", "")).lower():
+                result[name] = data.get("apiKey")
     return result
 
 
@@ -209,13 +208,10 @@ def _prowlarr_stored_key(app_name: str) -> str | None:
     The Prowlarr API redacts apiKey values in GET responses, so the only way
     to verify the stored value is to read the Applications table directly.
     """
-    conn = sqlite3.connect(
-        f"file:{REPO_ROOT}/configs/prowlarr/config/prowlarr.db?mode=ro", uri=True
-    )
-    row = conn.execute(
-        "SELECT Settings FROM Applications WHERE Name = ?", (app_name,)
-    ).fetchone()
-    conn.close()
+    with live_db(REPO_ROOT / "configs/prowlarr/config/prowlarr.db") as conn:
+        row = conn.execute(
+            "SELECT Settings FROM Applications WHERE Name = ?", (app_name,)
+        ).fetchone()
     if row is None:
         return None
     return json.loads(row[0]).get("apiKey")
@@ -263,13 +259,40 @@ def _set_prowlarr_key_for_app(
     )
 
 
+def _bazarr_running() -> bool:
+    result = subprocess.run(  # nosec B607 - podman is a trusted, fixed CLI in this stack
+        ["podman", "inspect", "bazarr", "--format", "{{.State.Running}}"],
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip() == "true"
+
+
 def _restore_yaml_consumers(app: str, old_key: str):
-    """Restore Bazarr and Recyclarr entries for sonarr/radarr."""
-    with open(BAZARR_CONFIG) as fh:
-        bazarr_cfg = yaml.safe_load(fh)
-    bazarr_cfg[app]["apikey"] = old_key
-    with open(BAZARR_CONFIG, "w") as fh:
-        yaml.dump(bazarr_cfg, fh, default_flow_style=False, allow_unicode=True)
+    """Restore Bazarr and Recyclarr entries for sonarr/radarr.
+
+    A running Bazarr is stopped around the edit, the way rotate-api-keys.sh
+    edits it: it writes config.yaml back from memory, so an edit made while
+    it runs can be lost, and it rewrites the file as it starts.
+    """
+    running = _bazarr_running()
+    if running:
+        subprocess.run(  # nosec B607 - podman is a trusted, fixed CLI in this stack
+            ["podman", "stop", "bazarr"], check=True, capture_output=True
+        )
+    try:
+        with open(BAZARR_CONFIG) as fh:
+            bazarr_cfg = yaml.safe_load(fh)
+        bazarr_cfg[app]["apikey"] = old_key
+        with open(BAZARR_CONFIG, "w") as fh:
+            yaml.dump(bazarr_cfg, fh, default_flow_style=False, allow_unicode=True)
+    finally:
+        if running:
+            subprocess.run(  # nosec B607 - podman is a trusted, fixed CLI in this stack
+                ["podman", "start", "bazarr"], check=True, capture_output=True
+            )
+    if running:
+        assert wait_for_healthy("bazarr"), "bazarr did not become healthy after restore"
 
     # RECYCLARR_PROFILE is disabled by default, and rotate-api-keys.sh
     # itself already skips this file cleanly when it doesn't exist yet
@@ -423,6 +446,12 @@ def test_rotate_api_key_propagates(
 
     # Sonarr and Radarr also propagate to Bazarr and recyclarr
     if app in ("sonarr", "radarr"):
+        # The script restarted Bazarr, which rewrites config.yaml as it
+        # starts; healthy means that write is done.
+        if _bazarr_running():
+            assert wait_for_healthy("bazarr"), (
+                "bazarr did not become healthy after rotation"
+            )
         with open(BAZARR_CONFIG) as fh:
             bazarr_cfg = yaml.safe_load(fh)
         assert bazarr_cfg[app]["apikey"] == new_key, (
@@ -777,14 +806,14 @@ def test_rotate_nzbhydra2_api_key(running_containers):
         db_path = REPO_ROOT / db_rel
         if not db_path.exists():
             continue
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        for name, settings in conn.execute("SELECT Name, Settings FROM Indexers"):
+        with live_db(db_path) as conn:
+            rows = conn.execute("SELECT Name, Settings FROM Indexers").fetchall()
+        for name, settings in rows:
             data = json.loads(settings)
             if "nzbhydra" in str(data.get("baseUrl", "")).lower():
                 assert data.get("apiKey") == new_key, (
                     f"{svc} indexer '{name}' still holds the old NZBHydra2 key"
                 )
-        conn.close()
 
     # Mylar's extra_newznabs/extra_torznabs entries carry the new key
     assert new_key in (REPO_ROOT / MYLAR_INI).read_text(), (

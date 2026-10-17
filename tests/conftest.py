@@ -1,7 +1,10 @@
 import configparser
+import contextlib
 import os
 import shutil
+import sqlite3
 import subprocess
+import tempfile
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -59,14 +62,70 @@ def pytest_collection_modifyitems(config, items):
     worker, so grouping by app serialises the pair per app while different apps
     still run concurrently. Applied here rather than as a per-parameter mark so
     it covers both rotation files and anything added to them later.
+
+    Sonarr and Radarr share one group. Rotating either key rewrites Bazarr's
+    config.yaml and Recyclarr's secrets and restarts Bazarr, and so does
+    restoring it, so on two workers one case read config.yaml while the other
+    was rewriting it and got no `sonarr` section back (#305).
     """
+    shared = {"sonarr": "sonarr-radarr", "radarr": "sonarr-radarr"}
     for item in items:
         if item.get_closest_marker("rotation_isolated") is None:
             continue
         params = getattr(item, "callspec", None)
         app = params.params.get("app") if params else None
         if app:
-            item.add_marker(pytest.mark.xdist_group(app))
+            item.add_marker(pytest.mark.xdist_group(shared.get(app, app)))
+
+
+@contextlib.contextmanager
+def live_db(path):
+    """A connection to a private copy of an app's live SQLite database.
+
+    Opening the live file from the suite, even read only, lets SQLite create
+    the -wal and -shm sidecars whenever the app has just removed them, owned
+    by the suite's user rather than the app's. The app then cannot open its
+    own database: Readarr answered "unable to open database file" in the
+    middle of a CI run exactly that way (#305), the same hazard AGENTS.md
+    describes for host side writes. Reading a copy of the database and its
+    write ahead log from a temporary directory leaves the live one untouched.
+
+    The two files are copied one after the other, so a checkpoint in between
+    would pair a database from before it with a log from after it, or with
+    none. The copy is kept only when neither file changed while it was taken,
+    and taken again otherwise.
+    """
+    path = Path(path)
+    wal = Path(f"{path}-wal")
+
+    def stamp(file):
+        try:
+            stat = file.stat()
+        except FileNotFoundError:
+            return None
+        return stat.st_size, stat.st_mtime_ns
+
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = Path(tmp) / path.name
+        copy_wal = Path(f"{copy}-wal")
+        for _ in range(20):
+            before = stamp(path), stamp(wal)
+            shutil.copyfile(path, copy)
+            copy_wal.unlink(missing_ok=True)
+            try:
+                shutil.copyfile(wal, copy_wal)
+            except FileNotFoundError:
+                pass
+            if (stamp(path), stamp(wal)) == before:
+                break
+            time.sleep(0.25)
+        else:
+            raise AssertionError(f"{path} kept changing while it was being copied")
+        conn = sqlite3.connect(copy)
+        try:
+            yield conn
+        finally:
+            conn.close()
 
 
 def read_secret(owner: str, name: str):

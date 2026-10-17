@@ -29,6 +29,7 @@ from conftest import (
     container_http,
     homepage_widget_failures,
     is_enabled,
+    live_db,
     read_api_key,
     recreate_container,
     skip_if_not_running,
@@ -80,13 +81,10 @@ def _run_script(
 
 def _read_qbt_password_from_db(db_path) -> str:
     """Return the plain-text qBittorrent password stored in an arr DB."""
-    conn = sqlite3.connect(str(db_path))
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT Settings FROM DownloadClients WHERE ConfigContract='QBittorrentSettings' LIMIT 1"
-    )
-    row = cur.fetchone()
-    conn.close()
+    with live_db(db_path) as conn:
+        row = conn.execute(
+            "SELECT Settings FROM DownloadClients WHERE ConfigContract='QBittorrentSettings' LIMIT 1"
+        ).fetchone()
     assert row is not None, f"No QBittorrentSettings row in {db_path}"
     return json.loads(row[0]).get("password", "")
 
@@ -367,13 +365,10 @@ def _set_sabnzbd_ini(key: str, value: str):
 
 def _read_sabnzbd_creds_from_db(db_path) -> tuple[str, str]:
     """Return (password, apiKey) stored in an arr DB's SabnzbdSettings."""
-    conn = sqlite3.connect(str(db_path))
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT Settings FROM DownloadClients WHERE ConfigContract='SabnzbdSettings' LIMIT 1"
-    )
-    row = cur.fetchone()
-    conn.close()
+    with live_db(db_path) as conn:
+        row = conn.execute(
+            "SELECT Settings FROM DownloadClients WHERE ConfigContract='SabnzbdSettings' LIMIT 1"
+        ).fetchone()
     assert row is not None, f"No SabnzbdSettings row in {db_path}"
     settings = json.loads(row[0])
     return settings.get("password", ""), settings.get("apiKey", "")
@@ -609,11 +604,8 @@ def test_rotate_sabnzbd_credentials_propagate(running_containers):
 
 def _read_arr_password_hash(db_path) -> str | None:
     """Return the raw password hash from an arr app's Users table."""
-    conn = sqlite3.connect(str(db_path))
-    cur = conn.cursor()
-    cur.execute("SELECT Password FROM Users LIMIT 1")
-    row = cur.fetchone()
-    conn.close()
+    with live_db(db_path) as conn:
+        row = conn.execute("SELECT Password FROM Users LIMIT 1").fetchone()
     return row[0] if row else None
 
 
@@ -890,13 +882,10 @@ def test_rotate_calibre_password(docker_client):
     new_password = _summary_password(result.stdout, "calibre")
     assert new_password, "Summary table does not contain the new calibre password"
 
-    conn = sqlite3.connect(
-        str(REPO_ROOT / "configs/calibre/config/.config/calibre/server-users.sqlite")
-    )
-    cur = conn.cursor()
-    cur.execute("SELECT pw FROM users WHERE name = 'calibre'")
-    row = cur.fetchone()
-    conn.close()
+    with live_db(
+        REPO_ROOT / "configs/calibre/config/.config/calibre/server-users.sqlite"
+    ) as conn:
+        row = conn.execute("SELECT pw FROM users WHERE name = 'calibre'").fetchone()
     assert row is not None and row[0] == new_password, (
         "server-users.sqlite does not hold the new calibre password"
     )
@@ -1032,13 +1021,10 @@ def test_rotate_jellyfin_password(running_containers):
 
 def _abs_password_hash() -> str:
     """Return the bcrypt hash stored for the root user in absdatabase.sqlite."""
-    conn = sqlite3.connect(
-        str(REPO_ROOT / "configs/audiobookshelf/config/absdatabase.sqlite")
-    )
-    cur = conn.cursor()
-    cur.execute("SELECT pash FROM users WHERE username = 'root'")
-    row = cur.fetchone()
-    conn.close()
+    with live_db(
+        REPO_ROOT / "configs/audiobookshelf/config/absdatabase.sqlite"
+    ) as conn:
+        row = conn.execute("SELECT pash FROM users WHERE username = 'root'").fetchone()
     assert row is not None, "No root user in absdatabase.sqlite"
     return row[0]
 
