@@ -586,6 +586,10 @@ def test_rotate_sabnzbd_credentials_propagate(running_containers):
         _set_sabnzbd_creds_in_db(
             REPO_ROOT / ARR_DB_PATHS[svc], svc_password, svc_api_key
         )
+    for svc, saved in db_old_creds.items():
+        assert _read_sabnzbd_creds_from_db(REPO_ROOT / ARR_DB_PATHS[svc]) == saved, (
+            f"{svc} DB does not hold its own SABnzbd credentials after the restore"
+        )
 
     if "homepage" in running_containers:
         recreate_container("homepage")
