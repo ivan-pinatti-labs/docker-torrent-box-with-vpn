@@ -196,6 +196,17 @@ sed -i "s/^ROTATE_PASSWORD_LENGTH=16$/ROTATE_PASSWORD_LENGTH=4/" "${__repo}/.env
 run all
 check "refuses a short password length" 1 err "ERROR: ROTATE_PASSWORD_LENGTH must be an integer >= 8 (got '4')"
 
+# A key .env lacks comes from .env.example (#299), and one in neither file is
+# named rather than ending the run silently.
+deployment
+sed -i "/^ROTATE_PASSWORD_LENGTH=/d" "${__repo}/.env"
+put .env.example "ROTATE_PASSWORD_LENGTH=6"
+run all
+check "a key .env lacks comes from .env.example" 1 err "ERROR: ROTATE_PASSWORD_LENGTH must be an integer >= 8 (got '6')"
+rm "${__repo}/.env.example"
+run all
+check "a key in neither file is named" 1 err "ERROR: ROTATE_PASSWORD_LENGTH is set in neither .env nor .env.example."
+
 deployment
 sed -i "s/^ROTATE_PASSWORD_LENGTH=16$/ROTATE_PASSWORD_LENGTH=20/; s/^ROTATE_PASSWORD_SPECIAL_CHARS=false$/ROTATE_PASSWORD_SPECIAL_CHARS=TRUE/" "${__repo}/.env"
 touch "${__state}/dash-first"

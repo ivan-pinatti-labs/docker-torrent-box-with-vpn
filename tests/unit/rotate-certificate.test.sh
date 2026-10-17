@@ -131,6 +131,17 @@ echo configs/jellyfin/config/network.xml >"${__scratch}/stuck"
 run
 check "fails when Jellyfin's password did not change" 1 err "ERROR: CertificatePassword did not update as expected"
 
+# A key a file lacks comes from its .example (#299), and one in neither is
+# named rather than ending the run silently.
+fresh_repo
+sed -i '/^GLUETUN_OBSERVABILITY_IP=/d' "${__scratch}/repo/.env"
+echo GLUETUN_OBSERVABILITY_IP=172.18.0.2 >"${__scratch}/repo/.env.example"
+run
+check "a key .env lacks comes from .env.example" 0 log "IP:172.16.0.2, IP:172.18.0.2"
+rm "${__scratch}/repo/.env.example"
+run
+check "a key in neither file is named" 1 err "ERROR: GLUETUN_OBSERVABILITY_IP is set in neither .env nor .env.example."
+
 if [[ "${__failures}" -gt 0 ]]; then
   echo "${__failures} failed" >&2
   exit 1
