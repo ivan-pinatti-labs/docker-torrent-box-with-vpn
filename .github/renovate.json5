@@ -219,6 +219,14 @@
   // releases are spotted and pulled within hours to days, so waiting is what
   // turns "we merged it first" into "it was already yanked". See
   // docs/HARDENING.md.
+  //
+  // For images the window only works on Docker Hub, the one registry Renovate
+  // reads a push date from. An image from any other registry has no date to
+  // age, so its updates are held here indefinitely and released by hand once a
+  // person has checked the date the registry recorded. Images are pulled from
+  // Docker Hub wherever their own publisher pushes the same artifact there;
+  // docs/DEPENDENCY_UPDATES.md, "Images outside Docker Hub", lists the rest
+  // and the procedure.
   minimumReleaseAge: "7 days",
 
   // Hold the pull request until the window is satisfied rather than opening one
@@ -468,7 +476,7 @@
         "docker.io/linuxserver/readarr",
         "docker.io/linuxserver/prowlarr",
         "docker.io/linuxserver/bazarr",
-        "ghcr.io/recyclarr/recyclarr",
+        "docker.io/recyclarr/recyclarr",
       ],
       groupName: "arr suite",
       groupSlug: "arr-suite",
@@ -530,7 +538,7 @@
         "docker.io/linuxserver/calibre",
         "docker.io/linuxserver/calibre-web",
         "docker.io/linuxserver/lazylibrarian",
-        "ghcr.io/advplyr/audiobookshelf",
+        "docker.io/advplyr/audiobookshelf",
         "ghcr.io/nperez0111/koreader-sync",
       ],
       groupName: "library and reading tools",
@@ -559,7 +567,7 @@
     // docker.io/library/alpine is log_rotator's, and the reason it is not in
     // the observability group is written there. docker.io/linuxserver/mylar3 is the
     // base of a wrapper this repository builds itself, so a bump rebuilds an
-    // image rather than pulling one. ghcr.io/notifiarr/notifiarr feeds a
+    // image rather than pulling one. docker.io/golift/notifiarr feeds a
     // service that is commented out in docker-compose-servarr.yml, and
     // docker.io/linuxserver/jackett feeds no service at all: both are watched
     // anyway, because an unwatched pin is the thing this change exists to stop,

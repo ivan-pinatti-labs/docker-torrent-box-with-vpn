@@ -309,7 +309,13 @@ What is placed against it instead:
   reaches a release, so the window has already been applied once, upstream.
   Skipping it changes when Renovate offers the bump, not whether it merges
   unattended: that is still `Pin Only` and the suite below. The reasoning is in
-  ivan-pinatti-labs/.github's README.md, "Dependency policy".
+  ivan-pinatti-labs/.github's README.md, "Dependency policy". For container
+  images the window can only count from Docker Hub's push date, the one registry
+  Renovate reads a date from, so images are pulled from Docker Hub wherever
+  their publisher pushes the same artifact there, and the few that cannot be
+  are held for a person to release after checking the date their own registry
+  recorded: [docs/DEPENDENCY_UPDATES.md](DEPENDENCY_UPDATES.md), "Images
+  outside Docker Hub".
 - **Digest pinning** (`pinDigests`). Every image that names a version is pinned
   to its manifest-list digest, so a republished tag cannot change what runs
   without a pull request saying so.

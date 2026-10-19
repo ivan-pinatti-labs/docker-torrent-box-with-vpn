@@ -30,7 +30,7 @@ podman stop lazylibrarian && podman rm lazylibrarian && make start
 ### Dockerfile
 
 `build/lazylibrarian/Dockerfile`: multi-stage build copying `calibre.txz` from
-`ghcr.io/linuxserver/mods:universal-calibre` and installing the system library
+`docker.io/linuxserver/mods:universal-calibre` and installing the system library
 dependencies required by Calibre before extracting the bundle.
 
 ---

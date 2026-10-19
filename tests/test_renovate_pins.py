@@ -16,6 +16,12 @@ while the annotations are registry-qualified, so it matched zero of its five
 members, and another named `ghcr.io/tprasadtp/protonwire`, which this
 repository has never pulled.
 
+A fourth way needs no mistake at all: an annotated image from a registry
+other than Docker Hub, which the seven day window holds forever because
+Renovate reads a release date from Docker Hub alone. Those have to be on the
+list in docs/DEPENDENCY_UPDATES.md that is released by hand, and a test checks
+that each one is.
+
 Marked `prerequisites` rather than carrying a marker of its own, so
 `make test_prerequisites` picks it up. That target is what the `Prerequisite
 Checks` job in .github/workflows/pull-request-validation.yml runs, so these
@@ -46,6 +52,8 @@ ENV_EXAMPLE = REPO_ROOT / ".env.example"
 RENOVATE_CONFIG = REPO_ROOT / ".github" / "renovate.json5"
 PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+DEPENDENCY_DOC = REPO_ROOT / "docs" / "DEPENDENCY_UPDATES.md"
+OUTSIDE_DOCKER_HUB_HEADING = "## Images outside Docker Hub"
 
 # Tags deliberately left on a channel rather than a version. There is no
 # version here for Renovate to bump, so an annotation would only produce
@@ -113,7 +121,7 @@ BUILD_ARG_LINE = re.compile(r"^\s*#?\s*BASE_VERSION:\s*\$\{(?P<var>[A-Z0-9_]+)\}
 
 # The FROM that consumes BASE_VERSION, not the first FROM in the file.
 # build/lazylibrarian/Dockerfile is multi stage and its first stage pulls
-# ghcr.io/linuxserver/mods, so taking the first FROM would compare an
+# docker.io/linuxserver/mods, so taking the first FROM would compare an
 # annotation against the wrong image entirely.
 FROM_BASE_VERSION = re.compile(r"^FROM\s+(?P<ref>\S+):\$\{BASE_VERSION\}", re.MULTILINE)
 
@@ -454,6 +462,51 @@ def test_annotation_names_the_image_the_stack_pulls(variable):
         f"{variable} is annotated `depName={declared_name}` but {source} names "
         f"{expected}, so Renovate is watching the wrong image. Point the "
         f"annotation at {expected}."
+    )
+
+
+def _image_annotations_outside_docker_hub() -> list[str]:
+    """Every annotated image the stack pulls from a registry other than Docker Hub.
+
+    Renovate reads a release date from Docker Hub alone, so the seven day
+    window holds an update for any other registry indefinitely, and the only
+    sign is an entry on the Dependency Dashboard. The images are the pins in
+    versions.env and the stages the wrappers under build/ are built from. A
+    first path segment with a dot in it is a registry host; `docker.io` is
+    Docker Hub spelled out.
+    """
+    sources = [VERSIONS_FILE, *sorted((REPO_ROOT / "build").glob("*/Dockerfile"))]
+    names = set()
+    for path in sources:
+        for name in ANNOTATION.findall(path.read_text()):
+            host = name.split("/", 1)[0]
+            if "." in host and host != "docker.io":
+                names.add(name)
+    return sorted(names)
+
+
+def _outside_docker_hub_section() -> str:
+    """docs/DEPENDENCY_UPDATES.md's "Images outside Docker Hub", up to the next section."""
+    text = DEPENDENCY_DOC.read_text()
+    start = text.index(OUTSIDE_DOCKER_HUB_HEADING)
+    end = text.find("\n## ", start + len(OUTSIDE_DOCKER_HUB_HEADING))
+    return text[start : end if end != -1 else len(text)]
+
+
+@pytest.mark.parametrize("image", _image_annotations_outside_docker_hub())
+def test_image_outside_docker_hub_is_documented(image):
+    """An image the window cannot age has to be on the list released by hand.
+
+    Before this list existed, every image from another registry sat frozen for
+    two months with nothing red anywhere (issue #321). The list is where the
+    manual release procedure starts, so an image missing from it is one nobody
+    will ever release.
+    """
+    assert f"`{image}`" in _outside_docker_hub_section(), (
+        f"{image} comes from a registry Renovate reads no release date from, so "
+        f"its updates are held indefinitely. Pull it from Docker Hub if its own "
+        f"publisher pushes the same artifact there, or add it to the held table "
+        f'under "{OUTSIDE_DOCKER_HUB_HEADING[3:]}" in {DEPENDENCY_DOC.name}.'
     )
 
 
