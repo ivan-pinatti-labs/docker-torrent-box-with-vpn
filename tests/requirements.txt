@@ -22,7 +22,7 @@
 # releases is more than seven days old as of 2026-09-03. Dependabot maintains
 # them from here, under the cooldown, and the suite is what clears them.
 docker==7.2.0
-json5==0.15.0
+json5==0.17.3
 pytest==9.1.1
 pytest-testinfra==10.2.2
 pytest-xdist==3.8.0
