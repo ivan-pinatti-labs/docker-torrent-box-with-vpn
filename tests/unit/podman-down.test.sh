@@ -13,7 +13,8 @@
 # container depends on, and `network rm` refuses a network while a container
 # of its project exists. A container listed under stuck/ cannot be removed at
 # all, and when the file ps-ok exists, podman ps fails once it has answered
-# that many calls. sleep only logs.
+# that many calls. When network-exists-fails exists, `network exists` fails
+# the way podman does on an error, with 125. sleep only logs.
 
 set -o errexit
 set -o pipefail
@@ -112,7 +113,10 @@ network)
   while read -r network; do
     if [[ "\${network}" == "\${3}" ]]; then exists=0; else others+=("\${network}"); fi
   done <"\${state}/networks"
-  [[ "\${2}" == exists ]] && exit "\${exists}"
+  if [[ "\${2}" == exists ]]; then
+    [[ -e "\${state}/network-exists-fails" ]] && exit 125
+    exit "\${exists}"
+  fi
   for file in "\${state}"/c/*; do
     if [[ -e "\${file}" && "\${3}" == "\$(field "\${file##*/}" 0)_"* ]]; then
       echo "Error: network \${3} is in use" >&2
@@ -263,6 +267,13 @@ check "fails when a container cannot be removed" 1 err "these containers of proj
 check "and names it" 1 err "  gluetun"
 check "shows the error podman gave" 1 err "cannot remove container gluetun"
 check "fails when a network is still in use" 1 err "could not remove network box_wan."
+
+fresh
+networks box
+touch "${__state}/network-exists-fails"
+COMPOSE_PROJECT_NAME=box run
+check "fails when podman cannot tell whether a network exists" 1 err "podman could not tell whether network box_wan exists."
+check_absent "and does not try to remove it" log "podman network rm"
 
 # Listing works until the check of what is left, the sixth podman ps here.
 fresh gluetun:box:gluetun:exited:-

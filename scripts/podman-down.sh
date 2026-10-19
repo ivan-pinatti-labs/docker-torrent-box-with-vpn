@@ -83,10 +83,18 @@ elif [[ -n "$left" ]]; then
 fi
 
 # Even with no containers left, so a network an earlier run could not remove
-# goes now. One that does not exist is not an error; one still in use is.
+# goes now. One that does not exist is not an error; one still in use is, and
+# so is a podman that cannot tell (exists answers 1 for absent, 125 on error).
 for network in "${NETWORKS[@]}"; do
   name="${PROJECT}_${network}"
-  podman network exists "$name" || continue
+  exists=0
+  podman network exists "$name" || exists=$?
+  [[ "$exists" -eq 1 ]] && continue
+  if [[ "$exists" -ne 0 ]]; then
+    echo "ERROR: podman could not tell whether network ${name} exists." >&2
+    status=1
+    continue
+  fi
   if ! podman network rm "$name" >/dev/null; then
     echo "ERROR: could not remove network ${name}." >&2
     status=1
