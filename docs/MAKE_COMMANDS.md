@@ -27,7 +27,7 @@ directly.
 | `make start_library` | Starts only the Media Library containers (`docker-compose-media-library.yml`). |
 | `make start_observability` | Starts only the observability stack (Prometheus, Loki, Grafana, Alloy, exporters). |
 | `make stop` / `make stop_all` | Stops all containers without removing them. |
-| `make down` | Stops **and removes** all containers (state on disk is untouched). |
+| `make down` | Stops **and removes** all containers (state on disk is untouched). Under Podman it finds them by the compose project label, so it also removes containers created before a `CONTAINER_PREFIX` change, and it fails, keeping the remembered `VPN_ON`, when a container or network of the project is left behind. |
 | `make restart` | Restarts Gluetun first and waits for it to be healthy, then restarts everything else, avoiding a race where VPN-namespace-sharing containers (qBittorrent, SABnzbd, JDownloader2) restart concurrently with Gluetun and get left attached to its old, torn-down network namespace. |
 | `make heal_vpn_dependents` | Detects and restarts any container still attached to Gluetun's *previous* network namespace after Gluetun restarted on its own (its `restart: unless-stopped` policy, or a lost WireGuard handshake) outside of `make restart`. |
 | `make pull_docker_images` | Pulls every enabled image without stopping or restarting anything. |

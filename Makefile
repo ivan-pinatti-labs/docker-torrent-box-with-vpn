@@ -497,33 +497,7 @@ detect_secrets_create_baseline:
 down:
 	@echo "Stopping containers (if they are running)..."
 	@if [ "$(RUNTIME)" = "podman" ]; then \
-		project_filter="label=com.docker.compose.project=$(COMPOSE_PROJECT_NAME)"; \
-		project_containers="$$(podman ps --all --filter "$$project_filter" --format "{{.Names}}")"; \
-		if [ -z "$$project_containers" ]; then \
-			echo "No stack containers found."; \
-		else \
-			running_containers="$$(podman ps --filter "$$project_filter" --format "{{.Names}}")"; \
-			if [ -n "$$running_containers" ]; then \
-				echo "$$running_containers" | xargs -r podman kill --signal TERM >/dev/null || true; \
-				elapsed=0; \
-				while [ "$$elapsed" -lt "$(PODMAN_DOWN_TIMEOUT)" ]; do \
-					remaining="$$(podman ps --filter "$$project_filter" --format "{{.Names}}")"; \
-					[ -z "$$remaining" ] && break; \
-					sleep 1; \
-					elapsed=$$((elapsed + 1)); \
-				done; \
-				remaining="$$(podman ps --filter "$$project_filter" --format "{{.Names}}")"; \
-				if [ -n "$$remaining" ]; then \
-					echo "Force-killing containers still running after $(PODMAN_DOWN_TIMEOUT)s..."; \
-					echo "$$remaining" | xargs -r podman kill >/dev/null || true; \
-				fi; \
-			fi; \
-			echo "$$project_containers" | grep -vx $(CONTAINER_PREFIX)gluetun | xargs -r podman rm --force --time 0 >/dev/null || true; \
-			echo "$$project_containers" | grep -x $(CONTAINER_PREFIX)gluetun | xargs -r podman rm --force --time 0 >/dev/null || true; \
-			for network in edge wan apps services media observability; do \
-				podman network rm "$(COMPOSE_PROJECT_NAME)_$$network" >/dev/null 2>&1 || true; \
-			done; \
-		fi; \
+		PODMAN_DOWN_TIMEOUT=$(PODMAN_DOWN_TIMEOUT) ./scripts/podman-down.sh; \
 	else \
 		$(COMPOSE) $(STOP_COMPOSE_FILES) --profile enabled down --timeout 60; \
 	fi
