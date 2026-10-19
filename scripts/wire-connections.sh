@@ -92,6 +92,7 @@ LAN_IP="$(env_value LAN_IP)"
 GLUETUN_SERVICES_IP="$(env_value GLUETUN_SERVICES_IP)"
 QBITTORRENT_HTTPS_PORT="$(env_value QBITTORRENT_HTTPS_PORT)"
 SABNZBD_HTTP_PORT="$(env_value SABNZBD_HTTP_PORT)"
+SABNZBD_HTTPS_PORT="$(env_value SABNZBD_HTTPS_PORT)"
 SONARR_HTTP_PORT="$(env_value SONARR_HTTP_PORT)"
 RADARR_HTTPS_PORT="$(env_value RADARR_HTTPS_PORT)"
 LIDARR_HTTPS_PORT="$(env_value LIDARR_HTTPS_PORT)"
@@ -110,7 +111,7 @@ FLARESOLVERR_HTTP_PORT="$(env_value FLARESOLVERR_HTTP_PORT)"
 NGINX_SERVICES_IP="$(env_value NGINX_SERVICES_IP)"
 readonly NGINX_SERVICES_IP
 readonly LAN_IP GLUETUN_SERVICES_IP QBITTORRENT_HTTPS_PORT SABNZBD_HTTP_PORT \
-  SONARR_HTTP_PORT RADARR_HTTPS_PORT LIDARR_HTTPS_PORT READARR_HTTPS_PORT \
+  SABNZBD_HTTPS_PORT SONARR_HTTP_PORT RADARR_HTTPS_PORT LIDARR_HTTPS_PORT READARR_HTTPS_PORT \
   WHISPARR_HTTPS_PORT PROWLARR_HTTPS_PORT LAZYLIBRARIAN_HTTP_PORT MYLAR_HTTPS_PORT \
   JELLYFIN_BASE_URL CALIBREWEB_VERSION \
   JELLYFIN_HTTP_PORT AUDIOBOOKSHELF_HTTP_PORT FLARESOLVERR_HTTP_PORT
@@ -883,12 +884,15 @@ ensure_readarr_metadata_source() {
 # function of its own rather than a multi line quoted argument, which kcov
 # would count as shell lines that never run.
 
-# Points an existing download client's host and port fields at new values.
-host_port_jq() {
+# Points an existing download client's host, port and useSsl fields at new
+# values. The three move together: a port changed on its own can leave TLS
+# on against a plain port, which the app's save time test rejects (#300).
+client_address_jq() {
   cat <<'JQ'
 .fields |= map(
   if .name == "host" then .value = $host
   elif .name == "port" then .value = ($port | tonumber)
+  elif .name == "useSsl" then .value = $ssl
   else . end)
 JQ
 }
@@ -938,22 +942,25 @@ ensure_qbittorrent_client() {
     # payload is built from $existing itself, not the schema used for
     # creation, so username and password stay exactly what the client
     # already has instead of being read from files and resupplied here.
-    local existing_host existing_port
+    # qBittorrent's WebUI serves TLS only, so useSsl is part of the address
+    # and is corrected with it (#300).
+    local existing_host existing_port existing_ssl
     existing_host=$(jq -r '.fields[] | select(.name == "host") | .value' <<<"$existing")
     existing_port=$(jq -r '.fields[] | select(.name == "port") | .value' <<<"$existing")
-    if [[ "$existing_host" == "$GLUETUN_SERVICES_IP" && "$existing_port" == "$QBITTORRENT_HTTPS_PORT" ]]; then
+    existing_ssl=$(jq 'any(.fields[]; .name == "useSsl" and .value == true)' <<<"$existing")
+    if [[ "$existing_host" == "$GLUETUN_SERVICES_IP" && "$existing_port" == "$QBITTORRENT_HTTPS_PORT" && "$existing_ssl" == true ]]; then
       echo "[$app_name] qBittorrent download client already exists, skipping."
       return 0
     fi
 
-    echo "[$app_name] qBittorrent download client host/port stale (${existing_host}:${existing_port}), correcting to ${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}..."
+    echo "[$app_name] qBittorrent download client stale (${existing_host}:${existing_port}, useSsl ${existing_ssl}), correcting to ${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}, useSsl true..."
     local id payload
     id=$(jq -r '.id' <<<"$existing")
-    payload=$(jq --arg host "$GLUETUN_SERVICES_IP" --arg port "$QBITTORRENT_HTTPS_PORT" "$(host_port_jq)" <<<"$existing")
+    payload=$(jq --arg host "$GLUETUN_SERVICES_IP" --arg port "$QBITTORRENT_HTTPS_PORT" --argjson ssl true "$(client_address_jq)" <<<"$existing")
 
     local response
-    if ! response=$(container_curl "$container" -sk --fail -X PUT -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" -d "$payload" "${base_url}/${id}" 2>&1); then
-      echo "[$app_name] WARNING: failed to update qBittorrent download client host: ${response:0:300}"
+    if ! response=$(send_arr_connection "$container" PUT "${base_url}/${id}" "$api_key" "$payload"); then
+      echo "[$app_name] WARNING: failed to update qBittorrent download client: ${response:0:300}"
       return 1
     fi
     echo "[$app_name] Updated."
@@ -971,15 +978,15 @@ ensure_qbittorrent_client() {
   local payload
   payload=$(echo "$schema" | jq --arg host "$GLUETUN_SERVICES_IP" --arg port "$QBITTORRENT_HTTPS_PORT" --arg username "$username" --arg password "$password" --arg category "$category" "$(qbittorrent_client_jq)")
 
-  # Caught explicitly rather than left to a bare --fail under this script's
-  # set -e: a caller that isolates a failure here with `cmd || warn` does
-  # not actually protect the commands *inside* this function (a documented
-  # bash errexit gotcha: set -e stops applying to everything on the left
-  # of a && / || / if, including nested subshells), so an unhandled failure
-  # here would otherwise fall through to the unconditional "Created." line
-  # below despite nothing having been created.
+  # Caught explicitly rather than left to this script's set -e: a caller
+  # that isolates a failure here with `cmd || warn` does not actually
+  # protect the commands *inside* this function (a documented bash errexit
+  # gotcha: set -e stops applying to everything on the left of a && / || /
+  # if, including nested subshells), so an unhandled failure here would
+  # otherwise fall through to the unconditional "Created." line below
+  # despite nothing having been created.
   local response
-  if ! response=$(container_curl "$container" -sk --fail -X POST -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" -d "$payload" "$base_url" 2>&1); then # pragma: allowlist secret
+  if ! response=$(send_arr_connection "$container" POST "$base_url" "$api_key" "$payload"); then # pragma: allowlist secret
     echo "[$app_name] WARNING: failed to create qBittorrent download client: ${response:0:300}"
     return 1
   fi
@@ -1053,22 +1060,33 @@ ensure_sabnzbd_client() {
     # reasoning for reconciling conditionally and for basing the update
     # payload on $existing so its apiKey is preserved rather than reread and
     # resupplied.
-    local existing_host existing_port
+    #
+    # SABnzbd answers plain HTTP on SABNZBD_HTTP_PORT and TLS on
+    # SABNZBD_HTTPS_PORT, so two addresses work: the HTTP port with useSsl
+    # off, which is what a client created here gets, and the HTTPS port with
+    # useSsl on. A client already on the second is kept there rather than
+    # moved, and anything else goes to the first, with useSsl set alongside
+    # the port so the update is never TLS against the plain port (#300).
+    local existing_host existing_port existing_ssl want_port="$SABNZBD_HTTP_PORT" want_ssl=false
     existing_host=$(jq -r '.fields[] | select(.name == "host") | .value' <<<"$existing")
     existing_port=$(jq -r '.fields[] | select(.name == "port") | .value' <<<"$existing")
-    if [[ "$existing_host" == "$GLUETUN_SERVICES_IP" && "$existing_port" == "$SABNZBD_HTTP_PORT" ]]; then
+    existing_ssl=$(jq 'any(.fields[]; .name == "useSsl" and .value == true)' <<<"$existing")
+    if [[ "$existing_port" == "$SABNZBD_HTTPS_PORT" && "$existing_ssl" == true ]]; then
+      want_port="$SABNZBD_HTTPS_PORT" want_ssl=true
+    fi
+    if [[ "$existing_host" == "$GLUETUN_SERVICES_IP" && "$existing_port" == "$want_port" && "$existing_ssl" == "$want_ssl" ]]; then
       echo "[$app_name] SABnzbd download client already exists, skipping."
       return 0
     fi
 
-    echo "[$app_name] SABnzbd download client host/port stale (${existing_host}:${existing_port}), correcting to ${GLUETUN_SERVICES_IP}:${SABNZBD_HTTP_PORT}..."
+    echo "[$app_name] SABnzbd download client stale (${existing_host}:${existing_port}, useSsl ${existing_ssl}), correcting to ${GLUETUN_SERVICES_IP}:${want_port}, useSsl ${want_ssl}..."
     local id payload
     id=$(jq -r '.id' <<<"$existing")
-    payload=$(jq --arg host "$GLUETUN_SERVICES_IP" --arg port "$SABNZBD_HTTP_PORT" "$(host_port_jq)" <<<"$existing")
+    payload=$(jq --arg host "$GLUETUN_SERVICES_IP" --arg port "$want_port" --argjson ssl "$want_ssl" "$(client_address_jq)" <<<"$existing")
 
     local response
-    if ! response=$(container_curl "$container" -sk --fail -X PUT -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" -d "$payload" "${base_url}/${id}" 2>&1); then # pragma: allowlist secret
-      echo "[$app_name] WARNING: failed to update SABnzbd download client host: ${response:0:300}"
+    if ! response=$(send_arr_connection "$container" PUT "${base_url}/${id}" "$api_key" "$payload"); then # pragma: allowlist secret
+      echo "[$app_name] WARNING: failed to update SABnzbd download client: ${response:0:300}"
       return 1
     fi
     echo "[$app_name] Updated."
@@ -1086,12 +1104,11 @@ ensure_sabnzbd_client() {
   payload=$(echo "$schema" | jq --arg host "$GLUETUN_SERVICES_IP" --arg port "$SABNZBD_HTTP_PORT" --arg urlBase "/sabnzbd" --arg apiKey "$sab_api_key" --arg category "$category" "$(sabnzbd_client_jq)")
 
   # See ensure_qbittorrent_client's matching comment: this is caught
-  # explicitly, not left to a bare --fail, since a caller-side `|| warn`
-  # cannot protect commands inside this function from set -e's own
-  # exit-on-failure semantics being suppressed for everything on the left
-  # of that ||.
+  # explicitly, not left to set -e, since a caller-side `|| warn` cannot
+  # protect commands inside this function from set -e's own exit-on-failure
+  # semantics being suppressed for everything on the left of that ||.
   local response
-  if ! response=$(container_curl "$container" -sk --fail -X POST -H "X-Api-Key: ${api_key}" -H "Content-Type: application/json" -d "$payload" "$base_url" 2>&1); then # pragma: allowlist secret
+  if ! response=$(send_arr_connection "$container" POST "$base_url" "$api_key" "$payload"); then # pragma: allowlist secret
     echo "[$app_name] WARNING: failed to create SABnzbd download client: ${response:0:300}"
     return 1
   fi

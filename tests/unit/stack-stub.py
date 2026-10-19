@@ -324,8 +324,11 @@ FILTERS = {
         map_fields(d, {"apiKey": a["key"]})
     ],
     '.fields |= map( if .name == "host" then .value = $host elif .name == "port" then .value = ($port | tonumber) '
-    "else . end)": lambda d, a: [
-        map_fields(d, {"host": a["host"], "port": int(a["port"])})
+    'elif .name == "useSsl" then .value = $ssl else . end)': lambda d, a: [
+        map_fields(d, {"host": a["host"], "port": int(a["port"]), "useSsl": a["ssl"]})
+    ],
+    'any(.fields[]; .name == "useSsl" and .value == true)': lambda d, a: [
+        any(f["name"] == "useSsl" and f.get("value") is True for f in d["fields"])
     ],
     ".username = $cred | .password = $cred | .passwordConfirmation = $cred | .certificateValidation = "
     '"disabledForLocalAddresses"': lambda d, a: [

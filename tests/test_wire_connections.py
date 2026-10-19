@@ -123,6 +123,25 @@ def _field(client: dict, name: str) -> object:
     raise KeyError(name)
 
 
+def _assert_sabnzbd_address(label: str, client: dict) -> None:
+    """The client is on one of the two addresses SABnzbd answers (#300).
+
+    Its HTTP port without TLS, which is what the script creates, or its
+    HTTPS port with TLS, which the script leaves alone. Never a port with
+    the other one's useSsl, which the app's own save time test rejects.
+    """
+    assert _field(client, "host") == _env("GLUETUN_SERVICES_IP")
+    address = (_field(client, "port"), _field(client, "useSsl"))
+    working = {
+        (int(_env("SABNZBD_HTTP_PORT")), False),
+        (int(_env("SABNZBD_HTTPS_PORT")), True),
+    }
+    assert address in working, (
+        f"[{label}] SABnzbd client is on port {address[0]} with useSsl "
+        f"{address[1]}, not one of {sorted(working)}"
+    )
+
+
 @pytest.fixture(scope="module", autouse=True)
 def run_wire_connections(request):
     """Run the wiring script once for the whole module (it's idempotent).
@@ -167,6 +186,7 @@ def test_qbittorrent_client_wired(app, running_containers):
     assert client["enable"] is True
     assert _field(client, "host") == _env("GLUETUN_SERVICES_IP")
     assert _field(client, "port") == int(_env("QBITTORRENT_HTTPS_PORT"))
+    assert _field(client, "useSsl") is True
     # qBittorrent's own categories.json uses each app's bare name.
     category_field = next(
         f["name"]
@@ -188,8 +208,7 @@ def test_sabnzbd_client_wired(app, running_containers):
     )
     client = matches[0]
     assert client["enable"] is True
-    assert _field(client, "host") == _env("GLUETUN_SERVICES_IP")
-    assert _field(client, "port") == int(_env("SABNZBD_HTTP_PORT"))
+    _assert_sabnzbd_address(app, client)
     category_field = next(
         f["name"]
         for f in client["fields"]
@@ -231,6 +250,7 @@ def test_prowlarr_qbittorrent_client_wired(running_containers):
     assert client["enable"] is True
     assert _field(client, "host") == _env("GLUETUN_SERVICES_IP")
     assert _field(client, "port") == int(_env("QBITTORRENT_HTTPS_PORT"))
+    assert _field(client, "useSsl") is True
 
 
 def test_prowlarr_sabnzbd_client_wired(running_containers):
@@ -243,8 +263,7 @@ def test_prowlarr_sabnzbd_client_wired(running_containers):
     )
     client = matches[0]
     assert client["enable"] is True
-    assert _field(client, "host") == _env("GLUETUN_SERVICES_IP")
-    assert _field(client, "port") == int(_env("SABNZBD_HTTP_PORT"))
+    _assert_sabnzbd_address("prowlarr", client)
 
 
 def test_prowlarr_flaresolverr_indexer_proxy_wired(running_containers):
@@ -499,6 +518,86 @@ def test_wiring_is_idempotent(running_containers):
                 f"[{app}] expected exactly one {implementation} client after "
                 f"re-running, found {len(matches)}"
             )
+
+
+def _put_download_client(app: str, client: dict) -> tuple[int, str]:
+    scheme, port_var, api_ver, _ = ARR_APPS[app]
+    return container_http(
+        container_name(app),
+        f"{scheme}://127.0.0.1:{_env(port_var)}/{app}/api/{api_ver}"
+        f"/downloadclient/{client['id']}",
+        headers={"X-Api-Key": _api_key(app), "Content-Type": "application/json"},
+        method="PUT",
+        data=json.dumps(client),
+        timeout=60,
+    )
+
+
+def _with_address(client: dict, port: int, use_ssl: bool) -> dict:
+    client = json.loads(json.dumps(client))
+    for f in client["fields"]:
+        if f["name"] == "port":
+            f["value"] = port
+        elif f["name"] == "useSsl":
+            f["value"] = use_ssl
+    return client
+
+
+def test_sabnzbd_client_on_its_https_port_is_kept(running_containers):
+    """A working client on SABnzbd's HTTPS port is not moved (#300).
+
+    The script used to move it to the HTTP port with useSsl still on, which
+    the app's save time test rejects, so every run warned and the summary
+    listed the app as having no download client. Sonarr's client is moved to
+    the HTTPS port here, the script is run again, and the client is put back
+    on the HTTP port afterwards whatever happened.
+    """
+    app = "sonarr"
+    if not is_enabled(app) or not is_enabled("sabnzbd"):
+        pytest.skip("sonarr or sabnzbd profile is disabled")
+    skip_if_not_running("sabnzbd", running_containers)
+    (original,) = [
+        c
+        for c in _download_clients(app, running_containers)
+        if c["implementation"] == "Sabnzbd"
+    ]
+    https_port = int(_env("SABNZBD_HTTPS_PORT"))
+    try:
+        status, body = _put_download_client(
+            app, _with_address(original, https_port, True)
+        )
+        assert status in (200, 202), (
+            f"[{app}] SABnzbd on its HTTPS port was refused: {status} {body[:300]}"
+        )
+        result = subprocess.run(  # nosec B603 - fixed path, no user input
+            [str(SCRIPT)],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+        assert result.returncode == 0, (
+            f"wire-connections.sh failed:\nSTDOUT:\n{result.stdout}\n"
+            f"STDERR:\n{result.stderr}"
+        )
+        assert f"[{app}] SABnzbd download client already exists, skipping." in (
+            result.stdout
+        ), result.stdout
+        assert f"[{app}] WARNING" not in result.stdout, result.stdout
+        (client,) = [
+            c
+            for c in _download_clients(app, running_containers)
+            if c["implementation"] == "Sabnzbd"
+        ]
+        assert (_field(client, "port"), _field(client, "useSsl")) == (
+            https_port,
+            True,
+        )
+    finally:
+        status, body = _put_download_client(app, original)
+        assert status in (200, 202), (
+            f"[{app}] could not put SABnzbd back: {status} {body[:300]}"
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -111,6 +111,7 @@ LAN_IP=192.168.1.x
 GLUETUN_SERVICES_IP=10.0.0.2
 QBITTORRENT_HTTPS_PORT=8443
 SABNZBD_HTTP_PORT=8080
+SABNZBD_HTTPS_PORT=8090
 SONARR_HTTP_PORT=8989
 RADARR_HTTPS_PORT=7879
 LIDARR_HTTPS_PORT=8687
@@ -167,8 +168,8 @@ EOF
   # above says and a Jellyfin connection.
   rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/config/host$' 0 '{"id": 1, "username": "someone"}'
   rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/downloadclient$' 0 '[
-    {"id": 1, "implementation": "QBittorrent", "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 8443}]},
-    {"id": 2, "implementation": "Sabnzbd", "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 8080}]}]'
+    {"id": 1, "implementation": "QBittorrent", "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 8443}, {"name": "useSsl", "value": true}]},
+    {"id": 2, "implementation": "Sabnzbd", "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 8080}, {"name": "useSsl", "value": false}]}]'
   rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/notification$' 0 '[{"implementation": "MediaBrowser"}]'
   rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/notification/schema$' 0 \
     '[{"implementation": "MediaBrowser", "fields": [{"name": "host"}, {"name": "apiKey"}]}]'
@@ -176,6 +177,8 @@ EOF
   # body, then the status curl's -w appends.
   rule 'curl -sSk -X POST .*/notification$' 0 $'{"id": 7}\n201'
   rule 'curl -sSk -X PUT .*/notification/[0-9]+$' 0 $'{"id": 4}\n202'
+  rule 'curl -sSk -X POST .*/downloadclient$' 0 $'{"id": 1}\n201'
+  rule 'curl -sSk -X PUT .*/downloadclient/[0-9]+$' 0 $'{"id": 1}\n202'
   rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/config/development$' 0 '{"id": 1, "metadataSource": "https://api.bookinfo.pro"}'
   # Prowlarr, with its tagged proxy, every application, the indexer, and
   # that indexer in every arr app.
@@ -340,14 +343,14 @@ rule 'wget -qO- http://127.0.0.1:13378/status$' 1 ""
 rule 'exec jellyfin curl .*/System/Info/Public$' 7 ""
 rule 'exec whisparr curl .*/system/status$' 7 ""
 rule 'exec radarr curl -sk --fail -H X-Api-Key: \S+ \S+/downloadclient$' 0 '[
-  {"id": 1, "implementation": "QBittorrent", "fields": [{"name": "host", "value": "10.9.9.9"}, {"name": "port", "value": 8443}]},
-  {"id": 2, "implementation": "Sabnzbd", "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 9090}]}]'
-rule 'exec radarr curl -sk --fail -X PUT .*/downloadclient/1$' 22 "curl: (22) The requested URL returned error: 400"
+  {"id": 1, "implementation": "QBittorrent", "fields": [{"name": "host", "value": "10.9.9.9"}, {"name": "port", "value": 8443}, {"name": "useSsl", "value": true}]},
+  {"id": 2, "implementation": "Sabnzbd", "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 9090}, {"name": "useSsl", "value": false}]}]'
+rule 'exec radarr curl -sSk -X PUT .*/downloadclient/1$' 0 $'[{"errorMessage": "Unable to connect to qBittorrent"}]\n400'
 rule 'exec radarr curl -sk --fail -H X-Api-Key: \S+ \S+/notification$' 22 ""
 rule 'exec lidarr curl -sk --fail -H X-Api-Key: \S+ \S+/downloadclient$' 0 '[]'
 rule 'exec lidarr curl -sk --fail -H X-Api-Key: \S+ \S+/downloadclient/schema$' 0 \
   '[{"implementation": "QBittorrent", "fields": []}, {"implementation": "Sabnzbd", "fields": []}]'
-rule 'exec lidarr curl -sk --fail -X POST' 22 "curl: (22) The requested URL returned error: 400"
+rule 'exec lidarr curl -sSk -X POST .*/downloadclient$' 7 "curl: (7) Failed to connect to 127.0.0.1"
 rule 'exec lidarr curl -sk --fail -H X-Api-Key: \S+ \S+/notification$' 0 '[]'
 rule 'exec lidarr curl -sk --fail -H X-Api-Key: \S+ \S+/notification/schema$' 22 ""
 rule 'exec readarr curl -sk --fail -H X-Api-Key: \S+ \S+/notification$' 0 '[]'
@@ -375,13 +378,13 @@ check "failures are reported and the rest carries on" 0 out \
   "[Audiobookshelf] ...still waiting (30s/180s)" "[Audiobookshelf] Not reachable, skipping." \
   "[Calibre-Web] app.db not initialized yet after 180s, skipping." \
   "[Jellyfin] Not reachable, skipping." "[whisparr] Not reachable, skipping." \
-  "[radarr] qBittorrent download client host/port stale (10.9.9.9:8443), correcting to 10.0.0.2:8443..." \
-  "[radarr] WARNING: failed to update qBittorrent download client host: curl: (22) The requested URL returned error: 400" \
-  "[radarr] SABnzbd download client host/port stale (10.0.0.2:9090), correcting to 10.0.0.2:8080..." \
+  "[radarr] qBittorrent download client stale (10.9.9.9:8443, useSsl true), correcting to 10.0.0.2:8443, useSsl true..." \
+  '[radarr] WARNING: failed to update qBittorrent download client: [{"errorMessage": "Unable to connect to qBittorrent"}]' \
+  "[radarr] SABnzbd download client stale (10.0.0.2:9090, useSsl false), correcting to 10.0.0.2:8080, useSsl false..." \
   "[radarr] Updated." \
   "[radarr] WARNING: could not read its notification list; skipping its Jellyfin connection." \
-  "[lidarr] WARNING: failed to create qBittorrent download client: curl: (22)" \
-  "[lidarr] WARNING: failed to create SABnzbd download client: curl: (22)" \
+  "[lidarr] WARNING: failed to create qBittorrent download client: curl: (7) Failed to connect" \
+  "[lidarr] WARNING: failed to create SABnzbd download client: curl: (7) Failed to connect" \
   "[lidarr] WARNING: could not read its notification schema; skipping its Jellyfin connection." \
   "[readarr] Does not support Jellyfin connections, skipping." \
   "[Readarr] WARNING: failed to set metadata provider source: curl: (22) The requested URL returned error: 500" \
@@ -412,9 +415,9 @@ rule 'jellyfin curl -s http://127.0.0.1:8096/System/Info/Public$' 0 '<html>redir
 rule 'exec jellyfin curl .*/jellyfin/System/Info/Public$' 0 '{"StartupWizardCompleted": false}'
 rule 'jellyfin curl -s --fail -X POST .*/Startup/User$' 22 ""
 rule 'exec radarr curl -sk --fail -H X-Api-Key: \S+ \S+/downloadclient$' 0 '[
-  {"id": 1, "implementation": "QBittorrent", "fields": [{"name": "host", "value": "10.9.9.9"}, {"name": "port", "value": 8443}]},
-  {"id": 2, "implementation": "Sabnzbd", "fields": [{"name": "host", "value": "10.9.9.9"}, {"name": "port", "value": 8080}, {"name": "apiKey", "value": "kept"}]}]'
-rule 'exec radarr curl -sk --fail -X PUT .*/downloadclient/2$' 22 "curl: (22) The requested URL returned error: 400"
+  {"id": 1, "implementation": "QBittorrent", "fields": [{"name": "host", "value": "10.9.9.9"}, {"name": "port", "value": 8443}, {"name": "useSsl", "value": true}]},
+  {"id": 2, "implementation": "Sabnzbd", "fields": [{"name": "host", "value": "10.9.9.9"}, {"name": "port", "value": 8080}, {"name": "useSsl", "value": false}, {"name": "apiKey", "value": "kept"}]}]'
+rule 'exec radarr curl -sSk -X PUT .*/downloadclient/2$' 0 $'[{"errorMessage": "Unable to connect to SABnzbd"}]\n400'
 rule 'prowlarr curl .*/system/status$' 7 ""
 # A refused login still answers, so the preferences read is what fails. The
 # login rule wins over Audiobookshelf's, which matches any /login.
@@ -426,7 +429,8 @@ check "half set up" 0 out \
   "[Audiobookshelf] Could not authenticate as the placeholder root user, skipping API key check." \
   "[Calibre-Web] Configuring library path..." \
   "[Jellyfin] Startup/User did not succeed after 180s, skipping the rest of setup." \
-  "[radarr] Updated." "[radarr] WARNING: failed to update SABnzbd download client host: curl: (22)" \
+  "[radarr] Updated." \
+  '[radarr] WARNING: failed to update SABnzbd download client: [{"errorMessage": "Unable to connect to SABnzbd"}]' \
   "[sonarr] No Jellyfin API key yet, skipping its connection." \
   "[arr]   - radarr" "[Prowlarr] Not reachable after 480s, skipping. Re-run 'make wire_connections'"
 check "Jellyfin found under its BaseUrl" 0 log "jellyfin curl -sS --fail -X POST -H Content-Type: application/json -d {\"UICulture\""
@@ -550,5 +554,46 @@ check "a stale key is replaced" 0 out \
   "[whisparr] Jellyfin connection already exists, skipping." "[Jellyfin]   - radarr"
 check "with the current key, in place" 0 log "podman exec sonarr curl -sSk -X PUT" '"value": "jellyfin-key"'
 refute "a matching key is left alone" log "podman exec whisparr curl -sSk -X PUT"
+
+# Run K: useSsl is part of a download client's address (#300). SABnzbd works
+# on its HTTP port without TLS and on its HTTPS port with it: Sonarr's client
+# is on the second and stays, Radarr's is too but on an old host, Lidarr's
+# has TLS off against the HTTPS port and Whisparr's has it on against the
+# HTTP port. Whisparr's qBittorrent client has TLS off, which qBittorrent's
+# WebUI never answers.
+deployment
+containers sonarr radarr lidarr whisparr
+sab_client() {
+  printf '[{"id": 1, "implementation": "QBittorrent", "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 8443}, {"name": "useSsl", "value": %s}]},
+  {"id": 2, "implementation": "Sabnzbd", "fields": [{"name": "host", "value": "%s"}, {"name": "port", "value": %s}, {"name": "useSsl", "value": %s}]}]' "${4:-true}" "${1}" "${2}" "${3}"
+}
+rule 'exec sonarr curl -sk --fail -H X-Api-Key: \S+ \S+/downloadclient$' 0 "$(sab_client 10.0.0.2 8090 true)"
+rule 'exec radarr curl -sk --fail -H X-Api-Key: \S+ \S+/downloadclient$' 0 "$(sab_client 10.9.9.9 8090 true)"
+rule 'exec lidarr curl -sk --fail -H X-Api-Key: \S+ \S+/downloadclient$' 0 "$(sab_client 10.0.0.2 8090 false)"
+rule 'exec whisparr curl -sk --fail -H X-Api-Key: \S+ \S+/downloadclient$' 0 "$(sab_client 10.0.0.2 8080 true false)"
+run
+check "TLS moves with the port" 0 out \
+  "[sonarr] qBittorrent download client already exists, skipping." \
+  "[sonarr] SABnzbd download client already exists, skipping." \
+  "[radarr] SABnzbd download client stale (10.9.9.9:8090, useSsl true), correcting to 10.0.0.2:8090, useSsl true..." \
+  "[lidarr] SABnzbd download client stale (10.0.0.2:8090, useSsl false), correcting to 10.0.0.2:8080, useSsl false..." \
+  "[whisparr] SABnzbd download client stale (10.0.0.2:8080, useSsl true), correcting to 10.0.0.2:8080, useSsl false..." \
+  "[whisparr] qBittorrent download client stale (10.0.0.2:8443, useSsl false), correcting to 10.0.0.2:8443, useSsl true..."
+refute "the clients that work are not touched" log "podman exec sonarr curl -sSk -X PUT"
+refute "nothing is rejected" out "WARNING"
+# sent <app> <id>: the update that app's download client <id> was sent.
+sent() { grep -F "podman exec ${1} curl -sSk -X PUT" "${__state}/log" | grep -F "/downloadclient/${2}" || true; }
+if [[ "$(sent radarr 2)" != *'"value": 8090'* || "$(sent radarr 2)" != *'"name": "useSsl",\n      "value": true'* ]]; then
+  fail "Radarr's SABnzbd client keeps the HTTPS port, with TLS"
+fi
+if [[ "$(sent lidarr 2)" != *'"value": 8080'* || "$(sent lidarr 2)" != *'"name": "useSsl",\n      "value": false'* ]]; then
+  fail "Lidarr's SABnzbd client moves to the HTTP port, without TLS"
+fi
+if [[ "$(sent whisparr 2)" != *'"value": 8080'* || "$(sent whisparr 2)" != *'"name": "useSsl",\n      "value": false'* ]]; then
+  fail "Whisparr's SABnzbd client loses TLS on the HTTP port"
+fi
+if [[ "$(sent whisparr 1)" != *'"value": 8443'* || "$(sent whisparr 1)" != *'"name": "useSsl",\n      "value": true'* ]]; then
+  fail "Whisparr's qBittorrent client gets TLS back"
+fi
 
 finish

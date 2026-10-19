@@ -55,6 +55,14 @@ table, created through `POST /api/<version>/downloadclient`. The script:
   (`tv`, `movies`, `music`, `ebooks`, `mature`) and validates strictly, so an
   unmatched category fails the request outright rather than creating one.
 - Posts the client with `enable = true`.
+- Leaves a client that already exists alone unless its address is wrong,
+  and then corrects host, port and `useSsl` together, since the app tests a
+  client before saving it and refuses TLS against a plain port. qBittorrent
+  is always its HTTPS port with `useSsl` on. SABnzbd answers on two ports, so
+  a client on `SABNZBD_HTTPS_PORT` with `useSsl` on is kept there; any other
+  goes to `SABNZBD_HTTP_PORT` with `useSsl` off, as a new one is created.
+  When the app refuses a create or an update, the warning carries the reason
+  it gave.
 
 Prowlarr gets both clients too, through the same `ensure_qbittorrent_client`/
 `ensure_sabnzbd_client` helpers (Prowlarr shares the identical DownloadClients
