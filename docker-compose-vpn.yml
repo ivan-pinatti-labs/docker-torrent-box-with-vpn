@@ -10,7 +10,7 @@ x-limit-gluetun: &limit-gluetun
 services:
   gluetun:
     <<: *limit-gluetun
-    image: ghcr.io/qdm12/gluetun:${GLUETUN_VERSION}
+    image: docker.io/qmcgaw/gluetun:${GLUETUN_VERSION}
     container_name: ${CONTAINER_PREFIX}gluetun
     profiles: ["${GLUETUN_PROFILE}"]
     networks:

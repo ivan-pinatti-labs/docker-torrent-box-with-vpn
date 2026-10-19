@@ -472,7 +472,7 @@ def test_grafana_running_version_matches_pin(running_containers):
 def test_lazylibrarian_carries_the_calibre_mod(running_containers):
     """The wrapper's whole reason to exist is present in the running container.
 
-    `build/lazylibrarian/Dockerfile` layers ghcr.io/linuxserver/mods:universal-calibre
+    `build/lazylibrarian/Dockerfile` layers docker.io/linuxserver/mods:universal-calibre
     onto the stock image, which ships no Calibre at all, so a wrapper that
     silently lost the layer would start, report healthy and serve the web UI
     while Calibredb import quietly did nothing.

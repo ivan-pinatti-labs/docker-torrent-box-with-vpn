@@ -456,6 +456,112 @@ issue for dropping it (#106 mylar, #108 sabnzbd), and dropping one is what unfre
 issues #107 and #109 already showed. That is the distinction this whole page turns on: these
 pins are deliberately fixed, not accidentally frozen.
 
+## Images outside Docker Hub
+
+The seven day `minimumReleaseAge` window needs a date to count from, and for container images
+Renovate reads one from Docker Hub alone: the `tag_last_pushed` field of Docker Hub's own tag API.
+The registry protocol every registry implements records no push date at all, so an image on
+GHCR, quay.io or gcr.io has nothing to age. Under the default `minimumReleaseAgeBehaviour`
+(`timestamp-required`) and `internalChecksFilter: "strict"`, such an update is held
+indefinitely. There is no pull request and nothing goes red, only an entry under "Pending Status
+Checks" on the Dependency Dashboard (#24). Between the window landing (#57, 2026-08-17) and
+2026-10-19 not one image from another registry was updated, gluetun included, and it surfaced
+only because the whisparr update carrying a fix this stack needed never arrived.
+
+Waiving the window for those registries (`timestamp-optional`, which is what most projects do)
+would remove the one defense against a compromised release for exactly the images it cannot
+see. So instead:
+
+1. An image is pulled from Docker Hub whenever its own publisher pushes the same artifact there,
+   so the window applies to it unchanged.
+2. The rest are held, listed below, and each update is released by hand once someone has checked
+   the date the registry itself recorded.
+
+The real fix is upstream, in Renovate, and issue #321 tracks it here:
+[renovatebot/renovate#39064](https://github.com/renovatebot/renovate/issues/39064) (GHCR push
+dates from GitHub's Packages API, prototyped in 2026-08, no pull request yet) and
+[renovatebot/renovate#38656](https://github.com/renovatebot/renovate/issues/38656) (digest dates
+through the registry API, which would cover quay.io and gcr.io). When either ships, drop the
+images it covers from the held list and let the window do the work.
+
+### Moved to Docker Hub
+
+Moved on 2026-10-19. Each project's own workflow pushes the image to both registries from one
+run, and the digest pinned at the time resolved to the identical artifact on both, so the move
+changed where the image is fetched from and not what runs. CI pulls them through the Docker Hub
+login the integration and nightly workflows already use.
+
+| Pin | Was | Now | Pushed to both by |
+| --- | --- | --- | --- |
+| `GLUETUN_VERSION` | `ghcr.io/qdm12/gluetun` | `docker.io/qmcgaw/gluetun` | gluetun's CI publish job |
+| `AUDIOBOOKSHELF_VERSION` | `ghcr.io/advplyr/audiobookshelf` | `docker.io/advplyr/audiobookshelf` | audiobookshelf's Docker build workflow |
+| `HOMEPAGE_VERSION` | `ghcr.io/gethomepage/homepage` | `docker.io/gethomepage/homepage` | homepage's Docker publish workflow |
+| `RECYCLARR_VERSION` | `ghcr.io/recyclarr/recyclarr` | `docker.io/recyclarr/recyclarr` | recyclarr's release Docker workflow |
+| `NOTIFIARR_VERSION` | `ghcr.io/notifiarr/notifiarr` | `docker.io/golift/notifiarr` | Notifiarr's release workflow, logged in to Docker Hub as `golift` |
+| `build/lazylibrarian/Dockerfile` | `ghcr.io/linuxserver/mods` | `docker.io/linuxserver/mods` | linuxserver's shared mod builder workflow |
+
+One caveat for the last row. `universal-calibre` is a tag linuxserver republishes in place, and
+Renovate dates a digest update by the tag's latest push rather than by when that digest first
+appeared ([renovatebot/renovate#38659](https://github.com/renovatebot/renovate/issues/38659)).
+A tag republished more often than weekly therefore keeps restarting its own window. That is the
+safe direction to be wrong in, and the dashboard shows it if it happens.
+
+### Held, and released by hand
+
+| Pin | Image | Why it is not on Docker Hub | Where the push date is recorded |
+| --- | --- | --- | --- |
+| `WHISPARR_VERSION` | `ghcr.io/hotio/whisparr` | hotio publishes to GHCR only | GHCR package page |
+| `KORSYNC_VERSION` | `ghcr.io/nperez0111/koreader-sync` | GHCR only | GHCR package page |
+| `QBITTORRENT_EXPORTER_VERSION` | `ghcr.io/esanchezm/prometheus-qbittorrent-exporter` | on Docker Hub too, but as separate builds: `v1.6.0` is `sha256:b987d196...` on GHCR and `sha256:482df65e...` on Docker Hub, so moving would swap what runs for an artifact nobody here has verified | GHCR package page |
+| `PODMAN_EXPORTER_VERSION` | `quay.io/navidys/prometheus-podman-exporter` | quay.io only | quay.io tag API |
+| `CADVISOR_VERSION` | `gcr.io/cadvisor/cadvisor` | `google/cadvisor` on Docker Hub stopped at `v0.33.0` | gcr.io tag list |
+
+The organization's own images (`ghcr.io/ivan-pinatti-labs/**`: the L2 image and the nested test
+runner) are deliberately not here. `.github/renovate.json5` gives them `timestamp-optional`, for
+the reasons written beside that rule.
+
+`tests/test_renovate_pins.py` fails the suite when an image pin names a registry other than
+Docker Hub and the image is missing from this section, so a new one cannot freeze silently again.
+
+### Releasing a held update
+
+Nothing runs this on a schedule. A maintainer asks an agent to run it, roughly monthly, and
+sooner when a held image carries a fix the stack needs.
+
+1. **List what is held.** Read the Dependency Dashboard (#24), section "Pending Status Checks".
+   Entries for the images in the table above are the ones held for lack of a date. A Docker Hub
+   entry there is simply still inside its seven days; leave it alone.
+2. **Find the date the registry recorded** for the exact version and digest the entry proposes.
+   Look it up by digest, not by tag: a floating tag such as whisparr's `v3` moves.
+   - GHCR: the package page, `https://github.com/users/<owner>/packages/container/package/<name>`
+     (`orgs` in place of `users` for an organization), lists each version with its digest, its
+     tags and how long ago it was published. GitHub's Packages API has the exact `created_at`,
+     but it needs a token with `read:packages`, which an agent in a devcontainer-airlock
+     workbench does not hold. The page shows a relative age only, so when it is close, wait.
+   - quay.io: `https://quay.io/api/v1/repository/<namespace>/<name>/tag/?specificTag=<tag>`
+     returns `start_ts` (when the tag got this manifest) beside `manifest_digest`. No login.
+   - gcr.io: `https://gcr.io/v2/<path>/tags/list` returns a `manifest` map keyed by digest, with
+     `timeUploadedMs` for each. A devcontainer-airlock workbench has no egress set for gcr.io
+     yet, so an agent there cannot make this request. It has to come from somewhere that can
+     reach gcr.io, or wait for that set.
+
+   Two other dates look tempting and do not count. The image's own `created` field and its
+   `org.opencontainers.image.created` label are written by whoever builds the image, so a
+   compromised publisher can backdate them (which is why Renovate's maintainers will not use
+   them either). The upstream project's release date says when the source was tagged, not when
+   this image was pushed.
+3. **Release it, or leave it.** Seven days or more since that date: tick the entry's checkbox on
+   the dashboard (in the issue body, `- [ ]` becomes `- [x]` on that line), and Renovate opens
+   the pull request on its next run. Under seven days: leave it, and say when it becomes
+   eligible.
+4. **Check the pull request against what was checked.** Compare the digest in its diff with the
+   one from step 2. They differ when the image moved again in between, and then it must not
+   merge on its own: remove the `automerge` label, which `bot-auto-merge.yml` will not approve
+   anything without, run `gh pr merge <number> --disable-auto`, and go back to step 2 for the
+   new digest. When they match, the pull request takes the normal bot path in
+   [docs/MERGE_PIPELINE.md](MERGE_PIPELINE.md): `Pin Only`, the integration suite and
+   `Review Verified` all still apply.
+
 ## Remaining gaps
 
 Two tags are deliberately left floating rather than pinned to a version at all:
@@ -463,23 +569,26 @@ Two tags are deliberately left floating rather than pinned to a version at all:
 `tests/test_renovate_pins.py` carries them in an explicit allowlist, so the exemption is a
 decision on the record rather than an omission.
 
-`WHISPARR_VERSION` used to be the third. `v3` tracks a floating alias hotio republishes
-whenever they rebuild, which they do off Whisparr's `eros` branch with no tagged releases
-of its own, upstream has nothing to point a stable tag at either. On 2026-09-09 hotio pushed
-`v3-3.5.0-release.1585` under that alias, and it broke both the container healthcheck and the
-proxy connectivity check here, three separate merge queue runs in a row, none of it caused by
-anything in this repository: `eros` itself had no real code commit since 2026-01-14, only
-translation updates since, so whatever broke lives in hotio's build layer, not the app.
+`WHISPARR_VERSION` used to be the third. `v3` is a floating alias hotio moves to each new
+Whisparr release build. On 2026-09-09 hotio pushed `v3-3.5.0-release.1585` under that alias,
+and it broke both the container healthcheck and the proxy connectivity check here, three
+separate merge queue runs in a row, none of it caused by anything in this repository. It was
+first read as a change in hotio's build layer. It was not: it was Whisparr's own regression,
+[Whisparr/Whisparr-Eros#874](https://github.com/Whisparr/Whisparr-Eros/issues/874) (the UI
+asset paths lost the URL base behind a reverse proxy), fixed upstream by Whisparr-Eros pull
+request #660 and first shipped in `3.6.0-release.1660` on 2026-09-17.
 
-The fix doesn't need upstream to change anything, hotio already tags each build with an
-immutable version alongside the floating alias (`v3-3.4.0-release.1387`, `v3-3.5.0-release.1585`,
-and so on going back through `v3-3.2.0-release.27`), they just don't document those as the way
-to install this. `WHISPARR_VERSION` is now pinned to `v3-3.4.0-release.1387`'s digest, the
-release immediately before the broken one, which had run clean for five days before that.
-`versioning=loose` because the tag is not semver Renovate can order (`v3-` prefix, `-release.NNNN`
-suffix), the same reasoning as `LAZYLIBRARIAN_VERSION` below. Renovate will still offer a
-`digest` update whenever `v3` moves to a new build; confirm CI actually passes before taking
-one, this pin has no ordering to fall back on if a future one is bad again.
+hotio also tags each build with an immutable version alongside the floating alias
+(`v3-3.4.0-release.1387`, `v3-3.5.0-release.1585`, and so on going back through
+`v3-3.2.0-release.27`), they just don't document those as the way to install this.
+`WHISPARR_VERSION` is pinned to `v3-3.4.0-release.1387`'s digest, the release immediately
+before the broken one, which had run clean for five days before that. `versioning=loose`
+because the tag is not semver Renovate can order (`v3-` prefix, `-release.NNNN` suffix), the
+same reasoning as `LAZYLIBRARIAN_VERSION` below. The `digest` update that would collect the
+fix never arrives on its own: GHCR records no push date Renovate can read, so it is held for
+a person to release, see "Images outside Docker Hub" above. The suite still has to pass
+before one merges, and this pin has no ordering to fall back on if a future build is bad
+again.
 
 `MYLAR_VERSION` carries no digest, and cannot as it stands. It is read twice out of one
 variable: as the base image the wrapper in `build/` is built on, and as the tag of the locally

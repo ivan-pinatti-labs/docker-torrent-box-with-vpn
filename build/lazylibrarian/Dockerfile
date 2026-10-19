@@ -29,8 +29,8 @@ ARG BASE_VERSION
 # It deliberately asserts no version: the digest above already fixes which
 # Calibre this is, and hardcoding it in the test as well would fail on every
 # digest bump and take the automerge path down with it.
-# renovate: datasource=docker depName=ghcr.io/linuxserver/mods versioning=docker
-FROM ghcr.io/linuxserver/mods:universal-calibre@sha256:ceae75f021e73a049fcea41777dc8b1f2adeb5da10d2749caca12ca290293cce AS calibre-mod
+# renovate: datasource=docker depName=docker.io/linuxserver/mods versioning=docker
+FROM docker.io/linuxserver/mods:universal-calibre@sha256:ceae75f021e73a049fcea41777dc8b1f2adeb5da10d2749caca12ca290293cce AS calibre-mod
 
 FROM docker.io/linuxserver/lazylibrarian:${BASE_VERSION}
 COPY --from=calibre-mod /calibre.txz /calibre.txz

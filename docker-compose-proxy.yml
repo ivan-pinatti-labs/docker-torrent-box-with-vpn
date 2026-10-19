@@ -186,7 +186,7 @@ services:
 
   homepage:
     <<: *limit-homepage
-    image: ghcr.io/gethomepage/homepage:${HOMEPAGE_VERSION}
+    image: docker.io/gethomepage/homepage:${HOMEPAGE_VERSION}
     container_name: ${CONTAINER_PREFIX}homepage
     profiles: ["${HOMEPAGE_PROFILE}"]
     networks:

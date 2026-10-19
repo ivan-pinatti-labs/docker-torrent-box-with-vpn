@@ -220,7 +220,7 @@ services:
 
   recyclarr:
     <<: *limit-servarr
-    image: ghcr.io/recyclarr/recyclarr:${RECYCLARR_VERSION}
+    image: docker.io/recyclarr/recyclarr:${RECYCLARR_VERSION}
     container_name: ${CONTAINER_PREFIX}recyclarr
     profiles: ["${RECYCLARR_PROFILE}"]
     networks: [apps, services]
@@ -406,7 +406,7 @@ services:
         test "$$status" = "200" -o "$$status" = "303" -o "$$status" = "401"
 
   # notifiarr:
-  #   image: ghcr.io/notifiarr/notifiarr:${NOTIFIARR_VERSION}
+  #   image: docker.io/golift/notifiarr:${NOTIFIARR_VERSION}
   #   container_name: ${CONTAINER_PREFIX}notifiarr
   #   profiles: ["${NOTIFIARR_PROFILE}"]
   #   networks: [apps, services]
