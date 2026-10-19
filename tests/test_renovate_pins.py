@@ -54,6 +54,7 @@ PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 DEPENDENCY_DOC = REPO_ROOT / "docs" / "DEPENDENCY_UPDATES.md"
 OUTSIDE_DOCKER_HUB_HEADING = "## Images outside Docker Hub"
+HELD_TABLE_HEADING = "### Held, and released by hand"
 
 # Tags deliberately left on a channel rather than a version. There is no
 # version here for Renovate to bump, so an annotation would only produce
@@ -485,12 +486,27 @@ def _image_annotations_outside_docker_hub() -> list[str]:
     return sorted(names)
 
 
-def _outside_docker_hub_section() -> str:
-    """docs/DEPENDENCY_UPDATES.md's "Images outside Docker Hub", up to the next section."""
+def _held_images() -> set[str]:
+    """The Image column of the held table in "Images outside Docker Hub".
+
+    The table rows only, not the whole section: the prose and the moved table
+    name these images too, and a mention there is not a place the release
+    procedure starts from.
+    """
     text = DEPENDENCY_DOC.read_text()
     start = text.index(OUTSIDE_DOCKER_HUB_HEADING)
     end = text.find("\n## ", start + len(OUTSIDE_DOCKER_HUB_HEADING))
-    return text[start : end if end != -1 else len(text)]
+    section = text[start : end if end != -1 else len(text)]
+    table = section[section.index(HELD_TABLE_HEADING) :]
+    following = table.find("\n### ")
+    if following != -1:
+        table = table[:following]
+    images = set()
+    for line in table.splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) > 1 and cells[1].startswith("`") and cells[1].endswith("`"):
+            images.add(cells[1].strip("`"))
+    return images
 
 
 @pytest.mark.parametrize("image", _image_annotations_outside_docker_hub())
@@ -502,7 +518,7 @@ def test_image_outside_docker_hub_is_documented(image):
     manual release procedure starts, so an image missing from it is one nobody
     will ever release.
     """
-    assert f"`{image}`" in _outside_docker_hub_section(), (
+    assert image in _held_images(), (
         f"{image} comes from a registry Renovate reads no release date from, so "
         f"its updates are held indefinitely. Pull it from Docker Hub if its own "
         f"publisher pushes the same artifact there, or add it to the held table "
