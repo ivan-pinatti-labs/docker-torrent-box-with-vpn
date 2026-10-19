@@ -39,34 +39,57 @@ containers() {
   podman ps --filter "$PROJECT_FILTER" --format '{{.Names}}' "$@"
 }
 
-remove() {
-  xargs -r podman rm --force --time 0 >/dev/null || true
-}
+# An empty list from a podman that failed would read as a stack already gone,
+# and make down would go on to forget which VPN routes it ran with.
+if ! existing="$(containers --all)"; then
+  echo "ERROR: podman could not list the containers of project ${PROJECT}." >&2
+  exit 1
+fi
 
-if [[ -z "$(containers --all)" ]]; then
+if [[ -z "$existing" ]]; then
   echo "No stack containers found."
-  exit 0
-fi
-
-running="$(containers)"
-if [[ -n "$running" ]]; then
-  echo "$running" | xargs -r podman kill --signal TERM >/dev/null || true
-  elapsed=0
-  while [[ "$elapsed" -lt "10#$TIMEOUT" ]] && [[ -n "$(containers)" ]]; do
-    sleep 1
-    elapsed=$((elapsed + 1))
-  done
-  remaining="$(containers)"
-  if [[ -n "$remaining" ]]; then
-    echo "Force-killing containers still running after ${TIMEOUT}s..."
-    echo "$remaining" | xargs -r podman kill >/dev/null || true
+else
+  running="$(containers)"
+  if [[ -n "$running" ]]; then
+    echo "$running" | xargs -r podman kill --signal TERM >/dev/null || true
+    elapsed=0
+    while [[ "$elapsed" -lt "10#$TIMEOUT" ]] && [[ -n "$(containers)" ]]; do
+      sleep 1
+      elapsed=$((elapsed + 1))
+    done
+    remaining="$(containers)"
+    if [[ -n "$remaining" ]]; then
+      echo "Force-killing containers still running after ${TIMEOUT}s..."
+      echo "$remaining" | xargs -r podman kill >/dev/null || true
+    fi
   fi
+
+  # The first pass may fail on a container something still depends on; the
+  # second one is the pass whose errors count.
+  vpn="$(containers --all --filter "label=com.docker.compose.service=${VPN_SERVICE}")"
+  containers --all | grep -vxF -f <(printf '%s\n' "$vpn") |
+    xargs -r podman rm --force --time 0 >/dev/null 2>&1 || true
+  containers --all | xargs -r podman rm --force --time 0 >/dev/null || true
 fi
 
-vpn="$(containers --all --filter "label=com.docker.compose.service=${VPN_SERVICE}")"
-containers --all | grep -vxF -f <(printf '%s\n' "$vpn") | remove
-containers --all | remove
+status=0
+if ! left="$(containers --all)"; then
+  echo "ERROR: podman could not list what is left of project ${PROJECT}." >&2
+  status=1
+elif [[ -n "$left" ]]; then
+  echo "ERROR: these containers of project ${PROJECT} could not be removed:" >&2
+  printf '  %s\n' $left >&2
+  status=1
+fi
 
+# Even with no containers left, so a network an earlier run could not remove
+# goes now. One that does not exist is not an error; one still in use is.
 for network in "${NETWORKS[@]}"; do
-  podman network rm "${PROJECT}_${network}" >/dev/null 2>&1 || true
+  name="${PROJECT}_${network}"
+  podman network exists "$name" || continue
+  if ! podman network rm "$name" >/dev/null; then
+    echo "ERROR: could not remove network ${name}." >&2
+    status=1
+  fi
 done
+exit "$status"

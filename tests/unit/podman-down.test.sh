@@ -8,9 +8,12 @@
 # podman and sleep are stubs. podman keeps a small model of the containers in
 # the scratch directory, one file per container under c/, holding its compose
 # project, its compose service, whether it runs, and the container whose
-# network namespace it shares. Like the real one, `rm` refuses a container
-# that another existing container depends on, and `network rm` refuses a
-# network while a container of its project exists. sleep only logs.
+# network namespace it shares, and the networks that exist in a file of their
+# own. Like the real one, `rm` refuses a container that another existing
+# container depends on, and `network rm` refuses a network while a container
+# of its project exists. A container listed under stuck/ cannot be removed at
+# all, and when the file ps-ok exists, podman ps fails once it has answered
+# that many calls. sleep only logs.
 
 set -o errexit
 set -o pipefail
@@ -44,6 +47,14 @@ set_running() { read -r -a f <"\${state}/c/\${1}"; f[2]="\${2}"; echo "\${f[*]}"
 case "\${1}" in
 ps)
   shift
+  if [[ -f "\${state}/ps-ok" ]]; then
+    left_ok="\$(<"\${state}/ps-ok")"
+    if [[ "\${left_ok}" -le 0 ]]; then
+      echo "Error: unable to connect to Podman socket" >&2
+      exit 125
+    fi
+    echo "\$((left_ok - 1))" >"\${state}/ps-ok"
+  fi
   all=0 labels=()
   while [[ \$# -gt 0 ]]; do
     case "\${1}" in
@@ -80,6 +91,11 @@ rm)
   shift 4
   status=0
   for name in "\$@"; do
+    if [[ -e "\${state}/stuck/\${name}" ]]; then
+      echo "Error: cannot remove container \${name}: device or resource busy" >&2
+      status=125
+      continue
+    fi
     for other in "\${state}"/c/*; do
       if [[ -e "\${other}" && "\$(field "\${other##*/}" 3)" == "\${name}" ]]; then
         echo "Error: container \${name} has dependent containers which must be removed before it: \${other##*/}" >&2
@@ -92,12 +108,18 @@ rm)
   exit "\${status}"
   ;;
 network)
+  exists=1 others=()
+  while read -r network; do
+    if [[ "\${network}" == "\${3}" ]]; then exists=0; else others+=("\${network}"); fi
+  done <"\${state}/networks"
+  [[ "\${2}" == exists ]] && exit "\${exists}"
   for file in "\${state}"/c/*; do
     if [[ -e "\${file}" && "\${3}" == "\$(field "\${file##*/}" 0)_"* ]]; then
       echo "Error: network \${3} is in use" >&2
       exit 2
     fi
   done
+  printf '%s\n' "\${others[@]}" >"\${state}/networks"
   echo "\${3}" >>"\${state}/networks-removed"
   ;;
 esac
@@ -108,14 +130,23 @@ chmod +x "${__bin}/podman"
 # name:project:service:running|exited:namespace|-.
 fresh() {
   rm -rf "${__state}" "${__work}"
-  mkdir -p "${__state}/c" "${__state}/stubborn" "${__work}"
+  mkdir -p "${__state}/c" "${__state}/stubborn" "${__state}/stuck" "${__work}"
   : >"${__state}/log"
+  : >"${__state}/networks"
   : >"${__state}/networks-removed"
   local spec
   for spec in "$@"; do
     IFS=: read -r -a f <<<"${spec}"
     echo "${f[1]} ${f[2]} ${f[3]} ${f[4]}" >"${__state}/c/${f[0]}"
   done
+}
+
+# The six networks of a project exist.
+networks() {
+  local network
+  for network in edge wan apps services media observability; do
+    echo "${1}_${network}"
+  done >"${__state}/networks"
 }
 
 run() {
@@ -174,11 +205,22 @@ fresh
 PODMAN_DOWN_TIMEOUT=soon run
 check "rejects a timeout that is not a number" 1 err "must be a whole number of seconds, got 'soon'"
 
+fresh gluetun:box:gluetun:running:-
+networks box
+echo 0 >"${__state}/ps-ok"
+COMPOSE_PROJECT_NAME=box run
+check "fails when podman cannot list the containers" 1 err "podman could not list the containers of project box."
+check_absent "touches nothing then" log "podman rm"
+check_absent "not even the networks" log "podman network"
+
 fresh other-gluetun:other:gluetun:running:-
+echo box_wan >"${__state}/networks"
 COMPOSE_PROJECT_NAME=box run
 check "says when the project has no containers" 0 out "No stack containers found."
-check_absent "removes nothing then" log "podman rm"
+check_absent "removes no container then" log "podman rm"
 check_left "leaves other projects alone" other-gluetun
+check "still removes a network an earlier run left" 0 networks-removed "box_wan"
+check_absent "and skips the ones that do not exist" log "podman network rm box_edge"
 
 # The case of issue #301: the containers were created with no prefix, and the
 # current .env sets one. The VPN container is found by its service label, so
@@ -189,6 +231,7 @@ fresh \
   sonarr:box:sonarr:running:gluetun \
   nginx:box:nginx:running:- \
   other-gluetun:other:gluetun:running:-
+networks box
 COMPOSE_PROJECT_NAME=box CONTAINER_PREFIX=live- run
 check "stops the running containers" 0 log "podman kill --signal TERM gluetun nginx radarr sonarr"
 check "removes the dependents before the VPN container" 0 log "podman rm --force --time 0 nginx radarr sonarr"
@@ -205,11 +248,27 @@ done
 fresh \
   app:box:app:exited:- \
   sidecar:box:sidecar:exited:app
+networks box
 COMPOSE_PROJECT_NAME=box run
-check "the first pass cannot remove the shared one" 0 err "container app has dependent containers"
+check_absent "the first pass fails quietly on the shared one" err "has dependent containers"
 check_left "the second pass removes it"
 check "and the networks go too" 0 networks-removed "box_wan"
 check_absent "kills nothing when nothing runs" log "podman kill"
+
+fresh gluetun:box:gluetun:exited:-
+touch "${__state}/stuck/gluetun"
+networks box
+COMPOSE_PROJECT_NAME=box run
+check "fails when a container cannot be removed" 1 err "these containers of project box could not be removed:"
+check "and names it" 1 err "  gluetun"
+check "shows the error podman gave" 1 err "cannot remove container gluetun"
+check "fails when a network is still in use" 1 err "could not remove network box_wan."
+
+# Listing works until the check of what is left, the sixth podman ps here.
+fresh gluetun:box:gluetun:exited:-
+echo 5 >"${__state}/ps-ok"
+COMPOSE_PROJECT_NAME=box run
+check "fails when podman cannot list what is left" 1 err "podman could not list what is left of project box."
 
 fresh \
   gluetun:work:gluetun:running:- \
