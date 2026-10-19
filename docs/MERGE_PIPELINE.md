@@ -14,7 +14,9 @@ moment.
 ## A human pull request
 
 Open it as a **draft** first. `Code Check` runs the full pre-commit hook set,
-both stages, over every file, and CodeRabbit does not review a draft at all:
+both stages, over every file (the link check alone over the documents the
+pull request changes, see the table below), and CodeRabbit does not review a
+draft at all:
 `.coderabbit.yaml` sets `drafts: false` on purpose, so a review is not spent
 on a diff the mechanical linters have not finished cleaning up yet.
 
@@ -80,7 +82,7 @@ section for what a pin-only diff actually earns it.
 
 | Context | What it actually proves | Who publishes it |
 | --- | --- | --- |
-| `Code Check` | The full pre-commit hook set (both stages) passed over every file | `pull-request-validation.yml`, as a job |
+| `Code Check` | The full pre-commit hook set (both stages) passed over every file, except the link check, which covers only the documents the pull request changes and does not run in the merge queue, so an unreachable outside site cannot fail a change that does not link to it (#319). `make sanity_full` still checks every link | `pull-request-validation.yml`, as a job |
 | `Prerequisite Checks` | The static, no-containers-needed test tier passed (pin annotations, repo hygiene) | `pull-request-validation.yml`, as a job |
 | `Detect Changed Paths` | Nothing more than that the path filter itself ran; other jobs read its output | `pull-request-validation.yml`, as a job |
 | `SonarQube` | SonarQube Cloud analyzed the pull request and its quality gate passed; on a merge queue commit it passes without analyzing, see below | `sonarqube.yml`, as a job |

@@ -53,9 +53,11 @@ maintainer will comment for you.
 4. The hooks are split across two stages. `pre-commit` runs the fast,
    file-scoped ones against what you changed, including shellcheck, shfmt,
    ruff, yamllint, markdownlint, actionlint, hadolint and cspell. `pre-push`
-   adds the four that walk the whole repository rather than a list of files:
-   the full-history secret scan, checkov, trivy, and the documentation link
-   check.
+   adds the three that walk the whole repository rather than a list of files
+   (the full-history secret scan, checkov and trivy) and the documentation
+   link check, which checks the documents being pushed. CI checks links the
+   same way, in the documents a pull request changes; `make sanity_full`
+   checks every link in every document.
    `pre-push` also sweeps the fast hooks across every file, which is the scope
    CI uses. Without that sweep a violation in a file your branch never touched
    passes locally and fails in CI, which is what a linter version bump

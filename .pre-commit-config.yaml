@@ -433,6 +433,14 @@ repos:
   # Local rather than upstream's lychee-docker, for the same reason as hadolint
   # above: that hook is `language: docker_image` and calls `docker` by name,
   # which a contributor running Podman does not have.
+  #
+  # LYCHEE_GITHUB_TOKEN, when set, reaches lychee as GITHUB_TOKEN, which it
+  # uses to check github.com links through the API instead of anonymously:
+  # GitHub answers anonymous requests from runners with 503 once their shared
+  # rate limit runs out, and that failed pull requests on links to this very
+  # repository. A separate name rather than GITHUB_TOKEN itself, so a token a
+  # contributor happens to have exported is never handed to the container.
+  # CI passes the job's own read only token (pull-request-validation.yml).
   - repo: local
     hooks:
       - id: lychee
@@ -441,7 +449,9 @@ repos:
         entry: >-
           bash -c 'runtime=$(command -v docker || command -v podman) || {
           echo "lychee hook needs docker or podman on PATH" >&2; exit 1; };
-          exec "$runtime" run --rm -v "$PWD:/src:ro" -w /src
+          token=(); if [ -n "${LYCHEE_GITHUB_TOKEN:-}" ]; then
+          export GITHUB_TOKEN="$LYCHEE_GITHUB_TOKEN"; token=(-e GITHUB_TOKEN); fi;
+          exec "$runtime" run --rm "${token[@]}" -v "$PWD:/src:ro" -w /src
           docker.io/lycheeverse/lychee:0.24.2 --no-progress "$0" "$@"'
         language: system
         stages: [pre-push]

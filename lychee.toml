@@ -25,6 +25,10 @@ exclude = [
   # a documentation host that blocks datacenter address ranges, not a dead
   # link. This blocked PR #144's Code Check on three links it did not touch.
   "^https?://(www\\.)?grafana\\.com/docs/",
+  # Buttons rather than documents: GitHub redirects them to its login page
+  # for anyone signed out, which is what a link checker always is. They
+  # failed #317 with a 503 from that redirect.
+  "^https://github\\.com/[^/]+/[^/]+/(issues|security/advisories)/new$",
   "^https?://localhost(:[0-9]+)?(/.*)?$",
   "^https?://127\\.0\\.0\\.1(:[0-9]+)?(/.*)?$",
   "^https?://.*\\.internal(:[0-9]+)?(/.*)?$",

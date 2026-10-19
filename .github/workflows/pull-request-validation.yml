@@ -163,12 +163,45 @@ jobs:
       # coverage is skipped because it is `make coverage`, which the SonarQube
       # job (sonarqube.yml) already runs on every pull request and reports to
       # SonarQube Cloud. It is a pre-push hook so a local push finds out first.
+      #
+      # lychee is skipped here and runs in the next step on the changed
+      # documents only.
       - name: Pre-commit Run
         uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
         with:
           extra_args: --all-files --hook-stage pre-push
         env:
-          SKIP: all-files-sweep,coverage
+          SKIP: all-files-sweep,coverage,lychee
+
+      # The link check, on the documents this pull request changes and not on
+      # every document. Checking every link on every run made any slow or
+      # briefly unreachable site fail pull requests that never touched the
+      # page linking to it, and eject them from the merge queue: six of seven
+      # failed runs read in October 2026 were that (#319). Now an outside site
+      # can only fail a pull request that edits the document linking to it.
+      #
+      # Not in the merge queue: its commit holds the same documents the pull
+      # request's own run just checked, so a failure there could only come
+      # from a site, never from the change.
+      #
+      # The base is where this branch left main, so `/run-check`'s
+      # workflow_dispatch run, which has no base in its event, picks the same
+      # files a pull_request run does. fetch-depth 0 above makes it reachable.
+      #
+      # LYCHEE_GITHUB_TOKEN lets lychee check github.com links through the API
+      # rather than anonymously, where runners share a rate limit and get 503.
+      # It is this job's own token: contents read only (permissions above),
+      # this public repository only, valid until the job ends. A fork's pull
+      # request gets a read only token whatever the job asks for.
+      - name: Check links in changed documents
+        if: github.event_name != 'merge_group'
+        timeout-minutes: 5
+        env:
+          LYCHEE_GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          base="$(git merge-base origin/main HEAD)"
+          pre-commit run lychee --hook-stage pre-push --from-ref "$base" --to-ref HEAD
 
   prerequisites:
     name: Prerequisite Checks
