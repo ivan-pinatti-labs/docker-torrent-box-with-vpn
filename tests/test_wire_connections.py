@@ -562,11 +562,13 @@ def test_sabnzbd_client_on_its_https_port_is_kept(running_containers):
         if c["implementation"] == "Sabnzbd"
     ]
     https_port = int(_env("SABNZBD_HTTPS_PORT"))
-    status, body = _put_download_client(app, _with_address(original, https_port, True))
-    assert status in (200, 202), (
-        f"[{app}] SABnzbd on its HTTPS port was refused: {status} {body[:300]}"
-    )
     try:
+        status, body = _put_download_client(
+            app, _with_address(original, https_port, True)
+        )
+        assert status in (200, 202), (
+            f"[{app}] SABnzbd on its HTTPS port was refused: {status} {body[:300]}"
+        )
         result = subprocess.run(  # nosec B603 - fixed path, no user input
             [str(SCRIPT)],
             cwd=REPO_ROOT,
