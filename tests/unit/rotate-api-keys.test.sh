@@ -353,7 +353,9 @@ check "an arr app that does not answer, list or take the key is reported" 0 out 
   "[Jellyfin] WARNING: whisparr refused the new key, so its Jellyfin connection still holds the old key."
 check "and the old key is revoked all the same" 0 log "http://127.0.0.1:8096/jellyfin/Auth/Keys/old-jellyfin"
 refute "an arr app without a container is left alone" log "sonarr curl"
-refute "an arr app without a key is left alone" log "lidarr curl"
+check "an arr app without a key is reported" 0 out \
+  "[Jellyfin] WARNING: lidarr has no API key in configs/lidarr/config/config.xml, so its Jellyfin connection still holds the old key."
+refute "and left alone" log "lidarr curl"
 
 # homepage that will not recreate.
 deployment

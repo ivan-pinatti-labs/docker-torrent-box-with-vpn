@@ -25,10 +25,14 @@ TARGET = "configs/jdownloader2/config/cfg/org.jdownloader.api.RemoteAPIConfig.js
 
 # What a stand in does once it has logged its call. podman runs what follows
 # `unshare`, as the real one does inside its user namespace, and answers
-# inspect and logs the way a crash looping jDownloader2 would.
+# inspect and logs the way a crash looping jDownloader2 would, or fails both
+# when STUB_NO_CONTAINER is set, as for a container that was never created.
 STUBS = {
     "podman": """case "$1" in
     unshare) shift; exec "$@" ;;
+    inspect | logs) [ -z "$STUB_NO_CONTAINER" ] || exit 125 ;;
+esac
+case "$1" in
     inspect) echo "status=exited restarts=3 exitcode=1" ;;
     logs) echo "JDownloader exited" ;;
 esac""",
@@ -51,7 +55,7 @@ def _recipe(target: str) -> str:
 
 
 def _run(
-    tmp_path: Path, profile: str = "enabled"
+    tmp_path: Path, profile: str = "enabled", no_container: bool = False
 ) -> tuple[subprocess.CompletedProcess, list[str]]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -76,7 +80,11 @@ def _run(
     result = subprocess.run(  # nosec B603 B607 - sh runs the Makefile's own recipe against stubs
         ["sh", "-c", script],
         cwd=tmp_path,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "STUB_NO_CONTAINER": "1" if no_container else "",
+        },
         capture_output=True,
         text=True,
         timeout=60,
@@ -121,7 +129,16 @@ def test_a_config_that_never_appears_fails_with_diagnostics(tmp_path: Path) -> N
     assert f"ERROR: {TARGET} was not created after 180s" in result.stdout
     assert "status=exited restarts=3 exitcode=1" in result.stdout
     assert "JDownloader exited" in result.stdout
+    # The whole 180s although the container reads as exited: it runs with
+    # restart: unless-stopped, so exited between two restarts is not dead.
     assert calls.count("sleep 2") == 90
     assert calls[-2].startswith("podman inspect dev-jdownloader2 --format status=")
     assert calls[-1] == "podman logs --tail 40 dev-jdownloader2"
     assert not any(call.startswith("compose") for call in calls)
+
+
+def test_diagnostics_that_fail_say_so(tmp_path: Path) -> None:
+    result, _ = _run(tmp_path, no_container=True)
+    assert result.returncode == 1
+    assert "(jdownloader2 could not be inspected" in result.stdout
+    assert "(no logs available)" in result.stdout

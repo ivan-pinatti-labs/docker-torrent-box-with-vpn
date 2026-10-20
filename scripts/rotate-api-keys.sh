@@ -812,7 +812,10 @@ propagate_jellyfin_key() {
     read -r app api_version xml_path <<<"$entry"
     podman container exists "$(cname "$app")" 2>/dev/null || continue
     app_key=$(get_xml_apikey "$xml_path" 2>/dev/null)
-    [[ -n "$app_key" ]] || continue
+    if [[ -z "$app_key" ]]; then
+      jellyfin_key_not_propagated "$app" "has no API key in ${xml_path}"
+      continue
+    fi
     read -r scheme port base <<<"$(arr_endpoint "$xml_path")"
     url="${scheme}://127.0.0.1:${port}${base}/api/${api_version}/notification"
     # Under `all` the app was restarted for its own key a moment ago. Every
