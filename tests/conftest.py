@@ -43,7 +43,8 @@ def container_name(service: str) -> str:
     return f"{CONTAINER_PREFIX}{service}"
 
 
-def pytest_collection_modifyitems(config, items):
+# cspell:words itemcollected
+def pytest_itemcollected(item):
     """Keep every rotation_isolated case for one app on a single xdist worker.
 
     The marker's own premise is that these cases only touch their own
@@ -67,15 +68,23 @@ def pytest_collection_modifyitems(config, items):
     config.yaml and Recyclarr's secrets and restarts Bazarr, and so does
     restoring it, so on two workers one case read config.yaml while the other
     was rewriting it and got no `sonarr` section back (#305).
+
+    pytest_itemcollected rather than pytest_collection_modifyitems: xdist
+    reads xdist_group in its own pytest_collection_modifyitems, which ran
+    before this one, so marks added there were never seen and every group
+    spread across the workers. Measured with the pinned pytest and xdist: one
+    group of eight cases ran two per worker on four workers that way, and all
+    on one worker with this hook. Until then none of the grouping above held,
+    and Radarr's restore read a config.yaml with an empty `radarr` section
+    while Sonarr's case ran on another worker.
     """
     shared = {"sonarr": "sonarr-radarr", "radarr": "sonarr-radarr"}
-    for item in items:
-        if item.get_closest_marker("rotation_isolated") is None:
-            continue
-        params = getattr(item, "callspec", None)
-        app = params.params.get("app") if params else None
-        if app:
-            item.add_marker(pytest.mark.xdist_group(shared.get(app, app)))
+    if item.get_closest_marker("rotation_isolated") is None:
+        return
+    params = getattr(item, "callspec", None)
+    app = params.params.get("app") if params else None
+    if app:
+        item.add_marker(pytest.mark.xdist_group(shared.get(app, app)))
 
 
 @contextlib.contextmanager
