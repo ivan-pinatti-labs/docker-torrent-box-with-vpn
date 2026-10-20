@@ -815,24 +815,34 @@ propagate_jellyfin_key() {
     [[ -n "$app_key" ]] || continue
     read -r scheme port base <<<"$(arr_endpoint "$xml_path")"
     url="${scheme}://127.0.0.1:${port}${base}/api/${api_version}/notification"
-    # Under `all` the app was restarted for its own key a moment ago.
-    if ! retry 180 container_curl "$app" -sk --fail -o /dev/null -H "X-Api-Key: ${app_key}" "$url"; then
-      echo "[Jellyfin] WARNING: ${app} did not answer, so its Jellyfin connection still holds the old key."
-      echo "[Jellyfin] Once it's healthy, re-run 'make wire_connections' to fix this."
+    # Under `all` the app was restarted for its own key a moment ago. Every
+    # request has its own --max-time as well: retry cannot cut short one that
+    # connected and then never answered.
+    if ! retry 180 container_curl "$app" -sk --fail --max-time 30 -o /dev/null -H "X-Api-Key: ${app_key}" "$url"; then
+      jellyfin_key_not_propagated "$app" "did not answer"
       continue
     fi
-    connection=$(container_curl "$app" -sk --fail -H "X-Api-Key: ${app_key}" "$url" | jq 'map(select(.implementation == "MediaBrowser")) | first')
+    if ! connection=$(container_curl "$app" -sk --fail --max-time 30 -H "X-Api-Key: ${app_key}" "$url" | jq 'map(select(.implementation == "MediaBrowser")) | first'); then
+      jellyfin_key_not_propagated "$app" "did not list its connections"
+      continue
+    fi
     [[ -n "$connection" && "$connection" != "null" ]] || continue
     updated=$(echo "$connection" | jq --arg key "$new_key" '.fields |= map(if .name == "apiKey" then .value = $key else . end)')
-    if container_curl "$app" -sk --fail -X PUT -H "X-Api-Key: ${app_key}" \
+    if container_curl "$app" -sk --fail --max-time 30 -X PUT -H "X-Api-Key: ${app_key}" \
       -H "Content-Type: application/json" -d "$updated" \
       "${url}/$(echo "$connection" | jq -r '.id')?forceSave=true" >/dev/null; then
       echo "[Jellyfin] Updated ${app}'s Jellyfin connection with the new API key."
     else
-      echo "[Jellyfin] WARNING: failed to update ${app}'s Jellyfin connection with the new API key."
-      echo "[Jellyfin] Re-run 'make wire_connections' to fix this."
+      jellyfin_key_not_propagated "$app" "refused the new key"
     fi
   done
+}
+
+# The warning for an app propagate_jellyfin_key could not update, which then
+# keeps the revoked key. Args: app reason
+jellyfin_key_not_propagated() {
+  echo "[Jellyfin] WARNING: ${1} ${2}, so its Jellyfin connection still holds the old key."
+  echo "[Jellyfin] Once it's healthy, re-run 'make wire_connections' to fix this."
 }
 
 rotate_jellyfin() {

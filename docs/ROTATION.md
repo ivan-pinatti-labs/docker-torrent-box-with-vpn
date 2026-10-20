@@ -117,9 +117,9 @@ The non-Servarr targets:
   (the only record of Jellyfin's current key; there is no config.xml
   equivalent), and revokes the old one. Consumers updated, before the old
   key is revoked: the `Emby / Jellyfin` connection of every Servarr app that
-  holds one (Sonarr, Radarr, Lidarr, Whisparr). An app that does not answer
-  keeps the old key and the run says so; `make wire_connections` repairs it
-  later. This requires an admin account,
+  holds one (Sonarr, Radarr, Lidarr, Whisparr). An app that does not answer,
+  does not list its connections or refuses the new key keeps the old one, and
+  the run warns about it; `make wire_connections` repairs it later. This requires an admin account,
   which `scripts/wire-connections.sh`'s `ensure_jellyfin_setup()` *attempts*
   to create through Jellyfin's own first-run Startup API (username and
   password both `jellyfin`) as part of `make wire_connections`/

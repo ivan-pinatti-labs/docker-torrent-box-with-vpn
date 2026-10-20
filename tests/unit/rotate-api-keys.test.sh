@@ -133,10 +133,10 @@ EOF
   rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/indexer$' 0 "${indexers}"
   # Each arr app's connections, a Jellyfin one with its key masked the way the
   # API answers. Readarr cannot hold a Jellyfin connection.
-  rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/notification$' 0 '[
+  rule 'curl -sk --fail --max-time 30 -H X-Api-Key: \S+ \S+/notification$' 0 '[
     {"id": 4, "implementation": "MediaBrowser", "fields": [{"name": "host", "value": "jellyfin"}, {"name": "apiKey", "value": "********"}]},
     {"id": 5, "implementation": "Discord"}]'
-  rule 'readarr curl -sk --fail -H X-Api-Key: \S+ \S+/notification$' 0 '[]'
+  rule 'readarr curl -sk --fail --max-time 30 -H X-Api-Key: \S+ \S+/notification$' 0 '[]'
   rule '/System/Info/Public$' 0 '{"StartupWizardCompleted": true}'
   rule 'curl -s --fail -H Authorization: MediaBrowser Token="old-jellyfin" \S+/Auth/Keys$' 0 \
     '{"Items": [{"AccessToken": "old-jellyfin", "DateCreated": "1"}, {"AccessToken": "new-jellyfin", "DateCreated": "3"}, {"AccessToken": "other", "DateCreated": "2"}]}'
@@ -204,11 +204,13 @@ check "every arr app's Jellyfin connection gets the new key" 0 out \
   "[Jellyfin] Updated lidarr's Jellyfin connection with the new API key." \
   "[Jellyfin] Updated whisparr's Jellyfin connection with the new API key."
 check "the connection is saved with the new key, where config.xml says the app is" 0 log \
-  "podman exec sonarr curl -sk --fail -X PUT -H X-Api-Key: $(key 1) -H Content-Type: application/json -d {\n  \"id\": 4,\n  \"implementation\": \"MediaBrowser\",\n  \"fields\": [\n    {\n      \"name\": \"host\",\n      \"value\": \"jellyfin\"\n    },\n    {\n      \"name\": \"apiKey\",\n      \"value\": \"new-jellyfin\"" \
+  "podman exec sonarr curl -sk --fail --max-time 30 -X PUT -H X-Api-Key: $(key 1) -H Content-Type: application/json -d {\n  \"id\": 4,\n  \"implementation\": \"MediaBrowser\",\n  \"fields\": [\n    {\n      \"name\": \"host\",\n      \"value\": \"jellyfin\"\n    },\n    {\n      \"name\": \"apiKey\",\n      \"value\": \"new-jellyfin\"" \
   "http://127.0.0.1:8989/api/v3/notification/4?forceSave=true" \
   "https://127.0.0.1:8687/lidarr/api/v1/notification/4?forceSave=true"
 refute "an app without a Jellyfin connection is left alone" out "Updated readarr's Jellyfin connection"
-if [[ "$(grep -n 'sonarr curl -sk --fail -X PUT .*/notification/4' "${__state}/log" | cut -d: -f1)" -gt "$(grep -n 'Auth/Keys/old-jellyfin' "${__state}/log" | cut -d: -f1)" ]]; then
+put_line="$(grep -n 'sonarr curl -sk --fail --max-time 30 -X PUT .*/notification/4' "${__state}/log" | cut -d: -f1)"
+revoke_line="$(grep -n 'Auth/Keys/old-jellyfin' "${__state}/log" | cut -d: -f1)"
+if [[ -z "${put_line}" || -z "${revoke_line}" || "${put_line}" -gt "${revoke_line}" ]]; then
   fail "the connections move to the new key before the old one is revoked"
 fi
 check "homepage is recreated" 0 log "podman-compose --file docker-compose.yml --profile enabled up -d --force-recreate homepage"
@@ -341,12 +343,14 @@ check "no new Jellyfin key is fatal" 1 err "[Jellyfin] ERROR: could not obtain t
 deployment
 containers radarr lidarr readarr whisparr jellyfin
 arr_xml lidarr True 8686 8687 lidarr ""
-rule 'radarr curl -sk --fail -o /dev/null .*/notification$' 7 ""
-rule 'whisparr curl -sk --fail -X PUT' 22 ""
+rule 'radarr curl -sk --fail --max-time 30 -o /dev/null .*/notification$' 7 ""
+rule 'readarr curl -sk --fail --max-time 30 -H X-Api-Key: \S+ \S+/notification$' 22 ""
+rule 'whisparr curl -sk --fail --max-time 30 -X PUT' 22 ""
 run jellyfin
-check "an arr app that does not answer or refuses the key is reported" 0 out \
+check "an arr app that does not answer, list or take the key is reported" 0 out \
   "[Jellyfin] WARNING: radarr did not answer, so its Jellyfin connection still holds the old key." \
-  "[Jellyfin] WARNING: failed to update whisparr's Jellyfin connection with the new API key."
+  "[Jellyfin] WARNING: readarr did not list its connections, so its Jellyfin connection still holds the old key." \
+  "[Jellyfin] WARNING: whisparr refused the new key, so its Jellyfin connection still holds the old key."
 check "and the old key is revoked all the same" 0 log "http://127.0.0.1:8096/jellyfin/Auth/Keys/old-jellyfin"
 refute "an arr app without a container is left alone" log "sonarr curl"
 refute "an arr app without a key is left alone" log "lidarr curl"

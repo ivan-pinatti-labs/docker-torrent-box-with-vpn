@@ -132,8 +132,9 @@ existing connection whose stored key is not Jellyfin's current one, the
 placeholder or a key `make rotate_all SERVICE=jellyfin` has since revoked, gets
 the current key. The apps' API masks the key, so the script reads it from each
 app's database. A rotation of Jellyfin's key updates these connections itself
-(see [ROTATION.md](ROTATION.md)), so the re-run is only needed when an app
-was down during one.
+(see [ROTATION.md](ROTATION.md)), so the re-run is only needed for an app the
+rotation warned about: one that was down, did not list its connections, or
+refused the new key.
 
 To check it by hand, open the app, go to Settings > Connect, click
 `Emby / Jellyfin` and press **Test**; it should report success. That is the
