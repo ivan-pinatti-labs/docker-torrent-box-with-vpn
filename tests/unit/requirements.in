@@ -7,9 +7,11 @@
 # Separate from tests/requirements.txt, which is the integration suite's
 # environment and drags in the Docker SDK, testinfra and the HTTP clients the
 # stack tests need. The unit tier needs none of that: pytest to run it,
-# coverage to measure it, and pyyaml because permissions.py and
-# generate-homepage-services.py import it. Keep pytest and pyyaml equal to the
-# integration pins.
+# coverage to measure it, pyyaml because permissions.py and
+# generate-homepage-services.py import it, and pytest-xdist because
+# test_xdist_groups.py runs the suite's xdist grouping hook under it. Keep
+# pytest, pytest-xdist and pyyaml equal to the integration pins.
 coverage==7.16.2
 pytest==9.1.1
+pytest-xdist==3.8.0
 pyyaml==6.0.3

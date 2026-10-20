@@ -19,9 +19,15 @@ them in three passes instead of one invocation:
    the bulk of the suite: container health, connectivity, TLS, auth,
    security hardening, observability, and so on, all read-only or
    self-contained.
-2. `rotation_isolated`, in parallel (`-n 4`). A subset of the arr-app
-   rotation cases that only ever touch their own container and their own
-   Prowlarr Application row, safe to run concurrently with itself.
+2. `rotation_isolated`, in parallel (`-n 4 --dist loadgroup`). A subset of
+   the arr-app rotation cases that only ever touch their own container and
+   their own Prowlarr Application row. `tests/xdist_groups.py` puts each case
+   in an xdist group named after its app, so one app's cases run on one
+   worker, one after another, while different apps run at the same time.
+   Sonarr and Radarr share the `sonarr-radarr` group, because rotating either
+   key rewrites Bazarr's `config.yaml` and Recyclarr's secrets and restarts
+   Bazarr. `tests/unit/test_xdist_groups.py` checks the groups xdist actually
+   applies.
 3. Everything else marked `rotation`, `pw_rotation`, `wiring`, or
    `killswitch` (excluding what tier 2 already covered), serially. These
    touch shared state (Prowlarr's Applications list, Homepage's restart,
@@ -459,8 +465,8 @@ podman run --rm -v "$PWD:/w:rw,Z" -w /w ghcr.io/astral-sh/uv:python3.14-trixie-s
 
 That is the command in the lock's own header, which Renovate replays.
 `--exclude-newer=P7D` leaves out anything released in the last seven days,
-dependencies of dependencies included. Keep pytest and pyyaml equal to their
-pins in `tests/requirements.txt`, the integration suite's own environment,
+dependencies of dependencies included. Keep pytest, pytest-xdist and pyyaml
+equal to their pins in `tests/requirements.txt`, the integration suite's own environment,
 which is not a lock and is unchanged.
 
 `scripts/requirements.in` and its lock `scripts/requirements.txt` work the
