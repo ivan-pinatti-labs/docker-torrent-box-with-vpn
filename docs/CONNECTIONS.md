@@ -131,7 +131,9 @@ looked wired while every rescan it sent got a 401. A re-run now repairs one: an
 existing connection whose stored key is not Jellyfin's current one, the
 placeholder or a key `make rotate_all SERVICE=jellyfin` has since revoked, gets
 the current key. The apps' API masks the key, so the script reads it from each
-app's database.
+app's database. A rotation of Jellyfin's key updates these connections itself
+(see [ROTATION.md](ROTATION.md)), so the re-run is only needed when an app
+was down during one.
 
 To check it by hand, open the app, go to Settings > Connect, click
 `Emby / Jellyfin` and press **Test**; it should report success. That is the

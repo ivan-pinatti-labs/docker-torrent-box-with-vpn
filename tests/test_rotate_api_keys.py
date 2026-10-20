@@ -875,6 +875,24 @@ def test_rotate_jellyfin_api_key(running_containers):
     )
     assert status == 401, f"Jellyfin still accepts the revoked key (HTTP {status})"
 
+    # Every arr app's Jellyfin connection holds the new key, read from its
+    # database since the API masks it. Left on the revoked one, Sonarr's own
+    # connection test failed after every bootstrap (#324).
+    from test_rotate_passwords import ARR_DB_PATHS
+
+    for svc, db_rel in ARR_DB_PATHS.items():
+        db_path = REPO_ROOT / db_rel
+        if svc not in running_containers or not db_path.exists():
+            continue
+        with live_db(db_path) as conn:
+            rows = conn.execute(
+                "SELECT Settings FROM Notifications WHERE Implementation = 'MediaBrowser'"
+            ).fetchall()
+        for (settings,) in rows:
+            assert json.loads(settings).get("apiKey") == new_key, (
+                f"{svc}'s Jellyfin connection still holds the old key"
+            )
+
     if "homepage" in running_containers:
         assert wait_for_homepage_ready(), "homepage API did not respond"
         failures = homepage_widget_failures(only_services={"jellyfin"})
