@@ -550,6 +550,12 @@ configure_jellyfin_network:
 # being created, and jDownloader2 crash-loops forever. This has to run
 # after jDownloader2's own first boot instead, against the file it just
 # generated itself. See docs/JDOWNLOADER2.md.
+#
+# The wait is 180s. It was 60s, and the file usually lands near the end of
+# that on a CI runner: the nightly bootstrap leg spent 58 to 69s on this whole
+# step on three nights, then ran out of the 60s on 2026-10-19 with no pin
+# changed (#324). On timeout the container's state and log say whether
+# jDownloader2 is slow or broken, which the old message could not.
 configure_jdownloader2_api:
 	@if [ "$(JDOWNLOADER2_PROFILE)" != "enabled" ]; then \
 		echo "jDownloader2 is disabled in .env, skipping its API configuration."; \
@@ -558,11 +564,17 @@ configure_jdownloader2_api:
 	echo "Configuring jDownloader2's API access..."; \
 	target="configs/jdownloader2/config/cfg/org.jdownloader.api.RemoteAPIConfig.json"; \
 	elapsed=0; \
-	while [ ! -f "$$target" ] && [ "$$elapsed" -lt 60 ]; do \
+	while [ ! -f "$$target" ] && [ "$$elapsed" -lt 180 ]; do \
 		sleep 2; elapsed=$$((elapsed + 2)); \
 	done; \
 	if [ ! -f "$$target" ]; then \
-		echo "ERROR: $$target was not created after 60s; jDownloader2 may have failed to start."; \
+		echo "ERROR: $$target was not created after 180s; jDownloader2 may have failed to start."; \
+		echo "--- jdownloader2 state ---"; \
+		$(RUNTIME) inspect $(CONTAINER_PREFIX)jdownloader2 \
+			--format 'status={{.State.Status}} restarts={{.RestartCount}} exitcode={{.State.ExitCode}}' \
+			2>/dev/null || echo "(jdownloader2 could not be inspected; it may never have been created)"; \
+		echo "--- jdownloader2 log, last 40 lines ---"; \
+		$(RUNTIME) logs --tail 40 $(CONTAINER_PREFIX)jdownloader2 2>&1 || echo "(no logs available)"; \
 		exit 1; \
 	fi; \
 	$(COMPOSE) $(COMPOSE_FILES) --profile enabled stop jdownloader2; \

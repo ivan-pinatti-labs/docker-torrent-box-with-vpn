@@ -793,6 +793,61 @@ PYEOF
   SUMMARY_NZBHYDRA2_NEW="$new_key"
 }
 
+# Every arr app's Jellyfin connection (Settings > Connect) carries Jellyfin's
+# API key, and rotate_jellyfin revokes the old one, so each connection moves to
+# the new key first. Without this they kept the revoked key until the next
+# `make wire_connections`: Sonarr's own connection test answered "API Key is
+# invalid" after every bootstrap (#324), and the other apps, whose test only
+# sends a notification, passed it while their library rescans got 401.
+# forceSave because storing the key is the job here, the same as the indexer
+# update in propagate_prowlarr_key; whether the connection works is what
+# tests/test_wire_connections.py checks. An app holding no Jellyfin connection
+# (Readarr, or a profile wired without Jellyfin) is left alone.
+# Args: new_key
+propagate_jellyfin_key() {
+  local new_key="$1"
+  local targets=("sonarr v3 ${SONARR_XML}" "radarr v3 ${RADARR_XML}" "lidarr v1 ${LIDARR_XML}" "readarr v1 ${READARR_XML}" "whisparr v3 ${WHISPARR_XML}")
+  local entry app api_version xml_path app_key scheme port base url connection updated
+  for entry in "${targets[@]}"; do
+    read -r app api_version xml_path <<<"$entry"
+    podman container exists "$(cname "$app")" 2>/dev/null || continue
+    app_key=$(get_xml_apikey "$xml_path" 2>/dev/null)
+    if [[ -z "$app_key" ]]; then
+      jellyfin_key_not_propagated "$app" "has no API key in ${xml_path}"
+      continue
+    fi
+    read -r scheme port base <<<"$(arr_endpoint "$xml_path")"
+    url="${scheme}://127.0.0.1:${port}${base}/api/${api_version}/notification"
+    # Under `all` the app was restarted for its own key a moment ago. Every
+    # request has its own --max-time as well: retry cannot cut short one that
+    # connected and then never answered.
+    if ! retry 180 container_curl "$app" -sk --fail --max-time 30 -o /dev/null -H "X-Api-Key: ${app_key}" "$url"; then
+      jellyfin_key_not_propagated "$app" "did not answer"
+      continue
+    fi
+    if ! connection=$(container_curl "$app" -sk --fail --max-time 30 -H "X-Api-Key: ${app_key}" "$url" | jq 'map(select(.implementation == "MediaBrowser")) | first'); then
+      jellyfin_key_not_propagated "$app" "did not list its connections"
+      continue
+    fi
+    [[ -n "$connection" && "$connection" != "null" ]] || continue
+    updated=$(echo "$connection" | jq --arg key "$new_key" '.fields |= map(if .name == "apiKey" then .value = $key else . end)')
+    if container_curl "$app" -sk --fail --max-time 30 -X PUT -H "X-Api-Key: ${app_key}" \
+      -H "Content-Type: application/json" -d "$updated" \
+      "${url}/$(echo "$connection" | jq -r '.id')?forceSave=true" >/dev/null; then
+      echo "[Jellyfin] Updated ${app}'s Jellyfin connection with the new API key."
+    else
+      jellyfin_key_not_propagated "$app" "refused the new key"
+    fi
+  done
+}
+
+# The warning for an app propagate_jellyfin_key could not update, which then
+# keeps the revoked key. Args: app reason
+jellyfin_key_not_propagated() {
+  echo "[Jellyfin] WARNING: ${1} ${2}, so its Jellyfin connection still holds the old key."
+  echo "[Jellyfin] Once it's healthy, re-run 'make wire_connections' to fix this."
+}
+
 rotate_jellyfin() {
   # Jellyfin API keys are created and revoked through its own API; the value
   # cannot be chosen, so the flow is: create new, adopt it, revoke old. That
@@ -825,6 +880,7 @@ rotate_jellyfin() {
   fi
 
   write_secret_file "$JELLYFIN_API_KEY_SECRET" "$new_key"
+  propagate_jellyfin_key "$new_key"
 
   echo "[Jellyfin] Revoking the old API key..."
   container_curl jellyfin -s --fail -X DELETE \
