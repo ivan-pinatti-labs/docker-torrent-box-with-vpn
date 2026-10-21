@@ -137,12 +137,11 @@ curl -s https://gcr.io/v2/cadvisor/cadvisor/tags/list \
   | jq '.manifest | to_entries[] | select(.value.tag | index("v0.55.1")) | {digest: .key, uploaded: (.value.timeUploadedMs | tonumber / 1000 | todate)}'
 ```
 
-The `manifest` map is keyed by digest, with `timeUploadedMs` for each. A devcontainer-airlock
-workbench cannot reach gcr.io yet: the `gcr` egress set is
-ivan-pinatti-labs/devcontainer-airlock#170, and listing it here before the workbench's proxy
-knows it would stop the proxy from starting. Until then this check has to run from somewhere
-that can reach gcr.io, and the command above has not been run from one yet: check its output
-the first time.
+The `manifest` map is keyed by digest, with `timeUploadedMs` for each. From a workbench this
+needs the `gcr` egress set (ivan-pinatti-labs/devcontainer-airlock#170), which
+`.devcontainer/egress-sets` lists; a session registers its sets when it starts, so one started
+before the line was on `main` cannot reach gcr.io. The command above has not been run yet:
+check its output the first time.
 
 ## Release log
 
