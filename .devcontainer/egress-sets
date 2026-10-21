@@ -3,4 +3,5 @@ python
 node
 docker-hub
 quay
+gcr
 trivy
