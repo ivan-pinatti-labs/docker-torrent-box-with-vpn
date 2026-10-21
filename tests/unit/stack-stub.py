@@ -242,6 +242,7 @@ FILTERS = {
     ".id": lambda d, a: [d.get("id")],
     ".name": lambda d, a: [d.get("name")],
     ".username": lambda d, a: [d.get("username")],
+    ".certificateValidation": lambda d, a: [d.get("certificateValidation")],
     ".isInit": lambda d, a: [d.get("isInit")],
     ".user.id": lambda d, a: [d["user"]["id"]],
     ".apiKey.apiKey": lambda d, a: [d["apiKey"]["apiKey"]],

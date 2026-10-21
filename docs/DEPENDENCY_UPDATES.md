@@ -554,6 +554,16 @@ sooner when a held image carries a fix the stack needs.
    the dashboard (in the issue body, `- [ ]` becomes `- [x]` on that line), and Renovate opens
    the pull request on its next run. Under seven days: leave it, and say when it becomes
    eligible.
+
+   One case never becomes eligible this way: a tag its publisher rebuilds more often than
+   weekly. Each rebuild is a new digest with a new date, so the digest Renovate offers is always
+   the youngest. hotio does this to whisparr's `v3`, rebuilding every current tag every few days
+   (2026-10-13, then 2026-10-18), and moves the release tags (`v3-3.6.5-release.1886`) along
+   with it. Then go one build back instead: find the newest build of the same line that is seven
+   days old, by a tag that names that one build (hotio's `v3-<commit>`, such as `v3-7fb9b23`),
+   confirm what it contains (the image's `org.opencontainers.image.version` label is fine for
+   that, just not for its age), and open a pull request of your own setting the pin to that
+   build's digest. It is not a bot pull request, so it takes the human path through review.
 4. **Check the pull request against what was checked.** Compare the digest in its diff with the
    one from step 2. They differ when the image moved again in between, and then it must not
    merge on its own: remove the `automerge` label, which `bot-auto-merge.yml` will not approve
@@ -578,17 +588,18 @@ first read as a change in hotio's build layer. It was not: it was Whisparr's own
 asset paths lost the URL base behind a reverse proxy), fixed upstream by Whisparr-Eros pull
 request #660 and first shipped in `3.6.0-release.1660` on 2026-09-17.
 
-hotio also tags each build with an immutable version alongside the floating alias
-(`v3-3.4.0-release.1387`, `v3-3.5.0-release.1585`, and so on going back through
-`v3-3.2.0-release.27`), they just don't document those as the way to install this.
-`WHISPARR_VERSION` is pinned to `v3-3.4.0-release.1387`'s digest, the release immediately
-before the broken one, which had run clean for five days before that. `versioning=loose`
-because the tag is not semver Renovate can order (`v3-` prefix, `-release.NNNN` suffix), the
-same reasoning as `LAZYLIBRARIAN_VERSION` below. The `digest` update that would collect the
-fix never arrives on its own: GHCR records no push date Renovate can read, so it is held for
-a person to release, see "Images outside Docker Hub" above. The suite still has to pass
-before one merges, and this pin has no ordering to fall back on if a future build is bad
-again.
+hotio also tags each release (`v3-3.4.0-release.1387`, `v3-3.5.0-release.1585`, and so on
+going back through `v3-3.2.0-release.27`), but those are not immutable either: a rebuild moves
+the release tag to the new build along with `v3`. What names one build and stays put is the
+`v3-<commit>` tag, after the commit of hotio's own repository the build came from.
+`WHISPARR_VERSION` was held on `v3-3.4.0-release.1387`'s digest, the release immediately before
+the broken one, until 2026-10-20, and is now on build `v3-7fb9b23` of `3.6.5-release.1886`,
+which carries the fix. `versioning=loose` because the tag is not semver Renovate can order
+(`v3-` prefix, `-release.NNNN` suffix), the same reasoning as `LAZYLIBRARIAN_VERSION` below.
+Renovate never collects the next build on its own: GHCR records no push date Renovate can
+read, and hotio rebuilds `v3` faster than the window, so each update is released by hand, one
+build back, as "Images outside Docker Hub" above describes. The suite still has to pass before
+one merges, and this pin has no ordering to fall back on if a future build is bad again.
 
 `MYLAR_VERSION` carries no digest, and cannot as it stands. It is read twice out of one
 variable: as the base image the wrapper in `build/` is built on, and as the tag of the locally

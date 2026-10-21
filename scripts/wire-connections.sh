@@ -786,9 +786,16 @@ ensure_arr_host_prereqs() {
   local app_name="$1" container="$2" scheme="$3" port="$4" api_ver="$5" api_key="$6"
   local base_url="${scheme}://127.0.0.1:${port}/${app_name}/api/${api_ver}/config/host"
 
-  local current
+  # Done means both halves are in place, not just a username. Whisparr 3.6
+  # creates its own login on first start ('whisparr', with a random password it
+  # logs once), so a username alone no longer says this ran. This step always
+  # sets the two together, so certificateValidation still at its default means
+  # it never has, whatever login the app made for itself.
+  local current username validation
   current=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "$base_url")
-  if [[ "$(echo "$current" | jq -r '.username')" != "" ]]; then
+  username=$(echo "$current" | jq -r '.username')
+  validation=$(echo "$current" | jq -r '.certificateValidation')
+  if [[ "$username" != "" && "$validation" == "disabledForLocalAddresses" ]]; then
     echo "[$app_name] WebUI login already set up, skipping."
     return 0
   fi

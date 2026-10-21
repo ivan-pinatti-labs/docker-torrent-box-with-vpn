@@ -327,12 +327,9 @@ services:
     healthcheck:
       <<: *healthcheck-defaults
       test: >
-        http_status=$$(curl --silent --output /dev/null --write-out '%{http_code}'
-        http://127.0.0.1:${WHISPARR_HTTP_PORT}/whisparr/) &&
-        https_status=$$(curl --silent --output /dev/null --write-out '%{http_code}' --insecure
-        https://127.0.0.1:${WHISPARR_HTTPS_PORT}/whisparr/) &&
-        test "$$http_status" = "200" -o "$$http_status" = "401" &&
-        test "$$https_status" = "200" -o "$$https_status" = "401"
+        curl --fail http://127.0.0.1:${WHISPARR_HTTP_PORT}/whisparr/ &&
+        curl --fail --insecure https://127.0.0.1:${WHISPARR_HTTPS_PORT}/whisparr/ ||
+        exit 1
 
   lazylibrarian:
     <<: [*servarr-common, *limit-servarr]
