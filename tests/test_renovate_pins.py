@@ -521,6 +521,37 @@ def test_image_outside_docker_hub_is_documented(image):
     )
 
 
+def test_held_images_never_merge_unattended():
+    """The rule that lets Renovate merge on its own leaves out every held image.
+
+    A held image is released by hand for one digest whose registry date was
+    checked. A Renovate pull request for it, opened from the dashboard
+    checkbox, carries whatever digest is newest at the time, so it must not
+    reach bot-auto-merge.yml's approval or GitHub's auto-merge before someone
+    compares the two. Leaving the image out of the rule keeps the `automerge`
+    label, and with it both of those, off that pull request.
+    """
+    automerge_rules = [
+        rule
+        for rule in _renovate_config().get("packageRules", [])
+        if rule.get("automerge") is True and "automerge" in rule.get("addLabels", [])
+    ]
+    assert len(automerge_rules) == 1, (
+        f"expected one rule that sets automerge and adds its label, found {len(automerge_rules)}"
+    )
+    excluded = {
+        name[1:]
+        for name in automerge_rules[0].get("matchPackageNames", [])
+        if name.startswith("!")
+    }
+    held = _held_images()
+    assert excluded == held, (
+        f"the automerge rule in {RENOVATE_CONFIG.name} leaves out {sorted(excluded)}, but "
+        f"docs/{RELEASES_RUNBOOK.name} holds {sorted(held)}. Keep the negated "
+        f"matchPackageNames equal to the held table."
+    )
+
+
 class _ComposeLoader(yaml.SafeLoader):
     """SafeLoader that tolerates Compose's own YAML tags.
 

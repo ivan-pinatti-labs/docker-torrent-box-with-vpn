@@ -26,7 +26,8 @@ becomes eligible on a given day.
 | `CADVISOR_VERSION` | `gcr.io/cadvisor/cadvisor` | [gcr.io tag list](#gcrio) | Docker Hub's `google/cadvisor` stopped at `v0.33.0` |
 
 `tests/test_renovate_pins.py` fails the suite when an image pin names a registry other than
-Docker Hub and the image is missing from this table, so a new one cannot freeze silently.
+Docker Hub and the image is missing from this table, so a new one cannot freeze silently, and
+when this table and the images left out of Renovate's automerge rule (step 4 below) differ.
 The organization's own images (`ghcr.io/ivan-pinatti-labs/**`) are not here:
 `.github/renovate.json5` gives them `timestamp-optional`, for the reasons written beside that
 rule.
@@ -34,26 +35,30 @@ rule.
 ## Releasing an update
 
 1. **List what is held.** Read the Dependency Dashboard (#24), section "Pending Status Checks".
-   Entries for the images in the table above are the ones held for lack of a date. A Docker Hub
-   entry there is simply still inside its seven days; leave it alone. Grouped entries (the
-   observability stack) can carry a held image alongside others.
-2. **Find the date the registry recorded** for the exact version and digest the entry proposes,
-   as [below](#looking-up-the-push-date). Look it up by digest, not by tag, since a floating tag
-   moves.
-3. **Release it, or leave it.** Seven days or more since that date: tick the entry's checkbox on
-   the dashboard (in the issue body, `- [ ]` becomes `- [x]` on that line), and Renovate opens
-   the pull request on its next run. Under seven days: leave it, and note when it becomes
-   eligible. If the proposed digest can never become eligible because its tag is rebuilt more
-   often than weekly, go [one build back](#one-build-back) instead.
-4. **Check the pull request against what was checked.** Compare the digest in its diff with the
-   one from step 2. They differ when the image moved again in between, and then it must not
-   merge on its own: remove the `automerge` label, which `bot-auto-merge.yml` will not approve
-   anything without, run `gh pr merge <number> --disable-auto`, and go back to step 2 for the new
-   digest. When they match, the pull request takes the normal bot path in
-   [docs/MERGE_PIPELINE.md](MERGE_PIPELINE.md): `Pin Only`, the integration suite and
-   `Review Verified` all still apply.
-5. **Log it** in the [release log](#release-log), in the pull request that releases it or, for a
-   bot pull request, in the next one that touches this page.
+   Entries for the images in the table above are the ones held for lack of a date, each with the
+   version and digest Renovate would move to. A Docker Hub entry there is simply still inside its
+   seven days; leave it alone.
+2. **Find the date the registry recorded** for each held image's exact version and digest, as
+   [below](#looking-up-the-push-date). Look it up by digest, not by tag, since a floating tag
+   moves. A grouped entry (the observability stack) names several images: check each held one on
+   its own.
+3. **Pick what to release.** A digest seven or more days old is eligible; note when a younger one
+   will be. If the digest on offer can never become eligible because its tag is rebuilt more
+   often than weekly, pick [one build back](#one-build-back) instead.
+4. **Open a pull request of your own** setting each pin you checked to exactly that digest, in
+   `versions.env` (or the `FROM` line in `build/`), and update the comment above the pin when it
+   says which build it is. It takes the human path in
+   [docs/MERGE_PIPELINE.md](MERGE_PIPELINE.md): CodeRabbit, then `/run-tests`, then the merge
+   queue.
+
+   Do not tick the entry's checkbox on the dashboard instead. Renovate would open the pull request
+   with whatever digest is newest when it runs, which can be younger than the one checked, and a
+   grouped entry would bring along every image in its group. For that reason the held images are
+   left out of the rule that lets Renovate merge on its own (the first of `packageRules` in
+   `.github/renovate.json5`): if a checkbox is ticked anyway, the pull request arrives without the
+   `automerge` label and waits for review, where its digests can be compared with the registry's
+   dates like any other.
+5. **Log it** in the [release log](#release-log), in the same pull request.
 
 ### One build back
 
@@ -62,7 +67,7 @@ a new date, so the digest Renovate offers is always the youngest and never reach
 hotio does this to whisparr: every current tag is rebuilt every few days (2026-10-13, 2026-10-18,
 and again by 2026-10-21), and the release tags (`v3-3.6.5-release.1886`) move along with `v3`.
 
-Release the newest build that has aged instead:
+Pick the newest build that has aged instead:
 
 1. On the GHCR versions page (`https://github.com/<owner>/<repository>/pkgs/container/<name>/versions`),
    find the newest build of the same line published seven or more days ago, by a tag that names
@@ -81,9 +86,8 @@ Release the newest build that has aged instead:
    Then fetch the index, one platform's manifest, and its config blob, and read the config's
    `org.opencontainers.image.version` label. A label is fine for what the image contains, just
    not for its age.
-3. Open a pull request of your own setting the pin to that build's digest, keeping the tag the
-   pin already uses (`WHISPARR_VERSION=v3@<digest>`), and update the comment above the pin. It is
-   not a bot pull request, so it takes the human path through review.
+3. Release that digest as step 4 above, keeping the tag the pin already uses
+   (`WHISPARR_VERSION=v3@<digest>`).
 
 ### When a release changes the app
 

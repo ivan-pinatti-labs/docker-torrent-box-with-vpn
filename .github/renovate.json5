@@ -282,8 +282,23 @@
     // reaches this repository at all: leaving them out would mean the pins that
     // pinDigests maintains could only be refreshed by hand, which is how they
     // rot.
+    //
+    // The images held for lack of a release date (docs/MANUAL_IMAGE_RELEASES.md)
+    // are left out by name. Their updates are released by hand after a person
+    // has checked the registry's own date for one exact digest, and a pull
+    // request from the dashboard checkbox could carry a newer digest than the
+    // one checked and still merge before anyone compared them. Left out here,
+    // such a pull request arrives unlabelled and waits for review instead.
+    // tests/test_renovate_pins.py keeps this list equal to the runbook's.
     {
       matchUpdateTypes: ["patch", "minor", "digest", "pin", "pinDigest"],
+      matchPackageNames: [
+        "!gcr.io/cadvisor/cadvisor",
+        "!ghcr.io/esanchezm/prometheus-qbittorrent-exporter",
+        "!ghcr.io/hotio/whisparr",
+        "!ghcr.io/nperez0111/koreader-sync",
+        "!quay.io/navidys/prometheus-podman-exporter",
+      ],
       automerge: true,
       addLabels: ["automerge"],
     },
