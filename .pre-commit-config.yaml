@@ -487,7 +487,7 @@ repos:
           --directory .
         language: python
         # renovate: datasource=pypi depName=checkov
-        additional_dependencies: ["checkov==3.3.27"]
+        additional_dependencies: ["checkov==3.3.29"]
         stages: [pre-push]
         pass_filenames: false
         always_run: true
