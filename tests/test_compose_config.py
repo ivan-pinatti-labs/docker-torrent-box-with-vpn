@@ -4,6 +4,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from conftest import QBITTORRENT_QUEUEING
+
 REPO_ROOT = Path(__file__).parent.parent
 
 
@@ -129,6 +131,23 @@ def test_homepage_observability_widgets():
         "type": "prometheus",
         "url": "http://prometheus:9090/admin/prometheus",
     }
+
+
+@pytest.mark.parametrize(
+    ("key", "expected"), [(key, value) for key, _, value in QBITTORRENT_QUEUEING]
+)
+def test_qbittorrent_seed_queueing(key, expected):
+    """The seed holds the queue settings test_qbittorrent_queueing reads live.
+
+    Interpolation is off because the seed's scheduler times hold a bare `%`.
+    """
+    text = (
+        REPO_ROOT / "configs/qbittorrent/config/qBittorrent/qBittorrent.conf.example"
+    ).read_text()
+    parser = configparser.ConfigParser(strict=False, interpolation=None)
+    parser.read_string(text)
+
+    assert parser.get("BitTorrent", key) == str(expected).lower()
 
 
 def test_mylar_seed_torznab_disabled_ddl_enabled():

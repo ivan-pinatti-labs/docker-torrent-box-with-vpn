@@ -5,10 +5,12 @@ import requests
 import urllib3
 
 from conftest import (
+    QBITTORRENT_QUEUEING,
     SERVICES,
     classify_arr_health_response,
     is_download_client_unreachable,
     is_enabled,
+    qbittorrent_preferences,
     read_api_key,
     service_base_url,
     skip_if_not_running,
@@ -190,3 +192,22 @@ def test_arr_health_response_empty(service_name, running_containers):
         assert not failures, (
             f"{service_name} cannot reach a download client: {failures}"
         )
+
+
+def test_qbittorrent_queueing(running_containers):
+    """qBittorrent runs with the torrent queue settings its seed holds.
+
+    Read live, since qBittorrent writes its running state over
+    qBittorrent.conf on shutdown: a value changed in the WebUI, or reset by
+    an upgrade, would otherwise replace the seeded one with nothing to say so.
+    test_qbittorrent_seed_queueing checks the seed itself. See
+    QBITTORRENT_QUEUEING in conftest.py for why each value is what it is.
+    """
+    if not is_enabled("qbittorrent"):
+        pytest.skip("qbittorrent profile is disabled")
+    skip_if_not_running("qbittorrent", running_containers)
+
+    preferences = qbittorrent_preferences()
+    expected = {name: value for _, name, value in QBITTORRENT_QUEUEING}
+    actual = {name: preferences.get(name) for name in expected}
+    assert actual == expected, "qBittorrent's queue settings differ from its seed"

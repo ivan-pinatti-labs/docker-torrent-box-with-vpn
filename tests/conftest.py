@@ -1,11 +1,13 @@
 import configparser
 import contextlib
+import json
 import os
 import shutil
 import sqlite3
 import subprocess
 import tempfile
 import time
+import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -642,6 +644,71 @@ def container_http(
         return 0, result.stderr
     body, _, status = result.stdout.rpartition("\n")
     return int(status or 0), body
+
+
+# qBittorrent's torrent queue, as qBittorrent.conf.example seeds it: each
+# setting's [BitTorrent] key in qBittorrent.conf, its name in the WebUI API's
+# app/preferences, and the value both should hold. Slow torrents do not count
+# toward the active limits, so a stalled torrent does not hold a slot that a
+# live one could use, and that only applies with the queue itself on.
+#
+# The three thresholds that decide what counts as slow are pinned rather than
+# left to qBittorrent's defaults (#126). They are pinned at those defaults
+# (2 KiB/s down, 2 KiB/s up, 60 seconds, unchanged through 5.2.4), so
+# behaviour stays as it was, but a release that changes a default no longer
+# changes it here unannounced.
+QBITTORRENT_QUEUEING = [
+    ("Session\\QueueingSystemEnabled", "queueing_enabled", True),
+    ("Session\\IgnoreSlowTorrentsForQueueing", "dont_count_slow_torrents", True),
+    ("Session\\SlowTorrentsDownloadRate", "slow_torrent_dl_rate_threshold", 2),
+    ("Session\\SlowTorrentsUploadRate", "slow_torrent_ul_rate_threshold", 2),
+    ("Session\\SlowTorrentsInactivityTimer", "slow_torrent_inactive_timer", 60),
+]
+
+
+def qbittorrent_preferences(timeout: int = 30) -> dict:
+    """qBittorrent's live preferences, read over its own API.
+
+    The live values, not qBittorrent.conf: qBittorrent writes its in memory
+    state over that file on shutdown, so the API is what it is actually
+    running with. The cookie jar gets a path of its own per call, since the
+    callers run in parallel under pytest-xdist and a shared path inside the
+    container would let one call read another's session.
+    """
+    container = container_name("qbittorrent")
+    services_ip = ENV.get("GLUETUN_SERVICES_IP")
+    https_port = ENV.get("QBITTORRENT_HTTPS_PORT")
+    assert services_ip, "GLUETUN_SERVICES_IP not set in .env"
+    assert https_port, "QBITTORRENT_HTTPS_PORT not set in .env"
+    base = f"https://{services_ip}:{https_port}/api/v2"
+    jar = f"/tmp/qbt_test_cookies_{uuid.uuid4().hex}.txt"  # nosec B108 - a path inside the container
+    try:
+        status, _ = container_http(
+            container,
+            f"{base}/auth/login",
+            extra_args=[
+                "-c",
+                jar,
+                "--data-urlencode",
+                f"username={read_secret('qbittorrent', 'username.txt')}",
+                "--data-urlencode",
+                f"password={read_secret('qbittorrent', 'password.txt')}",
+            ],
+            timeout=timeout,
+        )
+        assert 200 <= status < 300, f"qBittorrent login failed: {status}"
+        status, body = container_http(
+            container,
+            f"{base}/app/preferences",
+            extra_args=["-b", jar],
+            timeout=timeout,
+        )
+        assert status == 200, f"GET app/preferences failed: {status} {body[:200]}"
+    finally:
+        subprocess.run(  # nosec B603 B607 - fixed arguments, no user input
+            ["podman", "exec", container, "rm", "-f", jar], check=False
+        )
+    return json.loads(body)
 
 
 # ---------------------------------------------------------------------------
