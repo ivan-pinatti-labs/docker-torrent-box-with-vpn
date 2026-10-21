@@ -43,6 +43,7 @@ the optional monitoring stack. See
   - [6. Backup](#6-backup)
 - [App Links](#app-links)
 - [Bandwidth Control](#bandwidth-control)
+- [Torrent Queue](#torrent-queue)
   - [Revert to original state](#revert-to-original-state)
 - [Observability](#observability)
 - [Known Issues and future improvements](#known-issues-and-future-improvements)
@@ -387,6 +388,24 @@ that calls `setSpeedlimit()` every hour.
 
 To change or disable the schedule, edit each app's config directly or adjust the script in
 the jDownloader2 EventScripter (Settings > Extensions > EventScripter in the web GUI at port 5800).
+
+---
+
+## Torrent Queue
+
+qBittorrent's queue is on, with at most 5 active downloads, 5 active uploads
+and 10 active torrents. Slow torrents do not count toward those limits, so a
+stalled torrent does not hold a slot a live one could use. A torrent counts as
+slow below these thresholds, which the seed config pins at qBittorrent's own
+defaults so a release that changes a default does not change them here:
+
+- **Download Rate**: 2 KiB/s
+- **Upload Rate**: 2 KiB/s
+- **Inactivity Timer**: 60 seconds
+
+The integration suite reads these settings back from the running qBittorrent
+(`test_qbittorrent_queueing`), since a change made in the WebUI is written over
+`qBittorrent.conf` when qBittorrent stops.
 
 ---
 
