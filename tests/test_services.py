@@ -212,7 +212,7 @@ def _fake_qbittorrent(monkeypatch, responses):
     monkeypatch.setattr(
         conftest,
         "ENV",
-        {"GLUETUN_SERVICES_IP": "172.30.0.2", "QBITTORRENT_HTTPS_PORT": "8085"},
+        {"GLUETUN_SERVICES_IP": "192.0.2.2", "QBITTORRENT_HTTPS_PORT": "8085"},
     )
     monkeypatch.setattr(
         conftest.subprocess, "run", lambda cmd, **kwargs: cleanup.append(cmd)
@@ -232,8 +232,8 @@ def test_qbittorrent_preferences_reads_with_one_jar(monkeypatch):
 
     assert conftest.qbittorrent_preferences() == {"queueing_enabled": True}
     assert [url for _, url, _ in calls] == [
-        "https://172.30.0.2:8085/api/v2/auth/login",
-        "https://172.30.0.2:8085/api/v2/app/preferences",
+        "https://192.0.2.2:8085/api/v2/auth/login",
+        "https://192.0.2.2:8085/api/v2/app/preferences",
     ]
     jar = _jar(calls[0][2])
     assert _jar(calls[1][2]) == jar
