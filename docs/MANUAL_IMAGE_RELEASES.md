@@ -40,8 +40,7 @@ rule.
    seven days; leave it alone.
 2. **Find the date the registry recorded** for each held image's exact version and digest, as
    [below](#looking-up-the-push-date). Look it up by digest, not by tag, since a floating tag
-   moves. A grouped entry (the observability stack) names several images: check each held one on
-   its own.
+   moves. Each held image is on a dashboard entry of its own: none of them is in a Renovate group.
 3. **Pick what to release.** A digest seven or more days old is eligible; note when a younger one
    will be. If the digest on offer can never become eligible because its tag is rebuilt more
    often than weekly, pick [one build back](#one-build-back) instead.
@@ -52,12 +51,12 @@ rule.
    queue.
 
    Do not tick the entry's checkbox on the dashboard instead. Renovate would open the pull request
-   with whatever digest is newest when it runs, which can be younger than the one checked, and a
-   grouped entry would bring along every image in its group. For that reason the held images are
-   left out of the rule that lets Renovate merge on its own (the first of `packageRules` in
-   `.github/renovate.json5`): if a checkbox is ticked anyway, the pull request arrives without the
-   `automerge` label and waits for review, where its digests can be compared with the registry's
-   dates like any other.
+   with whatever digest is newest when it runs, which can be younger than the one checked. For
+   that reason the held images are left out of the rule that lets Renovate merge on its own (the
+   first of `packageRules` in `.github/renovate.json5`), and out of every group, since a group is
+   one pull request labelled from all its members. If a checkbox is ticked anyway, the pull
+   request arrives without the `automerge` label and waits for review, where its digest can be
+   compared with the registry's date like any other.
 5. **Log it** in the [release log](#release-log), in the same pull request.
 
 ### One build back

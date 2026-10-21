@@ -550,6 +550,20 @@ def test_held_images_never_merge_unattended():
         f"docs/{RELEASES_RUNBOOK.name} holds {sorted(held)}. Keep the negated "
         f"matchPackageNames equal to the held table."
     )
+    # A group is one pull request, labelled from all its members: a held image
+    # forced into one beside an image that carries the label would be approved
+    # with it. So no group names a held image at all.
+    grouped = {
+        name: rule["groupName"]
+        for rule in _renovate_config().get("packageRules", [])
+        if "groupName" in rule
+        for name in rule.get("matchPackageNames", [])
+        if name in held
+    }
+    assert not grouped, (
+        f"{RENOVATE_CONFIG.name} puts held images in groups: {grouped}. Keep each "
+        f"held image on a branch of its own."
+    )
 
 
 class _ComposeLoader(yaml.SafeLoader):

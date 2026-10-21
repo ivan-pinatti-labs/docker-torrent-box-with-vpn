@@ -524,6 +524,14 @@
     // the registry also meant this rule matched 0 of its 5 listed members
     // before the rewrite in #90: see the depName note above the customManagers
     // below.
+    //
+    // cadvisor, the podman exporter and the qBittorrent exporter used to be in
+    // this group and are not any more. They are held for lack of a release
+    // date and released by hand (docs/MANUAL_IMAGE_RELEASES.md), and a group is
+    // one pull request: forced from the dashboard, a held image would arrive
+    // beside members that carry the automerge label and be approved with them,
+    // without anyone having checked its digest. Each stays on a branch of its
+    // own instead; the same goes for koreader-sync in the group below.
     {
       matchDatasources: ["docker"],
       matchPackageNames: [
@@ -531,22 +539,20 @@
         "docker.io/prom/prometheus",
         "docker.io/grafana/loki",
         "docker.io/grafana/alloy",
-        "gcr.io/cadvisor/cadvisor",
         "docker.io/prom/node-exporter",
-        "quay.io/navidys/prometheus-podman-exporter",
         "docker.io/library/python",
         "docker.io/nginx/nginx-prometheus-exporter",
-        "ghcr.io/esanchezm/prometheus-qbittorrent-exporter",
         "docker.io/msroest/sabnzbd_exporter",
       ],
       groupName: "observability stack",
       groupSlug: "observability",
     },
     // Library and reading tools. Grouped for the same reason as the arr suite
-    // above, to cut pull request volume, not because these five share a
+    // above, to cut pull request volume, not because these four share a
     // release cadence. None of them touch the VPN namespace or a download
     // client, so none of the reasoning that keeps gluetun and the download
-    // clients isolated below applies here.
+    // clients isolated below applies here. koreader-sync is held and kept out,
+    // for the reason given above the observability group.
     {
       matchDatasources: ["docker"],
       matchPackageNames: [
@@ -554,7 +560,6 @@
         "docker.io/linuxserver/calibre-web",
         "docker.io/linuxserver/lazylibrarian",
         "docker.io/advplyr/audiobookshelf",
-        "ghcr.io/nperez0111/koreader-sync",
       ],
       groupName: "library and reading tools",
       groupSlug: "library-reading",
