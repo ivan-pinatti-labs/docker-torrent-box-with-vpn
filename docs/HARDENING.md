@@ -314,8 +314,7 @@ What is placed against it instead:
   Renovate reads a date from, so images are pulled from Docker Hub wherever
   their publisher pushes the same artifact there, and the few that cannot be
   are held for a person to release after checking the date their own registry
-  recorded: [docs/DEPENDENCY_UPDATES.md](DEPENDENCY_UPDATES.md), "Images
-  outside Docker Hub".
+  recorded: [docs/MANUAL_IMAGE_RELEASES.md](MANUAL_IMAGE_RELEASES.md).
 - **Digest pinning** (`pinDigests`). Every image that names a version is pinned
   to its manifest-list digest, so a republished tag cannot change what runs
   without a pull request saying so.

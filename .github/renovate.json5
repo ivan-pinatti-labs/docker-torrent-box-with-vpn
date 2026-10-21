@@ -225,8 +225,8 @@
   // age, so its updates are held here indefinitely and released by hand once a
   // person has checked the date the registry recorded. Images are pulled from
   // Docker Hub wherever their own publisher pushes the same artifact there;
-  // docs/DEPENDENCY_UPDATES.md, "Images outside Docker Hub", lists the rest
-  // and the procedure.
+  // docs/MANUAL_IMAGE_RELEASES.md lists the rest and is the procedure, and
+  // docs/DEPENDENCY_UPDATES.md, "Images outside Docker Hub", says why.
   minimumReleaseAge: "7 days",
 
   // Hold the pull request until the window is satisfied rather than opening one

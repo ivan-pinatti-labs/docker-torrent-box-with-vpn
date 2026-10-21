@@ -753,6 +753,7 @@
     "timespan",
     "timestampexpanded",
     "tmpfs",
+    "todate",
     "tonumber",
     "topk",
     "toplevel",
