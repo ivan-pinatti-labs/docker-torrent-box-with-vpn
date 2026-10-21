@@ -34,6 +34,7 @@ from conftest import (
     container_http,
     container_name,
     is_enabled,
+    qbittorrent_preferences,
     skip_if_not_running,
 )
 
@@ -791,45 +792,7 @@ def test_qbittorrent_trusts_only_nginx(running_containers):
         pytest.skip("qbittorrent profile is disabled")
     skip_if_not_running("qbittorrent", running_containers)
 
-    container = container_name("qbittorrent")
-    base = (
-        f"https://{_env('GLUETUN_SERVICES_IP')}:{_env('QBITTORRENT_HTTPS_PORT')}/api/v2"
-    )
-    jar = "/tmp/qbt_test_cookies.txt"  # nosec B108 - a path inside the container
-    username = (
-        (REPO_ROOT / "configs/qbittorrent/secrets/username.txt").read_text().strip()
-    )
-    password = (
-        (REPO_ROOT / "configs/qbittorrent/secrets/password.txt").read_text().strip()
-    )
-    try:
-        status, _ = container_http(
-            container,
-            f"{base}/auth/login",
-            extra_args=[
-                "-c",
-                jar,
-                "--data-urlencode",
-                f"username={username}",
-                "--data-urlencode",
-                f"password={password}",
-            ],
-            timeout=TIMEOUT,
-        )
-        assert 200 <= status < 300, f"qBittorrent login failed: {status}"
-        status, body = container_http(
-            container,
-            f"{base}/app/preferences",
-            extra_args=["-b", jar],
-            timeout=TIMEOUT,
-        )
-        assert status == 200, f"GET app/preferences failed: {status} {body[:200]}"
-    finally:
-        subprocess.run(  # nosec B603 B607 - fixed arguments, no user input
-            ["podman", "exec", container, "rm", "-f", jar], check=False
-        )
-
-    preferences = json.loads(body)
+    preferences = qbittorrent_preferences(TIMEOUT)
     assert preferences.get("web_ui_reverse_proxy_enabled") is True, (
         "qBittorrent's reverse proxy support is off, so it sees every client as nginx"
     )

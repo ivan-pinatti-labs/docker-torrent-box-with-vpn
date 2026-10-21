@@ -4,11 +4,14 @@ import pytest
 import requests
 import urllib3
 
+import conftest
 from conftest import (
+    QBITTORRENT_QUEUEING,
     SERVICES,
     classify_arr_health_response,
     is_download_client_unreachable,
     is_enabled,
+    qbittorrent_preferences,
     read_api_key,
     service_base_url,
     skip_if_not_running,
@@ -190,3 +193,93 @@ def test_arr_health_response_empty(service_name, running_containers):
         assert not failures, (
             f"{service_name} cannot reach a download client: {failures}"
         )
+
+
+def _fake_qbittorrent(monkeypatch, responses):
+    """Answer qbittorrent_preferences' two calls from `responses`, no container.
+
+    Returns the curl calls it made and the cleanup commands it ran.
+    """
+    calls, cleanup = [], []
+
+    def fake_http(container, url, **kwargs):
+        calls.append((container, url, kwargs["extra_args"]))
+        return responses.pop(0)
+
+    monkeypatch.setattr(conftest, "container_http", fake_http)
+    monkeypatch.setattr(conftest, "container_name", lambda service: service)
+    monkeypatch.setattr(conftest, "read_secret", lambda owner, name: "secret")
+    monkeypatch.setattr(
+        conftest,
+        "ENV",
+        {"GLUETUN_SERVICES_IP": "192.0.2.2", "QBITTORRENT_HTTPS_PORT": "8085"},
+    )
+    monkeypatch.setattr(
+        conftest.subprocess, "run", lambda cmd, **kwargs: cleanup.append(cmd)
+    )
+    return calls, cleanup
+
+
+def _jar(extra_args):
+    """The cookie jar path, the argument after -c on login and -b on the read."""
+    return extra_args[1]
+
+
+def test_qbittorrent_preferences_reads_with_one_jar(monkeypatch):
+    calls, cleanup = _fake_qbittorrent(
+        monkeypatch, [(204, ""), (200, '{"queueing_enabled": true}')]
+    )
+
+    assert conftest.qbittorrent_preferences() == {"queueing_enabled": True}
+    assert [url for _, url, _ in calls] == [
+        "https://192.0.2.2:8085/api/v2/auth/login",
+        "https://192.0.2.2:8085/api/v2/app/preferences",
+    ]
+    jar = _jar(calls[0][2])
+    assert _jar(calls[1][2]) == jar
+    assert cleanup == [["podman", "exec", "qbittorrent", "rm", "-f", jar]]
+
+
+def test_qbittorrent_preferences_login_failure(monkeypatch):
+    calls, cleanup = _fake_qbittorrent(monkeypatch, [(401, "")])
+
+    with pytest.raises(AssertionError, match="qBittorrent login failed: 401"):
+        conftest.qbittorrent_preferences()
+    assert len(calls) == 1
+    assert cleanup == [["podman", "exec", "qbittorrent", "rm", "-f", _jar(calls[0][2])]]
+
+
+def test_qbittorrent_preferences_fetch_failure(monkeypatch):
+    calls, cleanup = _fake_qbittorrent(monkeypatch, [(204, ""), (503, "down")])
+
+    with pytest.raises(AssertionError, match="GET app/preferences failed: 503"):
+        conftest.qbittorrent_preferences()
+    assert len(calls) == 2
+    assert cleanup == [["podman", "exec", "qbittorrent", "rm", "-f", _jar(calls[0][2])]]
+
+
+def test_qbittorrent_preferences_jar_is_per_call(monkeypatch):
+    calls, _ = _fake_qbittorrent(monkeypatch, [(204, ""), (200, "{}")] * 2)
+
+    conftest.qbittorrent_preferences()
+    conftest.qbittorrent_preferences()
+    assert _jar(calls[0][2]) != _jar(calls[2][2])
+
+
+def test_qbittorrent_queueing(running_containers):
+    """qBittorrent runs with the torrent queue settings its seed holds.
+
+    Read live, since qBittorrent writes its running state over
+    qBittorrent.conf on shutdown: a value changed in the WebUI, or reset by
+    an upgrade, would otherwise replace the seeded one with nothing to say so.
+    test_qbittorrent_seed_queueing checks the seed itself. See
+    QBITTORRENT_QUEUEING in conftest.py for why each value is what it is.
+    """
+    if not is_enabled("qbittorrent"):
+        pytest.skip("qbittorrent profile is disabled")
+    skip_if_not_running("qbittorrent", running_containers)
+
+    preferences = qbittorrent_preferences()
+    expected = {name: value for _, name, value in QBITTORRENT_QUEUEING}
+    actual = {name: preferences.get(name) for name in expected}
+    assert actual == expected, "qBittorrent's queue settings differ from its seed"
