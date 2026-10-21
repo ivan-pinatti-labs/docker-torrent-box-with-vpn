@@ -19,7 +19,7 @@ repository has never pulled.
 A fourth way needs no mistake at all: an annotated image from a registry
 other than Docker Hub, which the seven day window holds forever because
 Renovate reads a release date from Docker Hub alone. Those have to be on the
-list in docs/DEPENDENCY_UPDATES.md that is released by hand, and a test checks
+list in docs/MANUAL_IMAGE_RELEASES.md that is released by hand, and a test checks
 that each one is.
 
 Marked `prerequisites` rather than carrying a marker of its own, so
@@ -52,9 +52,8 @@ ENV_EXAMPLE = REPO_ROOT / ".env.example"
 RENOVATE_CONFIG = REPO_ROOT / ".github" / "renovate.json5"
 PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
-DEPENDENCY_DOC = REPO_ROOT / "docs" / "DEPENDENCY_UPDATES.md"
-OUTSIDE_DOCKER_HUB_HEADING = "## Images outside Docker Hub"
-HELD_TABLE_HEADING = "### Held, and released by hand"
+RELEASES_RUNBOOK = REPO_ROOT / "docs" / "MANUAL_IMAGE_RELEASES.md"
+HELD_TABLE_HEADING = "## Held images"
 
 # Tags deliberately left on a channel rather than a version. There is no
 # version here for Renovate to bump, so an annotation would only produce
@@ -487,20 +486,16 @@ def _image_annotations_outside_docker_hub() -> list[str]:
 
 
 def _held_images() -> set[str]:
-    """The Image column of the held table in "Images outside Docker Hub".
+    """The Image column of the runbook's "Held images" table.
 
-    The table rows only, not the whole section: the prose and the moved table
+    The table rows only, not the whole page: the procedure and the release log
     name these images too, and a mention there is not a place the release
     procedure starts from.
     """
-    text = DEPENDENCY_DOC.read_text()
-    start = text.index(OUTSIDE_DOCKER_HUB_HEADING)
-    end = text.find("\n## ", start + len(OUTSIDE_DOCKER_HUB_HEADING))
-    section = text[start : end if end != -1 else len(text)]
-    table = section[section.index(HELD_TABLE_HEADING) :]
-    following = table.find("\n### ")
-    if following != -1:
-        table = table[:following]
+    text = RELEASES_RUNBOOK.read_text()
+    start = text.index(HELD_TABLE_HEADING)
+    end = text.find("\n## ", start + len(HELD_TABLE_HEADING))
+    table = text[start : end if end != -1 else len(text)]
     images = set()
     for line in table.splitlines():
         cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
@@ -521,8 +516,53 @@ def test_image_outside_docker_hub_is_documented(image):
     assert image in _held_images(), (
         f"{image} comes from a registry Renovate reads no release date from, so "
         f"its updates are held indefinitely. Pull it from Docker Hub if its own "
-        f"publisher pushes the same artifact there, or add it to the held table "
-        f'under "{OUTSIDE_DOCKER_HUB_HEADING[3:]}" in {DEPENDENCY_DOC.name}.'
+        f"publisher pushes the same artifact there, or add it to the "
+        f'"{HELD_TABLE_HEADING[3:]}" table in docs/{RELEASES_RUNBOOK.name}.'
+    )
+
+
+def test_held_images_never_merge_unattended():
+    """The rule that lets Renovate merge on its own leaves out every held image.
+
+    A held image is released by hand for one digest whose registry date was
+    checked. A Renovate pull request for it, opened from the dashboard
+    checkbox, carries whatever digest is newest at the time, so it must not
+    reach bot-auto-merge.yml's approval or GitHub's auto-merge before someone
+    compares the two. Leaving the image out of the rule keeps the `automerge`
+    label, and with it both of those, off that pull request.
+    """
+    automerge_rules = [
+        rule
+        for rule in _renovate_config().get("packageRules", [])
+        if rule.get("automerge") is True and "automerge" in rule.get("addLabels", [])
+    ]
+    assert len(automerge_rules) == 1, (
+        f"expected one rule that sets automerge and adds its label, found {len(automerge_rules)}"
+    )
+    excluded = {
+        name[1:]
+        for name in automerge_rules[0].get("matchPackageNames", [])
+        if name.startswith("!")
+    }
+    held = _held_images()
+    assert excluded == held, (
+        f"the automerge rule in {RENOVATE_CONFIG.name} leaves out {sorted(excluded)}, but "
+        f"docs/{RELEASES_RUNBOOK.name} holds {sorted(held)}. Keep the negated "
+        f"matchPackageNames equal to the held table."
+    )
+    # A group is one pull request, labelled from all its members: a held image
+    # forced into one beside an image that carries the label would be approved
+    # with it. So no group names a held image at all.
+    grouped = {
+        name: rule["groupName"]
+        for rule in _renovate_config().get("packageRules", [])
+        if "groupName" in rule
+        for name in rule.get("matchPackageNames", [])
+        if name in held
+    }
+    assert not grouped, (
+        f"{RENOVATE_CONFIG.name} puts held images in groups: {grouped}. Keep each "
+        f"held image on a branch of its own."
     )
 
 

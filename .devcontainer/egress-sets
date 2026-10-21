@@ -2,4 +2,5 @@
 python
 node
 docker-hub
+quay
 trivy

@@ -225,8 +225,8 @@
   // age, so its updates are held here indefinitely and released by hand once a
   // person has checked the date the registry recorded. Images are pulled from
   // Docker Hub wherever their own publisher pushes the same artifact there;
-  // docs/DEPENDENCY_UPDATES.md, "Images outside Docker Hub", lists the rest
-  // and the procedure.
+  // docs/MANUAL_IMAGE_RELEASES.md lists the rest and is the procedure, and
+  // docs/DEPENDENCY_UPDATES.md, "Images outside Docker Hub", says why.
   minimumReleaseAge: "7 days",
 
   // Hold the pull request until the window is satisfied rather than opening one
@@ -282,8 +282,23 @@
     // reaches this repository at all: leaving them out would mean the pins that
     // pinDigests maintains could only be refreshed by hand, which is how they
     // rot.
+    //
+    // The images held for lack of a release date (docs/MANUAL_IMAGE_RELEASES.md)
+    // are left out by name. Their updates are released by hand after a person
+    // has checked the registry's own date for one exact digest, and a pull
+    // request from the dashboard checkbox could carry a newer digest than the
+    // one checked and still merge before anyone compared them. Left out here,
+    // such a pull request arrives unlabelled and waits for review instead.
+    // tests/test_renovate_pins.py keeps this list equal to the runbook's.
     {
       matchUpdateTypes: ["patch", "minor", "digest", "pin", "pinDigest"],
+      matchPackageNames: [
+        "!gcr.io/cadvisor/cadvisor",
+        "!ghcr.io/esanchezm/prometheus-qbittorrent-exporter",
+        "!ghcr.io/hotio/whisparr",
+        "!ghcr.io/nperez0111/koreader-sync",
+        "!quay.io/navidys/prometheus-podman-exporter",
+      ],
       automerge: true,
       addLabels: ["automerge"],
     },
@@ -509,6 +524,14 @@
     // the registry also meant this rule matched 0 of its 5 listed members
     // before the rewrite in #90: see the depName note above the customManagers
     // below.
+    //
+    // cadvisor, the podman exporter and the qBittorrent exporter used to be in
+    // this group and are not any more. They are held for lack of a release
+    // date and released by hand (docs/MANUAL_IMAGE_RELEASES.md), and a group is
+    // one pull request: forced from the dashboard, a held image would arrive
+    // beside members that carry the automerge label and be approved with them,
+    // without anyone having checked its digest. Each stays on a branch of its
+    // own instead; the same goes for koreader-sync in the group below.
     {
       matchDatasources: ["docker"],
       matchPackageNames: [
@@ -516,22 +539,20 @@
         "docker.io/prom/prometheus",
         "docker.io/grafana/loki",
         "docker.io/grafana/alloy",
-        "gcr.io/cadvisor/cadvisor",
         "docker.io/prom/node-exporter",
-        "quay.io/navidys/prometheus-podman-exporter",
         "docker.io/library/python",
         "docker.io/nginx/nginx-prometheus-exporter",
-        "ghcr.io/esanchezm/prometheus-qbittorrent-exporter",
         "docker.io/msroest/sabnzbd_exporter",
       ],
       groupName: "observability stack",
       groupSlug: "observability",
     },
     // Library and reading tools. Grouped for the same reason as the arr suite
-    // above, to cut pull request volume, not because these five share a
+    // above, to cut pull request volume, not because these four share a
     // release cadence. None of them touch the VPN namespace or a download
     // client, so none of the reasoning that keeps gluetun and the download
-    // clients isolated below applies here.
+    // clients isolated below applies here. koreader-sync is held and kept out,
+    // for the reason given above the observability group.
     {
       matchDatasources: ["docker"],
       matchPackageNames: [
@@ -539,7 +560,6 @@
         "docker.io/linuxserver/calibre-web",
         "docker.io/linuxserver/lazylibrarian",
         "docker.io/advplyr/audiobookshelf",
-        "ghcr.io/nperez0111/koreader-sync",
       ],
       groupName: "library and reading tools",
       groupSlug: "library-reading",
