@@ -37,11 +37,15 @@ table, created through `POST /api/<version>/downloadclient`. The script:
   wait for individual apps to finish warming up.
 - Sets up the app's initial WebUI login (username = password = the app's own
   name, matching the README's login table) and relaxes
-  `CertificateValidation` to `DisabledForLocalAddresses`, if neither has been
-  done yet. Both are required before the app will accept a download client
-  pointed at this stack's self-signed cert: `AuthenticationMethod=Forms`
-  makes the app reject any `config/host` update, including one that only
-  touches certificate validation, unless a WebUI login already exists.
+  `CertificateValidation` to `DisabledForLocalAddresses`, unless both are
+  already in place. A username alone does not count: Whisparr 3.6 creates its
+  own `whisparr` login on first start, with a random password it logs once,
+  so the step replaces that with the placeholder too, and the README's login
+  table holds for Whisparr like every other app. Both are required before
+  the app will accept a download client pointed at this stack's self-signed
+  cert: `AuthenticationMethod=Forms` makes the app reject any `config/host`
+  update, including one that only touches certificate validation, unless a
+  WebUI login already exists.
 - Fetches the app's own `/downloadclient/schema` for the QBittorrent and
   Sabnzbd implementations, which already carries every field at a sensible
   default, and only overrides what's actually connection-specific: host,

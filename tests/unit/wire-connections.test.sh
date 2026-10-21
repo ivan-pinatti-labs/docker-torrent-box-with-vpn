@@ -166,7 +166,7 @@ EOF
     '{"BaseUrl": "/jellyfin", "Other": 1}'
   # The arr apps, each logged in, with both download clients where the .env
   # above says and a Jellyfin connection.
-  rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/config/host$' 0 '{"id": 1, "username": "someone"}'
+  rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/config/host$' 0 '{"id": 1, "username": "someone", "certificateValidation": "disabledForLocalAddresses"}'
   rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/downloadclient$' 0 '[
     {"id": 1, "implementation": "QBittorrent", "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 8443}, {"name": "useSsl", "value": true}]},
     {"id": 2, "implementation": "Sabnzbd", "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 8080}, {"name": "useSsl", "value": false}]}]'
@@ -301,6 +301,19 @@ refute "nothing is created" out "Creating"
 refute "qBittorrent's preferences are left alone" log "setPreferences"
 refute "nothing is updated" log "-X PUT"
 refute "nothing is restarted" log "podman restart"
+
+# Whisparr 3.6 creates its own login on first start, with a random password,
+# and leaves certificate validation at its default. A username alone is not
+# "already set up": the placeholder login and the relaxed validation still go
+# in, or no download client can reach qBittorrent's self-signed address.
+rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/config/host$' 0 \
+  '{"id": 1, "username": "whisparr", "password": "********", "certificateValidation": "enabled"}' # pragma: allowlist secret
+run
+check "a login the app made itself is not taken as set up" 0 out \
+  "[whisparr] Setting up initial WebUI login and relaxing certificate validation for internal addresses..."
+check "it gets the placeholder login and relaxed validation" 0 log \
+  '"username": "whisparr",\n  "password": "whisparr"' '"certificateValidation": "disabledForLocalAddresses"' # pragma: allowlist secret
+deployment
 
 # Sonarr's database cannot say which key its connection holds: it is left
 # alone, and said so.
