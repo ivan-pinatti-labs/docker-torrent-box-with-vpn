@@ -701,6 +701,19 @@
       matchUpdateTypes: ["major", "minor", "patch"],
       enabled: false,
     },
+    // kcov publishes nothing but `latest` (versioned images are requested in
+    // kcov's own issue 481), so its digest has no release
+    // timestamp, and under timestamp-required with internalChecksFilter
+    // strict Renovate never offers it: the pin never moved. timestamp-optional
+    // lets it move, which means a new kcov build is not aged by anything. It
+    // runs only in `make coverage`, over the test suite, and a build that
+    // breaks coverage fails that check before the bump can merge.
+    {
+      matchManagers: ["custom.regex"],
+      matchFileNames: ["Makefile"],
+      matchPackageNames: ["docker.io/kcov/kcov"],
+      minimumReleaseAgeBehaviour: "timestamp-optional",
+    },
     // The organization's own images: the L2 image the hooks run in
     // (.devcontainer/l2/Dockerfile) and the nested test runner above
     // (NESTED_IMAGE in the Makefile), both built by
