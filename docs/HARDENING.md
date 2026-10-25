@@ -316,10 +316,12 @@ What is placed against it instead:
   are held for a person to release after checking the date their own registry
   recorded: [docs/MANUAL_IMAGE_RELEASES.md](MANUAL_IMAGE_RELEASES.md). One
   third party image is exempt by the maintainer's decision: the kcov coverage
-  image in the Makefile (`docker.io/kcov/kcov`). kcov publishes nothing but
-  `latest`, so Docker Hub has no versioned release to date it by, and its
-  digest bumps skip the window (`minimumReleaseAgeBehaviour:
-  timestamp-optional`) and merge unattended. The risk is accepted because it
+  image in the Makefile (`docker.io/kcov/kcov`), pinned as `latest`. kcov's
+  current builds are published only under that tag (its newest versioned
+  image is v42, from 2023), so Docker Hub has no release date to count from,
+  and its digest bumps skip the window (`minimumReleaseAgeBehaviour:
+  timestamp-optional`, scoped to the `latest` tag so a versioned pin keeps the
+  window) and merge unattended. The risk is accepted because it
   runs only in `make coverage`, inside a container, against this repository's
   own tests, never in the stack. Pinning a versioned kcov image, once upstream
   publishes one (kcov's issue 481), and dropping the exemption restores the
