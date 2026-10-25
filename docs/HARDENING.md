@@ -314,7 +314,16 @@ What is placed against it instead:
   Renovate reads a date from, so images are pulled from Docker Hub wherever
   their publisher pushes the same artifact there, and the few that cannot be
   are held for a person to release after checking the date their own registry
-  recorded: [docs/MANUAL_IMAGE_RELEASES.md](MANUAL_IMAGE_RELEASES.md).
+  recorded: [docs/MANUAL_IMAGE_RELEASES.md](MANUAL_IMAGE_RELEASES.md). One
+  third party image is exempt by the maintainer's decision: the kcov coverage
+  image in the Makefile (`docker.io/kcov/kcov`). kcov publishes nothing but
+  `latest`, so Docker Hub has no versioned release to date it by, and its
+  digest bumps skip the window (`minimumReleaseAgeBehaviour:
+  timestamp-optional`) and merge unattended. The risk is accepted because it
+  runs only in `make coverage`, inside a container, against this repository's
+  own tests, never in the stack. Pinning a versioned kcov image, once upstream
+  publishes one (kcov's issue 481), and dropping the exemption restores the
+  window.
 - **Digest pinning** (`pinDigests`). Every image that names a version is pinned
   to its manifest-list digest, so a republished tag cannot change what runs
   without a pull request saying so.

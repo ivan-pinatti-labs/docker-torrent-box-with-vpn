@@ -184,8 +184,9 @@ reviews:
         safe is in docs/HARDENING.md ("Unattended dependency updates") and
         docs/MERGE_PIPELINE.md. Flag, as a blocking issue, any change that
         weakens it: shortening or bypassing `minimumReleaseAge` (except the
-        documented exemption for the organization's own `ivan-pinatti-labs/**`
-        releases in docs/HARDENING.md), dropping
+        two exemptions documented in docs/HARDENING.md: the organization's own
+        `ivan-pinatti-labs/**` releases, and the `docker.io/kcov/kcov`
+        coverage image, which publishes no versioned release), dropping
         `pinDigests`, widening `allowed_paths` or the grammars in
         `pin-only.yml`, letting bot-auto-merge.yml approve without the
         published `Pin Only` status or for an author that is not a
