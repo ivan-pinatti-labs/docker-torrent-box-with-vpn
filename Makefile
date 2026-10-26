@@ -1021,7 +1021,7 @@ update_pre_commit:
 # image declares anonymous volumes that only -v removes.
 #
 # renovate: datasource=docker depName=ghcr.io/ivan-pinatti-labs/airlock-podman-nested
-NESTED_IMAGE ?= ghcr.io/ivan-pinatti-labs/airlock-podman-nested:latest@sha256:532c4721d34880057992ced95a23c55e5a380b48a200010e03745c795e529b06
+NESTED_IMAGE ?= ghcr.io/ivan-pinatti-labs/airlock-podman-nested:latest@sha256:cb1fefd8666ad0eaf03ef53876381ed0829d177eb3330cd7181c6e911ec690e7
 NESTED_RUNTIME ?= podman
 NESTED_MEMORY ?= 8g
 NESTED_LABEL ?= type:container_engine_t
