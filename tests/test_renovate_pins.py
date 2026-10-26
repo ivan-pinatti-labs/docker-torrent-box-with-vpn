@@ -51,6 +51,7 @@ VERSIONS_FILE = REPO_ROOT / "versions.env"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 RENOVATE_CONFIG = REPO_ROOT / ".github" / "renovate.json5"
 PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
+MAKEFILE = REPO_ROOT / "Makefile"
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 RELEASES_RUNBOOK = REPO_ROOT / "docs" / "MANUAL_IMAGE_RELEASES.md"
 HELD_TABLE_HEADING = "## Held images"
@@ -316,7 +317,12 @@ def _package_rule_names() -> list[str]:
 
 def _annotated_dependency_names() -> set[str]:
     """Every depName any `# renovate:` annotation in the repository declares."""
-    sources = [VERSIONS_FILE, PRE_COMMIT_CONFIG, *sorted(WORKFLOWS.glob("*.yml"))]
+    sources = [
+        VERSIONS_FILE,
+        PRE_COMMIT_CONFIG,
+        MAKEFILE,
+        *sorted(WORKFLOWS.glob("*.yml")),
+    ]
     declared = set()
     for path in sources:
         declared.update(ANNOTATION.findall(path.read_text()))
@@ -424,8 +430,8 @@ def test_package_rule_names_a_real_dependency(package):
     assert package in _annotated_dependency_names(), (
         f"packageRules in {RENOVATE_CONFIG.name} matches on {package!r}, which "
         f"no `# renovate:` annotation declares in {VERSIONS_FILE.name}, "
-        f"{PRE_COMMIT_CONFIG.name} or .github/workflows/. The rule therefore "
-        f"applies to nothing. depName is the authority: match on the exact "
+        f"{PRE_COMMIT_CONFIG.name}, {MAKEFILE.name} or .github/workflows/. The "
+        f"rule therefore applies to nothing. depName is the authority: match on the exact "
         f"string the pin's own annotation carries, registry and all."
     )
 
@@ -519,6 +525,35 @@ def test_image_outside_docker_hub_is_documented(image):
         f"publisher pushes the same artifact there, or add it to the "
         f'"{HELD_TABLE_HEADING[3:]}" table in docs/{RELEASES_RUNBOOK.name}.'
     )
+
+
+def test_only_kcov_latest_skips_the_release_age_window():
+    """timestamp-optional is granted to the kcov `latest` pin and nothing wider.
+
+    An undated digest with timestamp-optional is offered, and merged, with no
+    seven day window at all. docs/HARDENING.md allows that for the
+    organization's own images and, by the maintainer's decision, for the kcov
+    coverage image pinned as `latest`. A third party rule that grants it more
+    widely, to another package, another file or a versioned kcov tag, fails
+    here.
+    """
+    third_party = [
+        rule
+        for rule in _renovate_config().get("packageRules", [])
+        if rule.get("minimumReleaseAgeBehaviour") == "timestamp-optional"
+        and not all(
+            name.startswith("ghcr.io/ivan-pinatti-labs/")
+            for name in rule.get("matchPackageNames", [""])
+        )
+    ]
+    assert len(third_party) == 1, (
+        f"expected one third party timestamp-optional rule (kcov), found "
+        f"{len(third_party)}"
+    )
+    rule = third_party[0]
+    assert rule.get("matchPackageNames") == ["docker.io/kcov/kcov"]
+    assert rule.get("matchFileNames") == ["Makefile"]
+    assert rule.get("matchCurrentValue") == "latest"
 
 
 def test_held_images_never_merge_unattended():
