@@ -40,7 +40,7 @@ l2-hooks-install
 
 | File | What |
 | --- | --- |
-| `l2/Dockerfile` | This repository's L2 image, on the shared one pinned by digest, plus `shfmt`, which the local hooks call by name. |
+| `l2/Dockerfile` | This repository's L2 image: the shared one, pinned by digest, with nothing added today. |
 | `egress-sets` | What the hooks reach through the egress proxy: Docker Hub for the images they run, trivy's database for the pre-push scan. |
 | `workbench-profile` | `hooks-engine`: the hooks that start containers of their own (trivy, lychee) get the L2 engine. |
 | `workbench-worktree-only` | The marker above. |
