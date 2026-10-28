@@ -9,3 +9,4 @@
 ARG L2_IMAGE=ghcr.io/ivan-pinatti-labs/airlock-l2@sha256:a1269d41af27e66d9ad0a58f384d3c8b0f25327ba72f2674be3ece28aac39346
 # hadolint ignore=DL3006
 FROM ${L2_IMAGE}
+USER 1000:1000
