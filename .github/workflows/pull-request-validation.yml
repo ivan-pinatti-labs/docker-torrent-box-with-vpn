@@ -77,18 +77,6 @@ jobs:
           # the MegaLinter job before, for betterleaks, for the same reason.
           fetch-depth: 0
 
-      - name: Install shfmt
-        # The jumanjihouse/pre-commit-hooks shfmt wrapper expects shfmt
-        # already on PATH; it doesn't install its own copy the way the
-        # Python/Node-based hooks do. ubuntu-latest doesn't ship it.
-        shell: bash
-        run: |
-          curl -sSL --proto '=https' -o shfmt \
-            https://github.com/mvdan/sh/releases/download/v3.11.0/shfmt_v3.11.0_linux_amd64
-          echo "1904ec6bac715c1d05cd7f6612eec8f67a625c3749cb327e5bfb4127d09035ff  shfmt" | sha256sum --check
-          chmod +x shfmt
-          sudo mv shfmt /usr/local/bin/shfmt
-
       - name: Create .env file
         shell: bash
         run: cp .env.example .env
@@ -101,6 +89,22 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+
+      # Explicit steps rather than pre-commit/action, which installs whatever
+      # pre-commit PyPI has newest and calls actions/cache by tag. The version
+      # is the one Ubuntu ships in the development container, so CI and a
+      # local run agree.
+      - name: Cache pre-commit hook environments
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit|${{ env.PYTHON_VERSION }}|${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit|${{ env.PYTHON_VERSION }}|
+
+      # Wheels only, so no package's build script runs at install time.
+      - name: Install pre-commit
+        run: pip install "--only-binary=:all:" "pre-commit==4.5.1"
 
       - name: Log in to Docker Hub
         # merge_group only, and the restriction is the point rather than an
@@ -115,7 +119,7 @@ jobs:
         # before scanning anything, on the queue's build, minutes after the
         # same job passed on the pull request.
         #
-        # Why not on `pull_request` too: `pre-commit/action` runs
+        # Why not on `pull_request` too: `pre-commit run` runs
         # .pre-commit-config.yaml *from the checked out branch*, and that file
         # carries `repo: local` hooks whose `entry` is arbitrary shell (the
         # actionlint hook is one). `docker login` leaves credentials in the
@@ -167,9 +171,9 @@ jobs:
       # lychee is skipped here and runs in the next step on the changed
       # documents only.
       - name: Pre-commit Run
-        uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
-        with:
-          extra_args: --all-files --hook-stage pre-push
+        run: >-
+          pre-commit run --all-files --hook-stage pre-push
+          --show-diff-on-failure --color always
         env:
           SKIP: all-files-sweep,coverage,lychee
 
