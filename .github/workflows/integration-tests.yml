@@ -292,7 +292,10 @@ jobs:
     name: Integration Tests
     needs: gate
     if: needs.gate.outputs.authorized == 'true'
-    runs-on: ubuntu-latest
+    # Pinned to 24.04: on ubuntu-26.04 runners gluetun gets no traffic
+    # through vpn_mock and the stack never comes up (#370). Back to
+    # ubuntu-latest once that is fixed, before GitHub retires 24.04.
+    runs-on: ubuntu-24.04
     # 25, raised from 20 once the Mylar wait moved from the test's own retry
     # budget into `wire_connections` (#130 / #132), which pushed an honest run
     # from 681s to 1093s: two runs against #131's final head both landed at
@@ -628,7 +631,10 @@ jobs:
     if: >-
       needs.gate.outputs.authorized == 'true'
       && github.event_name == 'issue_comment'
-    runs-on: ubuntu-latest
+    # Pinned to 24.04: on ubuntu-26.04 runners gluetun gets no traffic
+    # through vpn_mock and the stack never comes up (#370). Back to
+    # ubuntu-latest once that is fixed, before GitHub retires 24.04.
+    runs-on: ubuntu-24.04
     # The same 40 minute budget as the suite: one stack plus one tier.
     timeout-minutes: 40
     strategy:

@@ -746,6 +746,18 @@
       matchPackageNames: ["ghcr.io/ivan-pinatti-labs/**"],
       minimumReleaseAgeBehaviour: "timestamp-optional",
     },
+    // The github-actions manager also extracts a literal runs-on: label
+    // (depType github-runner) and a version passed to an action's with:
+    // (uses-with). The stack's jobs are pinned to ubuntu-24.04 on purpose
+    // (#370), and a bump of either shape is one Pin Only cannot grade, so
+    // it could never merge unattended and would hold the github actions
+    // group back with it. Both move by hand. ivan-pinatti-labs/.github's
+    // README.md, "Updated by hand".
+    {
+      matchManagers: ["github-actions"],
+      matchDepTypes: ["github-runner", "uses-with"],
+      enabled: false,
+    },
     // The organization's own releases (ivan-pinatti-labs/gh-actions,
     // pre-commit-checklists, agent-policy and the rest) skip the seven day
     // window. It exists to give a compromised or broken third party release

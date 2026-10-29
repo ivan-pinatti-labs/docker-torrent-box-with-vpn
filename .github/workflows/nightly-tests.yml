@@ -39,7 +39,10 @@ jobs:
     # A fork inherits the file but not the secrets or the reason to spend
     # its own runners on this every night.
     if: github.repository == 'ivan-pinatti-labs/docker-torrent-box-with-vpn'
-    runs-on: ubuntu-latest
+    # Pinned to 24.04: on ubuntu-26.04 runners gluetun gets no traffic
+    # through vpn_mock and the stack never comes up (#370). Back to
+    # ubuntu-latest once that is fixed, before GitHub retires 24.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
       fail-fast: false
