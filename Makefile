@@ -812,6 +812,9 @@ define vpn_mock_diagnostics
 	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock sh -c 'ip -d -br link; ip -br addr; ip route; sysctl net.ipv4.ip_forward; iptables -S; iptables -t nat -S; nft list ruleset' 2>&1 || true; \
 	echo "--- vpn_mock exec probes ---"; \
 	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock sh -c 'id; cat /proc/self/attr/apparmor/current /proc/self/attr/current /proc/1/attr/current 2>&1; grep -E "Seccomp|NoNewPrivs|Cap(Eff|Bnd)" /proc/self/status; ls -la /bin/coreutils /usr/bin/readlink; /bin/coreutils --version 2>&1 | head -n 1; /usr/bin/readlink -f /usr/bin/wg-quick; /bin/coreutils readlink -f /usr/bin/wg-quick; busybox readlink -f /usr/bin/wg-quick; /bin/ls -d /; /usr/bin/stat -c %a /bin/coreutils; file /bin/coreutils 2>&1' 2>&1 || true; \
+	echo "--- vpn_mock access(X_OK) from bash and from busybox ---"; \
+	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock bash -c 'type -a readlink; readlink -f /usr/bin/wg-quick; for b in /bin/coreutils /bin/busybox /usr/bin/wg /sbin/ip /usr/sbin/iptables /bin/bash; do if [ -x "$$b" ]; then echo "bash -x $$b ok"; else echo "bash -x $$b FAIL"; fi; done' 2>&1 || true; \
+	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock busybox sh -c 'for b in /bin/coreutils /bin/busybox /usr/bin/wg; do if [ -x "$$b" ]; then echo "busybox -x $$b ok"; else echo "busybox -x $$b FAIL"; fi; done; mount | grep " / "; cat /proc/self/mountinfo | head -n 3' 2>&1 || true; \
 	$(RUNTIME) inspect $(CONTAINER_PREFIX)vpn_mock --format 'apparmor={{.AppArmorProfile}} seccomp={{.HostConfig.SecurityOpt}} privileged={{.HostConfig.Privileged}}' 2>&1 || true; \
 	$(RUNTIME) info --format 'apparmor={{.Host.Security.AppArmorEnabled}} seccomp={{.Host.Security.SECCOMPEnabled}} selinux={{.Host.Security.SELinuxEnabled}} rootless={{.Host.Security.Rootless}}' 2>&1 || true; \
 	echo "--- vpn_mock reaching out directly ---"; \
