@@ -786,7 +786,7 @@ define ensure_vpn_mock_tunnel
 		if $(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock wg show wg0 >/dev/null 2>&1; then tunnel_up=true; break; fi; \
 		if $(RUNTIME) logs $(CONTAINER_PREFIX)vpn_mock 2>&1 | grep -q "All tunnels are now down"; then \
 			echo "vpn_mock left its tunnel down; bringing it up by hand..."; \
-			$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock wg-quick up $(VPN_MOCK_WG_CONF) || true; \
+			$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock bash /usr/bin/wg-quick up $(VPN_MOCK_WG_CONF) || true; \
 		fi; \
 		sleep 2; \
 	done; \
@@ -801,7 +801,7 @@ endef
 # runners gluetun completes its WireGuard setup and then gets no traffic
 # through (#370), and gluetun's own log cannot say whether the handshake,
 # forwarding or NAT inside vpn_mock is what failed.
-# cspell:ignore Privs readlink
+# cspell:ignore Privs readlink shopt extglob
 define vpn_mock_diagnostics
 	echo "--- kernel: $$(uname -r) ---"; \
 	echo "--- vpn_mock log, last 40 lines ---"; \
@@ -815,6 +815,11 @@ define vpn_mock_diagnostics
 	echo "--- vpn_mock access(X_OK) from bash and from busybox ---"; \
 	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock bash -c 'type -a readlink; readlink -f /usr/bin/wg-quick; for b in /bin/coreutils /bin/busybox /usr/bin/wg /sbin/ip /usr/sbin/iptables /bin/bash; do if [ -x "$$b" ]; then echo "bash -x $$b ok"; else echo "bash -x $$b FAIL"; fi; done' 2>&1 || true; \
 	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock busybox sh -c 'for b in /bin/coreutils /bin/busybox /usr/bin/wg; do if [ -x "$$b" ]; then echo "busybox -x $$b ok"; else echo "busybox -x $$b FAIL"; fi; done; mount | grep " / "; cat /proc/self/mountinfo | head -n 3' 2>&1 || true; \
+	echo "--- vpn_mock wg-quick through its shebang, through bash, and a subshell ---"; \
+	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock bash -c 'x="$$(readlink -f /usr/bin/wg-quick)"; echo "subshell: $$x"' 2>&1 || true; \
+	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock bash -c 'set -e -o pipefail; shopt -s extglob; export LC_ALL=C; x="$$(readlink -f /usr/bin/wg-quick)"; echo "wg-quick preamble: $$x"' 2>&1 || true; \
+	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock sh -c 'printf "#!/bin/bash\necho \"own shebang script: \$$(readlink -f /usr/bin/wg-quick)\"\n" >/tmp/probe.sh; chmod +x /tmp/probe.sh; /tmp/probe.sh; bash /tmp/probe.sh' 2>&1 || true; \
+	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock sh -c 'echo "via shebang:"; /usr/bin/wg-quick strip $(VPN_MOCK_WG_CONF) | head -n 1; echo "via bash:"; bash /usr/bin/wg-quick strip $(VPN_MOCK_WG_CONF) | head -n 1' 2>&1 || true; \
 	$(RUNTIME) inspect $(CONTAINER_PREFIX)vpn_mock --format 'apparmor={{.AppArmorProfile}} seccomp={{.HostConfig.SecurityOpt}} privileged={{.HostConfig.Privileged}}' 2>&1 || true; \
 	$(RUNTIME) info --format 'apparmor={{.Host.Security.AppArmorEnabled}} seccomp={{.Host.Security.SECCOMPEnabled}} selinux={{.Host.Security.SELinuxEnabled}} rootless={{.Host.Security.Rootless}}' 2>&1 || true; \
 	echo "--- vpn_mock reaching out directly ---"; \
