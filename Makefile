@@ -774,6 +774,7 @@ endef
 # runners gluetun completes its WireGuard setup and then gets no traffic
 # through (#370), and gluetun's own log cannot say whether the handshake,
 # forwarding or NAT inside vpn_mock is what failed.
+# cspell:ignore Privs readlink
 define vpn_mock_diagnostics
 	echo "--- kernel: $$(uname -r) ---"; \
 	echo "--- vpn_mock log, last 40 lines ---"; \
@@ -782,6 +783,10 @@ define vpn_mock_diagnostics
 	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock wg show 2>&1 || true; \
 	echo "--- vpn_mock addresses, routes and firewall ---"; \
 	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock sh -c 'ip -d -br link; ip -br addr; ip route; sysctl net.ipv4.ip_forward; iptables -S; iptables -t nat -S; nft list ruleset' 2>&1 || true; \
+	echo "--- vpn_mock exec probes ---"; \
+	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock sh -c 'id; cat /proc/self/attr/apparmor/current /proc/self/attr/current /proc/1/attr/current 2>&1; grep -E "Seccomp|NoNewPrivs|Cap(Eff|Bnd)" /proc/self/status; ls -la /bin/coreutils /usr/bin/readlink; /bin/coreutils --version 2>&1 | head -n 1; /usr/bin/readlink -f /usr/bin/wg-quick; /bin/coreutils readlink -f /usr/bin/wg-quick; busybox readlink -f /usr/bin/wg-quick; /bin/ls -d /; /usr/bin/stat -c %a /bin/coreutils; file /bin/coreutils 2>&1' 2>&1 || true; \
+	$(RUNTIME) inspect $(CONTAINER_PREFIX)vpn_mock --format 'apparmor={{.AppArmorProfile}} seccomp={{.HostConfig.SecurityOpt}} privileged={{.HostConfig.Privileged}}' 2>&1 || true; \
+	$(RUNTIME) info --format 'apparmor={{.Host.Security.AppArmorEnabled}} seccomp={{.Host.Security.SECCOMPEnabled}} selinux={{.Host.Security.SELinuxEnabled}} rootless={{.Host.Security.Rootless}}' 2>&1 || true; \
 	echo "--- vpn_mock reaching out directly ---"; \
 	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock sh -c 'ping -c 2 -W 2 1.1.1.1; nslookup github.com' 2>&1 || true; \
 	echo "--- gluetun addresses and routes ---"; \
