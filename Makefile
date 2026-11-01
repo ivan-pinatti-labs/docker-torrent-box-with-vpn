@@ -776,7 +776,16 @@ endef
 # and the image then leaves the tunnel down for the life of the container, so
 # gluetun connects to nothing (#370). The same readlink runs fine in that
 # container moments later (measured: unconfined, no LSM, same seccomp), so
-# running wg-quick again is enough. Bounded at 60s, and a failure says so.
+# running wg-quick again is enough, as long as it goes through bash: started
+# through its own shebang, wg-quick fails the same way every time, while
+# `bash /usr/bin/wg-quick` brings the tunnel up (measured on the same runner).
+# Bounded at 60s, and a failure says so.
+#
+# The same runners also leave vpn_mock with no default route (only its two
+# subnets and the peer), while gluetun, on the same wan network, gets one. The
+# tunnel then handshakes and carries gluetun's traffic, which vpn_mock has
+# nowhere to send. Adding the wan gateway as its default route restores what
+# netavark gives it on 24.04.
 # cspell:ignore confs
 VPN_MOCK_WG_CONF := /config/wg_confs/wg0.conf
 define ensure_vpn_mock_tunnel
@@ -794,6 +803,11 @@ define ensure_vpn_mock_tunnel
 		echo "ERROR: vpn_mock's tunnel did not come up in 60s"; \
 		$(call vpn_mock_diagnostics); \
 		exit 1; \
+	fi; \
+	if ! $(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock ip -4 route show default | grep -q .; then \
+		wan_gateway=$$($(RUNTIME) network inspect $(COMPOSE_PROJECT_NAME)_wan --format '{{range .Subnets}}{{.Gateway}}{{end}}'); \
+		echo "vpn_mock has no default route; adding one via the wan gateway $$wan_gateway..."; \
+		$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock ip -4 route add default via "$$wan_gateway"; \
 	fi
 endef
 
