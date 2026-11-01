@@ -763,8 +763,29 @@ define wait_for_gluetun
 			2>/dev/null || echo "(gluetun could not be inspected; it may never have been created)"; \
 		echo "--- gluetun log, last 40 lines ---"; \
 		$(RUNTIME) logs --tail 40 $(CONTAINER_PREFIX)gluetun 2>&1 || echo "(no logs available)"; \
+		if $(RUNTIME) container exists $(CONTAINER_PREFIX)vpn_mock 2>/dev/null; then \
+			$(call vpn_mock_diagnostics); \
+		fi; \
 		exit 1; \
 	}
+endef
+
+# The other end of the tunnel, when vpn_mock is it. On GitHub's ubuntu-26.04
+# runners gluetun completes its WireGuard setup and then gets no traffic
+# through (#370), and gluetun's own log cannot say whether the handshake,
+# forwarding or NAT inside vpn_mock is what failed.
+define vpn_mock_diagnostics
+	echo "--- kernel: $$(uname -r) ---"; \
+	echo "--- vpn_mock log, last 40 lines ---"; \
+	$(RUNTIME) logs --tail 40 $(CONTAINER_PREFIX)vpn_mock 2>&1 || true; \
+	echo "--- vpn_mock wg show ---"; \
+	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock wg show 2>&1 || true; \
+	echo "--- vpn_mock addresses, routes and firewall ---"; \
+	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock sh -c 'ip -d -br link; ip -br addr; ip route; sysctl net.ipv4.ip_forward; iptables -S; iptables -t nat -S; nft list ruleset' 2>&1 || true; \
+	echo "--- vpn_mock reaching out directly ---"; \
+	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock sh -c 'ping -c 2 -W 2 1.1.1.1; nslookup github.com' 2>&1 || true; \
+	echo "--- gluetun addresses and routes ---"; \
+	$(RUNTIME) exec $(CONTAINER_PREFIX)gluetun sh -c 'ip -br link; ip -br addr; ip route; ip rule' 2>&1 || true
 endef
 
 # podman-compose restarts every service concurrently with no dependency ordering
