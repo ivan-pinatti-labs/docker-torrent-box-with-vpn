@@ -770,6 +770,33 @@ define wait_for_gluetun
 	}
 endef
 
+# Blocks until vpn_mock's wg0 is up, bringing it up by hand when the image's
+# own attempt failed. On GitHub's ubuntu-26.04 runners (kernel 7.0) the
+# image's first `wg-quick up` dies on "/usr/bin/readlink: Permission denied"
+# and the image then leaves the tunnel down for the life of the container, so
+# gluetun connects to nothing (#370). The same readlink runs fine in that
+# container moments later (measured: unconfined, no LSM, same seccomp), so
+# running wg-quick again is enough. Bounded at 60s, and a failure says so.
+# cspell:ignore confs
+VPN_MOCK_WG_CONF := /config/wg_confs/wg0.conf
+define ensure_vpn_mock_tunnel
+	echo "Waiting for the mock VPN tunnel (up to 60s)..."; \
+	tunnel_up=false; \
+	for _ in $$(seq 30); do \
+		if $(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock wg show wg0 >/dev/null 2>&1; then tunnel_up=true; break; fi; \
+		if $(RUNTIME) logs $(CONTAINER_PREFIX)vpn_mock 2>&1 | grep -q "All tunnels are now down"; then \
+			echo "vpn_mock left its tunnel down; bringing it up by hand..."; \
+			$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock wg-quick up $(VPN_MOCK_WG_CONF) || true; \
+		fi; \
+		sleep 2; \
+	done; \
+	if [ "$$tunnel_up" != true ]; then \
+		echo "ERROR: vpn_mock's tunnel did not come up in 60s"; \
+		$(call vpn_mock_diagnostics); \
+		exit 1; \
+	fi
+endef
+
 # The other end of the tunnel, when vpn_mock is it. On GitHub's ubuntu-26.04
 # runners gluetun completes its WireGuard setup and then gets no traffic
 # through (#370), and gluetun's own log cannot say whether the handshake,
@@ -934,6 +961,7 @@ start: storage_guard permissions_repair
 	@if [ "$(VPN_MOCK_PROFILE)" = "enabled" ]; then \
 		echo "Starting the local mock VPN endpoint gluetun dials..."; \
 		$(COMPOSE) $(COMPOSE_FILES) --profile enabled up --detach --no-recreate vpn_mock; \
+		$(call ensure_vpn_mock_tunnel); \
 	fi
 	@$(COMPOSE) $(COMPOSE_FILES) --profile enabled up --detach --no-recreate gluetun
 	$(call wait_for_gluetun)
