@@ -170,6 +170,7 @@ EOF
   rule '/System/Info/Public$' 0 '{"StartupWizardCompleted": true}'
   rule 'jellyfin curl -s --fail -H \S+ \S+ \S+ \S+/Users$' 0 '[{"Name": "other", "Id": "u0"}, {"Name": "jellyfin", "Id": "u1"}]'
   rule '/Users/AuthenticateByName$' 0 200
+  rule 'nzbhydra2 curl -sk -o /dev/null -D -' 0 $'HTTP/1.1 200 \r\nSet-Cookie: HYDRA-XSRF-TOKEN=hydra-token; Path=/nzbhydra2\r\n\r\n'
   rule 'nzbhydra2 curl -sk -o /dev/null -w' 0 "302 https://127.0.0.1:5077/nzbhydra2/"
   rule 'qbittorrent curl -sk -b /tmp/qbt_cookies.txt -o /dev/null -w' 0 200
   rule 'qbittorrent curl -sk -o /dev/null -D -' 0 $'HTTP/2 200\r\nset-cookie: QBT_SID_8443=abc; path=/\r\n\r\n\n200'
@@ -263,6 +264,8 @@ check "jDownloader2's login is checked with its new password" 0 log \
 check "Audiobookshelf's login is checked in node" 0 log \
   "podman exec audiobookshelf node -e const [port, username, password] = process.argv.slice(1);" \
   "13378 root $(new_password audiobookshelf)"
+check "NZBHydra2's login sends back the CSRF token its login page set" 0 log \
+  "-b HYDRA-XSRF-TOKEN=hydra-token -H X-XSRF-TOKEN: hydra-token -d username=admin&password=$(new_password nzbhydra2)"
 
 # Each service on its own.
 for service in "${SERVICES[@]}"; do
@@ -392,6 +395,14 @@ check "Calibre gets one restart of its desktop" 1 out "[Calibre] Not responding 
   "[Calibre] Content server not reachable on port 8081" "$(ok calibre)"
 check "Calibre-Web gets one restart" 1 out "[Calibre-Web] Not responding after 90s; restarting..." "$(ok calibre-web)"
 check "the desktop service is what restarts" 1 log "podman exec calibre s6-svc -r /run/service/svc-de"
+
+# NZBHydra2 v9 answers a login without its CSRF token with a 403, so a login
+# page that sets none fails validation instead of posting without it (#371).
+deployment
+rule 'nzbhydra2 curl -sk -o /dev/null -D -' 0 $'HTTP/1.1 200 \r\nSet-Cookie: SESSION=abc; Path=/nzbhydra2\r\n\r\n'
+run nzbhydra2
+check "a login page without a CSRF token fails validation" 1 err "ERROR: validation failed for: nzbhydra2"
+refute "and no login is posted without one" log "-d username=admin&password="
 
 deployment
 rule 'calibre curl -sk -o /dev/null -w %\{http_code\}' 0 401

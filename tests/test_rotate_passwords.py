@@ -17,6 +17,7 @@ Run everything else, skipping just this file:
 """
 
 import json
+import re
 import sqlite3
 import subprocess
 import time
@@ -1096,14 +1097,33 @@ def test_rotate_nzbhydra2_password(running_containers):
 
     assert wait_for_healthy("nzbhydra2"), "nzbhydra2 unhealthy after rotation"
 
+    # v9 answers a form login without its CSRF token with a 403 whatever the
+    # password (#371): fetch the token the login page sets as a cookie, then
+    # send it back as that cookie and as the X-XSRF-TOKEN header.
+    port = int(ENV.get("NZBHYDRA2_HTTPS_PORT", "5077"))
+    login_url = f"https://127.0.0.1:{port}/nzbhydra2/login"
+    _, page_headers = container_http(
+        "nzbhydra2",
+        login_url,
+        extra_args=["-o", "/dev/null", "-D", "-"],
+        timeout=TIMEOUT,
+    )
+    token = re.search(
+        r"^set-cookie:\s*HYDRA-XSRF-TOKEN=([^;\s]+)", page_headers, re.I | re.M
+    )
+    assert token, f"NZBHydra2's login page set no CSRF token:\n{page_headers}"
+
     # Form login: success redirects into the app, failure back to /login?error.
     # -D - includes the response headers (with Location) in the body.
-    port = int(ENV.get("NZBHYDRA2_HTTPS_PORT", "5077"))
     status, body = container_http(
         "nzbhydra2",
-        f"https://127.0.0.1:{port}/nzbhydra2/login",
+        login_url,
         method="POST",
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Cookie": f"HYDRA-XSRF-TOKEN={token[1]}",
+            "X-XSRF-TOKEN": token[1],
+        },
         data=f"username=admin&password={new_password}",
         extra_args=["-D", "-"],
         timeout=TIMEOUT,
