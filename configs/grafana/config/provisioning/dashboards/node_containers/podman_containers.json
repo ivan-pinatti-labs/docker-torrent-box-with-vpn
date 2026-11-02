@@ -29,7 +29,7 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "query": "label_values(podman_container_info{pod_name=\"pod_docker-torrent-box-with-vpn\",name=~\"${stack:raw}\"}, name)",
+        "query": "label_values(podman_container_info{pod_name=\"pod_docker-torrent-box-with-vpn\",name=~\".*(${stack:raw})\"}, name)",
         "multi": true,
         "includeAll": true,
         "refresh": 2
@@ -463,7 +463,7 @@
       },
       "targets": [
         {
-          "expr": "rate(podman_container_net_input_total{pod_name=\"pod_docker-torrent-box-with-vpn\",name=~\"$container\", name!~\"qbittorrent|sabnzbd|jdownloader2\"}[5m])",
+          "expr": "rate(podman_container_net_input_total{pod_name=\"pod_docker-torrent-box-with-vpn\",name=~\"$container\", name!~\".*(qbittorrent|sabnzbd|jdownloader2)\"}[5m])",
           "legendFormat": "{{name}}",
           "datasource": {
             "type": "prometheus",
@@ -514,7 +514,7 @@
       },
       "targets": [
         {
-          "expr": "rate(podman_container_net_output_total{pod_name=\"pod_docker-torrent-box-with-vpn\",name=~\"$container\", name!~\"qbittorrent|sabnzbd|jdownloader2\"}[5m])",
+          "expr": "rate(podman_container_net_output_total{pod_name=\"pod_docker-torrent-box-with-vpn\",name=~\"$container\", name!~\".*(qbittorrent|sabnzbd|jdownloader2)\"}[5m])",
           "legendFormat": "{{name}}",
           "datasource": {
             "type": "prometheus",

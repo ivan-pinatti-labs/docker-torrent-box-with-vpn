@@ -143,6 +143,12 @@ Configuration: `configs/grafana/config/grafana.ini`. Key settings:
 Provisioning files (datasources, dashboards, alerting) live under
 `configs/grafana/config/provisioning/`.
 
+Dashboard queries match containers by suffix (`name=~".*sonarr"`), never by exact name:
+podman_exporter's `name` label is the real container name, which carries `CONTAINER_PREFIX`,
+and Grafana does not interpolate environment variables in queries. Like the alert rules, this
+assumes one stack per podman user; with two, a panel shows both stacks' containers.
+`tests/unit/test_grafana_dashboards.py` refuses exact and bare-regex name matchers.
+
 The bundled SABnzbd dashboard is provisioned from
 `configs/grafana/config/provisioning/dashboards/downloaders/sabnzbd.json`. Alerting includes
 SABnzbd exporter-down and stalled-queue rules in

@@ -578,7 +578,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (name) (rate(podman_container_cpu_seconds_total[2m]) * on(id) group_left(name) podman_container_info{name=\"sabnzbd\"}) * 100",
+          "expr": "sum by (name) (rate(podman_container_cpu_seconds_total[2m]) * on(id) group_left(name) podman_container_info{name=~\".*sabnzbd\"}) * 100",
           "legendFormat": "{{name}} CPU %",
           "refId": "A"
         }
@@ -659,7 +659,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "podman_container_mem_usage_bytes * on(id) group_left(name) podman_container_info{name=\"sabnzbd\"}",
+          "expr": "podman_container_mem_usage_bytes * on(id) group_left(name) podman_container_info{name=~\".*sabnzbd\"}",
           "legendFormat": "{{name}} Usage",
           "refId": "A"
         },
@@ -668,7 +668,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "podman_container_mem_limit_bytes * on(id) group_left(name) podman_container_info{name=\"sabnzbd\"}",
+          "expr": "podman_container_mem_limit_bytes * on(id) group_left(name) podman_container_info{name=~\".*sabnzbd\"}",
           "legendFormat": "{{name}} Limit",
           "refId": "B"
         }
@@ -749,7 +749,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (name) (rate(podman_container_block_input_total[2m]) * on(id) group_left(name) podman_container_info{name=\"sabnzbd\"})",
+          "expr": "sum by (name) (rate(podman_container_block_input_total[2m]) * on(id) group_left(name) podman_container_info{name=~\".*sabnzbd\"})",
           "legendFormat": "{{name}} Read",
           "refId": "A"
         },
@@ -758,7 +758,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (name) (rate(podman_container_block_output_total[2m]) * on(id) group_left(name) podman_container_info{name=\"sabnzbd\"})",
+          "expr": "sum by (name) (rate(podman_container_block_output_total[2m]) * on(id) group_left(name) podman_container_info{name=~\".*sabnzbd\"})",
           "legendFormat": "{{name}} Write",
           "refId": "B"
         }
@@ -840,7 +840,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(podman_container_net_input_total{name=\"gluetun\"}[2m])",
+          "expr": "rate(podman_container_net_input_total{name=~\".*gluetun\"}[2m])",
           "legendFormat": "Rx",
           "refId": "A"
         },
@@ -849,7 +849,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(podman_container_net_output_total{name=\"gluetun\"}[2m])",
+          "expr": "rate(podman_container_net_output_total{name=~\".*gluetun\"}[2m])",
           "legendFormat": "Tx",
           "refId": "B"
         }
@@ -930,7 +930,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(podman_container_mem_swap_usage_bytes - podman_container_mem_usage_bytes) * on(id) group_left(name) podman_container_info{name=\"sabnzbd\"}",
+          "expr": "(podman_container_mem_swap_usage_bytes - podman_container_mem_usage_bytes) * on(id) group_left(name) podman_container_info{name=~\".*sabnzbd\"}",
           "legendFormat": "{{name}} Swap Used",
           "refId": "A"
         },
@@ -939,7 +939,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(podman_container_mem_swap_limit_bytes - podman_container_mem_limit_bytes) * on(id) group_left(name) podman_container_info{name=\"sabnzbd\"}",
+          "expr": "(podman_container_mem_swap_limit_bytes - podman_container_mem_limit_bytes) * on(id) group_left(name) podman_container_info{name=~\".*sabnzbd\"}",
           "legendFormat": "{{name}} Swap Limit",
           "refId": "B"
         }

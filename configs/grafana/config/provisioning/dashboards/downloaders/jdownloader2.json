@@ -81,7 +81,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max(podman_container_info{name=\"jdownloader2\"}) or vector(0)",
+          "expr": "max(podman_container_info{name=~\".*jdownloader2\"}) or vector(0)",
           "instant": true,
           "refId": "A"
         }
@@ -176,7 +176,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (name) (rate(podman_container_cpu_seconds_total[2m]) * on(id) group_left(name) podman_container_info{name=\"jdownloader2\"}) * 100",
+          "expr": "sum by (name) (rate(podman_container_cpu_seconds_total[2m]) * on(id) group_left(name) podman_container_info{name=~\".*jdownloader2\"}) * 100",
           "legendFormat": "{{name}} CPU %",
           "refId": "A"
         }
@@ -257,7 +257,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "podman_container_mem_usage_bytes * on(id) group_left(name) podman_container_info{name=\"jdownloader2\"}",
+          "expr": "podman_container_mem_usage_bytes * on(id) group_left(name) podman_container_info{name=~\".*jdownloader2\"}",
           "legendFormat": "{{name}} Usage",
           "refId": "A"
         },
@@ -266,7 +266,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "podman_container_mem_limit_bytes * on(id) group_left(name) podman_container_info{name=\"jdownloader2\"}",
+          "expr": "podman_container_mem_limit_bytes * on(id) group_left(name) podman_container_info{name=~\".*jdownloader2\"}",
           "legendFormat": "{{name}} Limit",
           "refId": "B"
         }
@@ -347,7 +347,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (name) (rate(podman_container_block_input_total[2m]) * on(id) group_left(name) podman_container_info{name=\"jdownloader2\"})",
+          "expr": "sum by (name) (rate(podman_container_block_input_total[2m]) * on(id) group_left(name) podman_container_info{name=~\".*jdownloader2\"})",
           "legendFormat": "{{name}} Read",
           "refId": "A"
         },
@@ -356,7 +356,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (name) (rate(podman_container_block_output_total[2m]) * on(id) group_left(name) podman_container_info{name=\"jdownloader2\"})",
+          "expr": "sum by (name) (rate(podman_container_block_output_total[2m]) * on(id) group_left(name) podman_container_info{name=~\".*jdownloader2\"})",
           "legendFormat": "{{name}} Write",
           "refId": "B"
         }
@@ -438,7 +438,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(podman_container_net_input_total{name=\"gluetun\"}[2m])",
+          "expr": "rate(podman_container_net_input_total{name=~\".*gluetun\"}[2m])",
           "legendFormat": "Rx",
           "refId": "A"
         },
@@ -447,7 +447,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(podman_container_net_output_total{name=\"gluetun\"}[2m])",
+          "expr": "rate(podman_container_net_output_total{name=~\".*gluetun\"}[2m])",
           "legendFormat": "Tx",
           "refId": "B"
         }
@@ -609,7 +609,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(podman_container_mem_swap_usage_bytes - podman_container_mem_usage_bytes) * on(id) group_left(name) podman_container_info{name=\"jdownloader2\"}",
+          "expr": "(podman_container_mem_swap_usage_bytes - podman_container_mem_usage_bytes) * on(id) group_left(name) podman_container_info{name=~\".*jdownloader2\"}",
           "legendFormat": "{{name}} Swap Used",
           "refId": "A"
         },
@@ -618,7 +618,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(podman_container_mem_swap_limit_bytes - podman_container_mem_limit_bytes) * on(id) group_left(name) podman_container_info{name=\"jdownloader2\"}",
+          "expr": "(podman_container_mem_swap_limit_bytes - podman_container_mem_limit_bytes) * on(id) group_left(name) podman_container_info{name=~\".*jdownloader2\"}",
           "legendFormat": "{{name}} Swap Limit",
           "refId": "B"
         }
