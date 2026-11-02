@@ -763,7 +763,7 @@ define wait_for_gluetun
 			2>/dev/null || echo "(gluetun could not be inspected; it may never have been created)"; \
 		echo "--- gluetun log, last 40 lines ---"; \
 		$(RUNTIME) logs --tail 40 $(CONTAINER_PREFIX)gluetun 2>&1 || echo "(no logs available)"; \
-		if $(RUNTIME) container exists $(CONTAINER_PREFIX)vpn_mock 2>/dev/null; then \
+		if $(RUNTIME) inspect $(CONTAINER_PREFIX)vpn_mock >/dev/null 2>&1; then \
 			$(call vpn_mock_diagnostics); \
 		fi; \
 		exit 1; \
@@ -799,6 +799,7 @@ define ensure_vpn_mock_tunnel
 		fi; \
 		sleep 2; \
 	done; \
+	if $(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock wg show wg0 >/dev/null 2>&1; then tunnel_up=true; fi; \
 	if [ "$$tunnel_up" != true ]; then \
 		echo "ERROR: vpn_mock's tunnel did not come up in 60s"; \
 		$(call vpn_mock_diagnostics); \
@@ -823,8 +824,10 @@ define vpn_mock_diagnostics
 	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock wg show 2>&1 || true; \
 	echo "--- vpn_mock addresses, routes and firewall ---"; \
 	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock sh -c 'ip -d -br link; ip -br addr; ip route; sysctl net.ipv4.ip_forward; iptables -S; iptables -t nat -S; nft list ruleset' 2>&1 || true; \
-	echo "--- gluetun addresses and routes ---"; \
-	$(RUNTIME) exec $(CONTAINER_PREFIX)gluetun sh -c 'ip -br link; ip -br addr; ip route; ip rule' 2>&1 || true
+	if $(RUNTIME) inspect $(CONTAINER_PREFIX)gluetun >/dev/null 2>&1; then \
+		echo "--- gluetun addresses and routes ---"; \
+		$(RUNTIME) exec $(CONTAINER_PREFIX)gluetun sh -c 'ip -br link; ip -br addr; ip route; ip rule' 2>&1 || true; \
+	fi
 endef
 
 # podman-compose restarts every service concurrently with no dependency ordering
@@ -968,7 +971,11 @@ start: storage_guard permissions_repair
 	@if [ "$(VPN_MOCK_PROFILE)" = "enabled" ]; then \
 		echo "Starting the local mock VPN endpoint gluetun dials..."; \
 		$(COMPOSE) $(COMPOSE_FILES) --profile enabled up --detach --no-recreate vpn_mock; \
-		$(call ensure_vpn_mock_tunnel); \
+		if grep -qx "WIREGUARD_ENDPOINT_IP=$(VPN_MOCK_IP)" $(CONFIG_FOLDER)/gluetun/.env 2>/dev/null; then \
+			$(call ensure_vpn_mock_tunnel); \
+		else \
+			echo "gluetun does not dial vpn_mock (a real VPN key is in place); not waiting on its tunnel."; \
+		fi; \
 	fi
 	@$(COMPOSE) $(COMPOSE_FILES) --profile enabled up --detach --no-recreate gluetun
 	$(call wait_for_gluetun)

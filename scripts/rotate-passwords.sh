@@ -1787,7 +1787,7 @@ nzbhydra_login_ok() {
   # whatever the password (#371). The login page hands the token out as the
   # HYDRA-XSRF-TOKEN cookie, and the POST sends it back as that cookie and as
   # the X-XSRF-TOKEN header (measured against 9.1.0).
-  headers=$(container_curl nzbhydra2 -sk -o /dev/null -D - "$url")
+  headers=$(container_curl nzbhydra2 -sk -o /dev/null -D - --max-time 30 "$url")
   token=$(grep -m 1 -ioE '^set-cookie:[[:space:]]*HYDRA-XSRF-TOKEN=[^;[:space:]]+' <<<"$headers" || true)
   token="${token#*=}"
   [[ -n "$token" ]] || return 1
@@ -1796,7 +1796,7 @@ nzbhydra_login_ok() {
   # this check, it drives real failed-login attempts at NZBHydra2's own
   # brute-force IP blocking, which then locks out subsequent correct
   # attempts too until the retry loop's timeout is exhausted.
-  out=$(container_curl nzbhydra2 -sk -o /dev/null -w '%{http_code} %{redirect_url}' -b "HYDRA-XSRF-TOKEN=$token" -H "X-XSRF-TOKEN: $token" -d "username=admin&password=$1" "$url")
+  out=$(container_curl nzbhydra2 -sk -o /dev/null -w '%{http_code} %{redirect_url}' -b "HYDRA-XSRF-TOKEN=$token" -H "X-XSRF-TOKEN: $token" -d "username=admin&password=$1" --max-time 30 "$url")
   [[ "$out" == 302* && "$out" != *"login?error"* ]]
 }
 
