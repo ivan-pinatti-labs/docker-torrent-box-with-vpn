@@ -517,15 +517,21 @@ paths:
     default_acl:
       - {identity: root, perms: rwx}
       - {identity: nginx, perms: rwx}
+  # nginx's master process runs as root and creates every log file, so a new
+  # file is owned by root and the directory's owner gets nothing on it. The
+  # rotator has to be a named ACL entry (and a default one, for files nginx
+  # creates later) to read and truncate the logs it rotates.
   - path: logs/nginx
     owner: log_rotator
     mode: "0750"
     acl:
       - {identity: root, perms: rwx}
       - {identity: nginx, perms: rwx}
+      - {identity: log_rotator, perms: rwx}
     default_acl:
       - {identity: root, perms: rwx}
       - {identity: nginx, perms: rwx}
+      - {identity: log_rotator, perms: rwx}
   - path: storage/alloy/data
     owner: alloy
     mode: "0750"

@@ -123,6 +123,18 @@ def test_user_field_services_use_manifest_identity(compose_name, service, identi
     assert service_def["user"] == f"${{{prefix}_UID}}:${{{prefix}_GID}}"
 
 
+def test_log_rotator_can_rotate_nginx_logs():
+    # nginx creates its log files as root, so owning logs/nginx gives the
+    # rotator nothing on them. Without a named entry in both ACLs it cannot
+    # read or truncate a single log, and the rotation script stops at the
+    # first file with "Permission denied".
+    entry = next(e for e in PERMISSIONS["paths"] if e["path"] == "logs/nginx")
+    for key in ("acl", "default_acl"):
+        perms = {item["identity"]: item["perms"] for item in entry[key]}
+        assert "r" in perms.get("log_rotator", ""), key
+        assert "w" in perms.get("log_rotator", ""), key
+
+
 def test_no_rootless_start_chown_to_container_root_regression():
     makefile = (REPO_ROOT / "Makefile").read_text()
     assert "podman unshare sh -c" not in makefile
