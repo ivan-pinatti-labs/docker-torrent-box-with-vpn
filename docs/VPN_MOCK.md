@@ -59,7 +59,18 @@ without a real provider account.
      was dynamically handed `VPN_MOCK_IP` first, starving `vpn_mock` of
      its own address and leaving gluetun dialing an endpoint nothing was
      listening on.
-3. `make bootstrap` proceeds as normal from there. Its own
+3. `make start` starts `vpn_mock` before gluetun and, when gluetun's
+   `WIREGUARD_ENDPOINT_IP` is `VPN_MOCK_IP` (a real key leaves it alone),
+   waits up to 60s for its `wg0`. On GitHub's `ubuntu-26.04` runners (kernel 7.0) the image's own
+   `wg-quick up` fails on `/usr/bin/readlink: Permission denied` and the image
+   leaves the tunnel down, so `make start` runs `bash /usr/bin/wg-quick up`
+   itself (started through its own shebang, wg-quick fails the same way
+   every time). The same runners also leave `vpn_mock` without a default
+   route, so `make start` adds the `wan` network's gateway when it is
+   missing. On failure it prints `vpn_mock`'s log, `wg show`, links, routes
+   and firewall rules, plus gluetun's links and routes once gluetun exists
+   (a tunnel timeout stops `make start` before gluetun is created) (#370).
+4. `make bootstrap` proceeds as normal from there. Its own
    `seed-gluetun-secret.sh` step sees a populated secret and no-ops
    through its existing check, so nothing about plain `bootstrap`'s
    behavior changes for a real user pasting in a real key.

@@ -240,7 +240,10 @@ alphabetical by service.
   account-creation attempt and skip-with-a-note fallback as API key
   rotation above.
 - **LazyLibrarian** and **Mylar**: WebUI passwords in their `config.ini`.
-- **NZBHydra2**: writes a new bcrypt hash to `nzbhydra.yml`.
+- **NZBHydra2**: writes a new bcrypt hash to `nzbhydra.yml`. Validation logs
+  in through the form with the CSRF token the login page sets (the
+  `HYDRA-XSRF-TOKEN` cookie, sent back as `X-XSRF-TOKEN`), since v9 refuses a
+  login without it whatever the password.
 - **qBittorrent**: logs into the WebUI API with the current password (read
   from Sonarr's download client settings), sets the new one, then updates
   every consumer: the `DownloadClients` tables of all five Servarr apps,
