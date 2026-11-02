@@ -63,7 +63,9 @@ def expected_prometheus_jobs() -> set:
     return jobs
 
 
-REPO_POD_NAME = "pod_docker-torrent-box-with-vpn"
+# The dashboard's own pod variable, found from the stack's gluetun container:
+# the pod is pod_<project>, and the project name varies (#390).
+REPO_POD_FILTER = 'pod_name="$pod"'
 
 EXPECTED_PODMAN_DASHBOARD_STACKS = {
     "Downloaders": {"jdownloader2", "qbittorrent", "sabnzbd"},
@@ -606,7 +608,7 @@ def test_podman_dashboard_container_variable_is_repo_scoped():
     dashboard = _podman_dashboard()
     container = _dashboard_variable(dashboard, "container")
 
-    assert f'pod_name="{REPO_POD_NAME}"' in container["query"]
+    assert REPO_POD_FILTER in container["query"]
     # By suffix, so prefixed container names still match (#384).
     assert 'name=~".*(${stack:raw})"' in container["query"]
 
@@ -624,10 +626,24 @@ def test_podman_dashboard_podman_exporter_queries_are_repo_scoped():
                 continue
             if "podman_container_pids_limit" in expr:
                 continue
-            if f'pod_name="{REPO_POD_NAME}"' not in expr:
+            if REPO_POD_FILTER not in expr:
                 unscoped.append((panel["title"], expr))
 
     assert not unscoped
+
+
+def test_podman_dashboard_pod_variable_finds_the_stack_by_its_gluetun():
+    dashboard = _podman_dashboard()
+    names = [variable["name"] for variable in dashboard["templating"]["list"]]
+    pod = _dashboard_variable(dashboard, "pod")
+
+    assert pod["query"] == (
+        'label_values(podman_container_info{name=~".*gluetun"}, pod_name)'
+    )
+    assert not pod["multi"] and not pod["includeAll"]
+    # Grafana resolves variables in order, and the container one reads $pod.
+    assert names.index("pod") < names.index("container")
+    assert "pod_docker-torrent-box-with-vpn" not in json.dumps(dashboard)
 
 
 def test_torrent_box_overview_uses_sabnzbd_not_nzbget():
