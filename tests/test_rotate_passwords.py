@@ -846,7 +846,98 @@ def test_rotate_mylar_password(running_containers):
     """Rotating Mylar's WebUI password survives its config flush."""
     skip_if_not_running("mylar", running_containers)
 
+    started = time.monotonic()
     result = _run_script("rotate-passwords.sh", "mylar")
+    # DIAGNOSTIC for #379, reverted before review. cspell:ignore resolv appconnect
+    from conftest import container_name
+
+    def sh(*cmd, timeout=330):
+        try:
+            p = subprocess.run(
+                list(cmd), capture_output=True, text=True, timeout=timeout
+            )
+            return f"$ {' '.join(cmd)}\n{p.stdout}{p.stderr}"
+        except subprocess.TimeoutExpired:
+            return f"$ {' '.join(cmd)}\nTIMEOUT"
+
+    m, g = container_name("mylar"), container_name("gluetun")
+    port = ENV.get("MYLAR_HTTPS_PORT")
+    sab = ENV.get("GLUETUN_SERVICES_IP")
+    up_at = None
+    while time.monotonic() - started < 600:
+        code = sh(
+            "podman",
+            "exec",
+            m,
+            "curl",
+            "-sk",
+            "--max-time",
+            "5",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            f"https://127.0.0.1:{port}/mylar/auth/login",
+            timeout=15,
+        ).splitlines()[-1]
+        if code == "200":
+            up_at = time.monotonic() - started
+            break
+        time.sleep(5)
+    diag = [
+        f"rotate rc={result.returncode} took-to-login-200={up_at}",
+        sh("podman", "exec", m, "cat", "/proc/sys/net/ipv4/tcp_syn_retries"),
+        sh(
+            "podman",
+            "exec",
+            m,
+            "grep",
+            "-E",
+            "^(sab_host|nzb_downloader)",
+            "/config/mylar/config.ini",
+        ),
+        sh("podman", "exec", m, "cat", "/proc/net/route"),
+        sh("podman", "exec", m, "cat", "/etc/hosts", "/etc/resolv.conf"),
+        sh(
+            "podman",
+            "exec",
+            m,
+            "curl",
+            "-sk",
+            "-o",
+            "/dev/null",
+            "--max-time",
+            "300",
+            "-w",
+            "connect=%{time_connect} tls=%{time_appconnect} total=%{time_total} code=%{http_code}",
+            f"https://{sab}:{ENV.get('SABNZBD_HTTPS_PORT')}/sabnzbd/api?mode=version",
+        ),
+        sh(
+            "podman",
+            "exec",
+            m,
+            "curl",
+            "-s",
+            "-o",
+            "/dev/null",
+            "--max-time",
+            "300",
+            "-w",
+            "connect=%{time_connect} total=%{time_total} code=%{http_code}",
+            f"http://{sab}:{ENV.get('SABNZBD_HTTP_PORT')}/sabnzbd/api?mode=version",
+        ),
+        sh("podman", "exec", g, "iptables-save"),
+        sh("podman", "exec", g, "ip", "-4", "addr"),
+        sh("podman", "exec", g, "ip", "-4", "route"),
+        sh("podman", "logs", "--timestamps", "--tail", "60", m),
+        sh(
+            "tail",
+            "-n",
+            "150",
+            str(REPO_ROOT / "configs/mylar/config/mylar/logs/mylar.log"),
+        ),
+    ]
+    pytest.fail("\n".join(diag))
     assert result.returncode == 0, (
         f"rotate-passwords.sh mylar exited {result.returncode}:\n{result.stderr}"
     )
