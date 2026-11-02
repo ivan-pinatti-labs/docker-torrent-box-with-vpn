@@ -763,8 +763,88 @@ define wait_for_gluetun
 			2>/dev/null || echo "(gluetun could not be inspected; it may never have been created)"; \
 		echo "--- gluetun log, last 40 lines ---"; \
 		$(RUNTIME) logs --tail 40 $(CONTAINER_PREFIX)gluetun 2>&1 || echo "(no logs available)"; \
+		if $(RUNTIME) inspect $(CONTAINER_PREFIX)vpn_mock >/dev/null 2>&1; then \
+			$(call vpn_mock_diagnostics); \
+		fi; \
 		exit 1; \
 	}
+endef
+
+# Blocks until vpn_mock's wg0 is up, bringing it up by hand when the image's
+# own attempt failed. On GitHub's ubuntu-26.04 runners (kernel 7.0) the
+# image's first `wg-quick up` dies on "/usr/bin/readlink: Permission denied"
+# and the image then leaves the tunnel down for the life of the container, so
+# gluetun connects to nothing (#370). The same readlink runs fine in that
+# container moments later (measured: unconfined, no LSM, same seccomp), so
+# running wg-quick again is enough, as long as it goes through bash: started
+# through its own shebang, wg-quick fails the same way every time, while
+# `bash /usr/bin/wg-quick` brings the tunnel up (measured on the same runner).
+# Bounded at 60s, and a failure says so.
+#
+# The same runners also leave vpn_mock with no default route (only its two
+# subnets and the peer), while gluetun, on the same wan network, gets one. The
+# tunnel then handshakes and carries gluetun's traffic, which vpn_mock has
+# nowhere to send. Adding the wan gateway as its default route restores what
+# netavark gives it on 24.04.
+VPN_MOCK_WG_CONF := /config/wg_confs/wg0.conf
+
+# Starts vpn_mock when its profile is enabled, and waits on its tunnel only
+# when gluetun dials it: seed-vpn-mock.sh points gluetun's
+# WIREGUARD_ENDPOINT_IP at VPN_MOCK_IP, while a real key leaves gluetun on its
+# own provider and vpn_mock's tunnel irrelevant. The match allows the forms
+# Compose's env_file accepts (spaces around =, a quoted value).
+define start_vpn_mock
+	if [ "$(VPN_MOCK_PROFILE)" = "enabled" ]; then \
+		echo "Starting the local mock VPN endpoint gluetun dials..."; \
+		$(COMPOSE) $(COMPOSE_FILES) --profile enabled up --detach --no-recreate vpn_mock; \
+		if grep -qE "^[[:space:]]*WIREGUARD_ENDPOINT_IP[[:space:]]*=[[:space:]]*[\"']?$(subst .,\.,$(VPN_MOCK_IP))[\"']?[[:space:]]*$$" $(CONFIG_FOLDER)/gluetun/.env 2>/dev/null; then \
+			$(call ensure_vpn_mock_tunnel); \
+		else \
+			echo "gluetun does not dial vpn_mock (a real VPN key is in place); not waiting on its tunnel."; \
+		fi; \
+	fi
+endef
+
+define ensure_vpn_mock_tunnel
+	echo "Waiting for the mock VPN tunnel (up to 60s)..."; \
+	tunnel_up=false; \
+	for _ in $$(seq 30); do \
+		if $(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock wg show wg0 >/dev/null 2>&1; then tunnel_up=true; break; fi; \
+		if $(RUNTIME) logs $(CONTAINER_PREFIX)vpn_mock 2>&1 | grep -q "All tunnels are now down"; then \
+			echo "vpn_mock left its tunnel down; bringing it up by hand..."; \
+			$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock bash /usr/bin/wg-quick up $(VPN_MOCK_WG_CONF) || true; \
+		fi; \
+		sleep 2; \
+	done; \
+	if $(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock wg show wg0 >/dev/null 2>&1; then tunnel_up=true; fi; \
+	if [ "$$tunnel_up" != true ]; then \
+		echo "ERROR: vpn_mock's tunnel did not come up in 60s"; \
+		$(call vpn_mock_diagnostics); \
+		exit 1; \
+	fi; \
+	if ! $(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock ip -4 route show default | grep -q .; then \
+		wan_gateway=$$($(RUNTIME) network inspect $(COMPOSE_PROJECT_NAME)_wan --format '{{range .Subnets}}{{.Gateway}}{{end}}'); \
+		echo "vpn_mock has no default route; adding one via the wan gateway $$wan_gateway..."; \
+		$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock ip -4 route add default via "$$wan_gateway"; \
+	fi
+endef
+
+# The other end of the tunnel, when vpn_mock is it. On GitHub's ubuntu-26.04
+# runners gluetun completes its WireGuard setup and then gets no traffic
+# through (#370), and gluetun's own log cannot say whether the handshake,
+# forwarding or NAT inside vpn_mock is what failed.
+define vpn_mock_diagnostics
+	echo "--- kernel: $$(uname -r) ---"; \
+	echo "--- vpn_mock log, last 40 lines ---"; \
+	$(RUNTIME) logs --tail 40 $(CONTAINER_PREFIX)vpn_mock 2>&1 || true; \
+	echo "--- vpn_mock wg show ---"; \
+	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock wg show 2>&1 || true; \
+	echo "--- vpn_mock addresses, routes and firewall ---"; \
+	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock sh -c 'ip -d -br link; ip -br addr; ip route; sysctl net.ipv4.ip_forward; iptables -S; iptables -t nat -S; nft list ruleset' 2>&1 || true; \
+	if $(RUNTIME) inspect $(CONTAINER_PREFIX)gluetun --format "{{.State.Running}}" 2>/dev/null | grep -qx true; then \
+		echo "--- gluetun addresses and routes ---"; \
+		$(RUNTIME) exec $(CONTAINER_PREFIX)gluetun sh -c 'ip -br link; ip -br addr; ip route; ip rule' 2>&1 || true; \
+	fi
 endef
 
 # podman-compose restarts every service concurrently with no dependency ordering
@@ -905,10 +985,7 @@ start: storage_guard permissions_repair
 	# healthy within 10s with nothing else changed. It went unnoticed because
 	# seed-vpn-mock.sh leaves vpn_mock running, so the first bootstrap after
 	# seeding works and only a later down/up cycle exposes it.
-	@if [ "$(VPN_MOCK_PROFILE)" = "enabled" ]; then \
-		echo "Starting the local mock VPN endpoint gluetun dials..."; \
-		$(COMPOSE) $(COMPOSE_FILES) --profile enabled up --detach --no-recreate vpn_mock; \
-	fi
+	@$(call start_vpn_mock)
 	@$(COMPOSE) $(COMPOSE_FILES) --profile enabled up --detach --no-recreate gluetun
 	$(call wait_for_gluetun)
 	@echo "Starting all containers..."

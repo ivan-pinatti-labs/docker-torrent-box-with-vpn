@@ -1781,13 +1781,22 @@ jellyfin_login_ok() {
 }
 
 nzbhydra_login_ok() {
-  local out
+  local url headers token out
+  url="https://127.0.0.1:${NZBHYDRA2_HTTPS_PORT}/nzbhydra2/login"
+  # NZBHydra2 v9 refuses a form login without its CSRF token, with a 403
+  # whatever the password (#371). The login page hands the token out as the
+  # HYDRA-XSRF-TOKEN cookie, and the POST sends it back as that cookie and as
+  # the X-XSRF-TOKEN header (measured against 9.1.0).
+  headers=$(container_curl nzbhydra2 -sk -o /dev/null -D - --max-time 30 "$url")
+  token=$(grep -m 1 -ioE '^set-cookie:[[:space:]]*HYDRA-XSRF-TOKEN=[^;[:space:]]+' <<<"$headers" || true)
+  token="${token#*=}"
+  [[ -n "$token" ]] || return 1
   # configs/nzbhydra2/config/nzbhydra.yml.example seeds username "admin", not
   # "nzbhydra2". Logging in with the wrong username here doesn't just fail
   # this check, it drives real failed-login attempts at NZBHydra2's own
   # brute-force IP blocking, which then locks out subsequent correct
   # attempts too until the retry loop's timeout is exhausted.
-  out=$(container_curl nzbhydra2 -sk -o /dev/null -w '%{http_code} %{redirect_url}' -d "username=admin&password=$1" "https://127.0.0.1:${NZBHYDRA2_HTTPS_PORT}/nzbhydra2/login")
+  out=$(container_curl nzbhydra2 -sk -o /dev/null -w '%{http_code} %{redirect_url}' -b "HYDRA-XSRF-TOKEN=$token" -H "X-XSRF-TOKEN: $token" -d "username=admin&password=$1" --max-time 30 "$url")
   [[ "$out" == 302* && "$out" != *"login?error"* ]]
 }
 
