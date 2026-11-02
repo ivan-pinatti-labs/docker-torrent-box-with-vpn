@@ -60,6 +60,7 @@ def _run(
     binary: str | None = None,
     stamp: str | None = None,
     extract: str = "",
+    fail_mv: bool = False,
 ) -> tuple[subprocess.CompletedProcess, list[str]]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -67,6 +68,10 @@ def _run(
     stub = bin_dir / "podman"
     stub.write_text(f'#!/bin/sh\necho "podman $*" >>"{log}"\n{PODMAN}')
     stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+    if fail_mv:
+        mv = bin_dir / "mv"
+        mv.write_text("#!/bin/sh\nexit 1\n")
+        mv.chmod(mv.stat().st_mode | stat.S_IXUSR)
     (tmp_path / BINARY).parent.mkdir(parents=True)
     if binary is not None:
         (tmp_path / BINARY).write_text(binary)
@@ -159,12 +164,22 @@ def test_a_disabled_profile_keeps_the_binary_it_has(tmp_path: Path) -> None:
     assert _binary(tmp_path) == "chromedriver 142"
 
 
-def test_a_disabled_profile_still_seeds_a_missing_binary(tmp_path: Path) -> None:
-    # podman would vivify a directory at the bind mount otherwise.
+def test_a_disabled_profile_seeds_nothing(tmp_path: Path) -> None:
+    # Its container never mounts the file, and an image it cannot pull must
+    # not stop make start; enabling the profile seeds on the next start.
     result, calls = _run(tmp_path, profile="disabled")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert len(calls) == 1
-    assert _stamp(tmp_path) == NEW
+    assert calls == []
+    assert not (tmp_path / BINARY).exists()
+
+
+def _leftovers(tmp_path: Path) -> list[str]:
+    folder = (tmp_path / BINARY).parent
+    return sorted(
+        p.name
+        for p in folder.iterdir()
+        if p.name not in ("chromedriver", "chromedriver.image")
+    )
 
 
 @pytest.mark.parametrize("extract", ["fail", "empty"])
@@ -179,7 +194,17 @@ def test_a_failed_extraction_keeps_the_old_binary(tmp_path: Path, extract: str) 
     )
     assert _binary(tmp_path) == "chromedriver 142"
     assert _stamp(tmp_path) == OLD
-    assert not (tmp_path / f"{BINARY}.new").exists()
+    assert _leftovers(tmp_path) == []
+
+
+def test_a_failed_install_keeps_the_old_record(tmp_path: Path) -> None:
+    # The record follows the move, so the two cannot disagree.
+    result, calls = _run(tmp_path, binary="chromedriver 142", stamp=OLD, fail_mv=True)
+    assert result.returncode == 1
+    assert "ERROR: could not install the new chromedriver" in result.stdout
+    assert _binary(tmp_path) == "chromedriver 142"
+    assert _stamp(tmp_path) == OLD
+    assert _leftovers(tmp_path) == []
 
 
 def test_make_start_seeds_ahead_of_permissions_repair() -> None:
