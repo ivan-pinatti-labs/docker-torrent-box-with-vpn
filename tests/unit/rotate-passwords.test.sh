@@ -265,7 +265,9 @@ check "Audiobookshelf's login is checked in node" 0 log \
   "podman exec audiobookshelf node -e const [port, username, password] = process.argv.slice(1);" \
   "13378 root $(new_password audiobookshelf)"
 check "NZBHydra2's login sends back the CSRF token its login page set" 0 log \
-  "-b HYDRA-XSRF-TOKEN=hydra-token -H X-XSRF-TOKEN: hydra-token -d username=admin&password=$(new_password nzbhydra2)"
+  "-b HYDRA-XSRF-TOKEN=hydra-token -H X-XSRF-TOKEN: hydra-token -d username=admin&password=$(new_password nzbhydra2) --max-time 30"
+check "NZBHydra2's login page is fetched with a time limit" 0 log \
+  "podman exec nzbhydra2 curl -sk -o /dev/null -D - --max-time 30 https://127.0.0.1:5077/nzbhydra2/login"
 
 # Each service on its own.
 for service in "${SERVICES[@]}"; do

@@ -320,6 +320,7 @@
     "confcutdir",
     "configdefs",
     "configparser",
+    "confs",
     "conftest",
     "conmon",
     "consolelevel",

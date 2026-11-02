@@ -786,8 +786,25 @@ endef
 # tunnel then handshakes and carries gluetun's traffic, which vpn_mock has
 # nowhere to send. Adding the wan gateway as its default route restores what
 # netavark gives it on 24.04.
-# cspell:ignore confs
 VPN_MOCK_WG_CONF := /config/wg_confs/wg0.conf
+
+# Starts vpn_mock when its profile is enabled, and waits on its tunnel only
+# when gluetun dials it: seed-vpn-mock.sh points gluetun's
+# WIREGUARD_ENDPOINT_IP at VPN_MOCK_IP, while a real key leaves gluetun on its
+# own provider and vpn_mock's tunnel irrelevant. The match allows the forms
+# Compose's env_file accepts (spaces around =, a quoted value).
+define start_vpn_mock
+	if [ "$(VPN_MOCK_PROFILE)" = "enabled" ]; then \
+		echo "Starting the local mock VPN endpoint gluetun dials..."; \
+		$(COMPOSE) $(COMPOSE_FILES) --profile enabled up --detach --no-recreate vpn_mock; \
+		if grep -qE "^[[:space:]]*WIREGUARD_ENDPOINT_IP[[:space:]]*=[[:space:]]*[\"']?$(subst .,\.,$(VPN_MOCK_IP))[\"']?[[:space:]]*$$" $(CONFIG_FOLDER)/gluetun/.env 2>/dev/null; then \
+			$(call ensure_vpn_mock_tunnel); \
+		else \
+			echo "gluetun does not dial vpn_mock (a real VPN key is in place); not waiting on its tunnel."; \
+		fi; \
+	fi
+endef
+
 define ensure_vpn_mock_tunnel
 	echo "Waiting for the mock VPN tunnel (up to 60s)..."; \
 	tunnel_up=false; \
@@ -824,7 +841,7 @@ define vpn_mock_diagnostics
 	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock wg show 2>&1 || true; \
 	echo "--- vpn_mock addresses, routes and firewall ---"; \
 	$(RUNTIME) exec $(CONTAINER_PREFIX)vpn_mock sh -c 'ip -d -br link; ip -br addr; ip route; sysctl net.ipv4.ip_forward; iptables -S; iptables -t nat -S; nft list ruleset' 2>&1 || true; \
-	if $(RUNTIME) inspect $(CONTAINER_PREFIX)gluetun >/dev/null 2>&1; then \
+	if $(RUNTIME) inspect $(CONTAINER_PREFIX)gluetun --format "{{.State.Running}}" 2>/dev/null | grep -qx true; then \
 		echo "--- gluetun addresses and routes ---"; \
 		$(RUNTIME) exec $(CONTAINER_PREFIX)gluetun sh -c 'ip -br link; ip -br addr; ip route; ip rule' 2>&1 || true; \
 	fi
@@ -968,15 +985,7 @@ start: storage_guard permissions_repair
 	# healthy within 10s with nothing else changed. It went unnoticed because
 	# seed-vpn-mock.sh leaves vpn_mock running, so the first bootstrap after
 	# seeding works and only a later down/up cycle exposes it.
-	@if [ "$(VPN_MOCK_PROFILE)" = "enabled" ]; then \
-		echo "Starting the local mock VPN endpoint gluetun dials..."; \
-		$(COMPOSE) $(COMPOSE_FILES) --profile enabled up --detach --no-recreate vpn_mock; \
-		if grep -qx "WIREGUARD_ENDPOINT_IP=$(VPN_MOCK_IP)" $(CONFIG_FOLDER)/gluetun/.env 2>/dev/null; then \
-			$(call ensure_vpn_mock_tunnel); \
-		else \
-			echo "gluetun does not dial vpn_mock (a real VPN key is in place); not waiting on its tunnel."; \
-		fi; \
-	fi
+	@$(call start_vpn_mock)
 	@$(COMPOSE) $(COMPOSE_FILES) --profile enabled up --detach --no-recreate gluetun
 	$(call wait_for_gluetun)
 	@echo "Starting all containers..."
