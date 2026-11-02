@@ -668,7 +668,19 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: podman_container_state{name="gluetun"}
+              # The exporter's name label is the real container name, which
+              # carries CONTAINER_PREFIX (docker-compose-vpn.yml), so an exact
+              # name="gluetun" saw no data under any prefix and alerted
+              # forever (#376). Grafana does not interpolate environment
+              # variables in rule queries (measured on 13.0.2: a
+              # ${CONTAINER_PREFIX} here is stored and queried literally), so
+              # match the suffix instead. PromQL anchors the regex, so only
+              # names ending in gluetun match. The rule assumes one stack per
+              # podman user: another stack's gluetun under the same user is
+              # its own alert instance, named by its name label, but while it
+              # runs it also keeps this rule out of no data if this stack's
+              # gluetun is removed altogether (a stopped one still alerts).
+              expr: podman_container_state{name=~".*gluetun"}
               refId: A
               instant: true
               range: false
@@ -698,12 +710,19 @@ groups:
                   reducer:
                     type: last
                     params: []
+        # No series still alerts: without the exporter's view of gluetun the
+        # VPN cannot be shown to be up. That alert carries no name label, so
+        # its description says it is about missing data, not a stopped VPN.
         noDataState: Alerting
         execErrState: Error
         for: 2m
         annotations:
           summary: "Gluetun container is not running"
-          description: "Gluetun container state is not 'running'; VPN and proxy are unavailable."
+          description: >-
+            {{ if $labels.name }}Gluetun container state is not 'running'; VPN and proxy are
+            unavailable.{{ else }}No podman_container_state series for the gluetun container, so
+            its state is unknown: podman_exporter is not reporting it, or its container name does
+            not match.{{ end }}
         labels:
           severity: critical
         isPaused: false
