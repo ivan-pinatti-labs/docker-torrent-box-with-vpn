@@ -24,7 +24,7 @@ DASHBOARDS = (
 # never survives a prefix; a regex one does only if it starts with a wildcard
 # (.* or .+) or is a dashboard variable that already holds real names.
 EXACT_NAME = re.compile(r"\bname\s*(?:=|!=)\s*[\"'`]")
-BARE_REGEX_NAME = re.compile(r"\bname\s*(?:=~|!~)\s*[\"'`](?![.$])")
+BARE_REGEX_NAME = re.compile(r"\bname\s*(?:=~|!~)\s*[\"'`](?!\.[*+]|\$)")
 
 
 def _queries() -> list[tuple[str, str]]:

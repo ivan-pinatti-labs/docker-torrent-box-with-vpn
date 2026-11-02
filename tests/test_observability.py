@@ -607,7 +607,8 @@ def test_podman_dashboard_container_variable_is_repo_scoped():
     container = _dashboard_variable(dashboard, "container")
 
     assert f'pod_name="{REPO_POD_NAME}"' in container["query"]
-    assert 'name=~"${stack:raw}"' in container["query"]
+    # By suffix, so prefixed container names still match (#384).
+    assert 'name=~".*(${stack:raw})"' in container["query"]
 
 
 def test_podman_dashboard_podman_exporter_queries_are_repo_scoped():
