@@ -24,7 +24,7 @@ conditions that only change over hours/days), and Gluetun Alerts (1m).
 | qBittorrent Firewalled | qBittorrent reports it cannot accept incoming peer connections | 10 m | warning |
 | Torrent Stalled > 1 Week | A torrent has been stalled with no activity for over 7 days | 0 s (checked hourly) | warning |
 | qBittorrent DHT Nodes Low | DHT node count drops below 200 | 0 s (checked hourly) | warning |
-| Gluetun Container Down | Gluetun container state is not `running` | 2 m | critical |
+| Gluetun Container Down | Gluetun container state is not `running`, or no state is reported for it | 2 m | critical |
 | Gluetun VPN Disconnected | qBittorrent reports no BitTorrent network connectivity | 5 m | critical |
 | Gluetun NAT PMP Port Lost | qBittorrent is firewalled, the forwarded-port lease may have expired | 15 m | warning |
 
@@ -32,6 +32,13 @@ Container metrics come from `podman_exporter` rather than cAdvisor. In rootless 
 only exposes the root cgroup and cannot provide per-container breakdowns. The CPU and memory
 queries join `podman_container_*` metrics with `podman_container_info` using
 `* on(id) group_left(name)` to produce human-readable container names in alert messages.
+
+The `name` label is the real container name, so it carries `CONTAINER_PREFIX`. A rule never
+matches a container by its exact name: Gluetun Container Down matches `name=~".*gluetun"`.
+Grafana does not interpolate environment variables in rule queries, so `${CONTAINER_PREFIX}`
+cannot be used there. With no series at all the rule still alerts (no data means the VPN cannot
+be shown to be up), and its description then says the state is unknown rather than down.
+`tests/unit/test_grafana_alert_rules.py` refuses an exact `name="..."` selector.
 
 ## Email via AWS SES
 
