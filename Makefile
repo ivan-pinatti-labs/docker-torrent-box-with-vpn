@@ -111,7 +111,7 @@ STOP_COMPOSE_FILES := --file docker-compose.yml $(foreach route_file,$(STOP_ROUT
 # releases it, and pre-commit-checklists moves its own checkmake pin to
 # that release. Until then this form is load bearing. make treats the two
 # forms identically.
-.PHONY: all backup backup-configs backup-full backup-schedule bootstrap bootstrap_tests build_images clean clean_all check_requirements seed_all
+.PHONY: all backup backup-configs backup-full backup-schedule bootstrap bootstrap_tests build_images clean clean_all check_requirements seed_all seed_flaresolverr_chromedriver
 .PHONY: configure_jellyfin_network configure_jdownloader2_api
 .PHONY: detect_secrets_create_baseline down enable_test_profiles generate_certificate
 .PHONY: heal_vpn_dependents
@@ -257,14 +257,34 @@ all: generate_certificate pull_docker_images start
 # undetected_chromedriver patches in place on first successful run (verified
 # by extracting /app/chromedriver from the pinned image and comparing it
 # against an already-working install: same file, pre-patch).
-configs/flaresolverr/config/chromedriver:
+#
+# It also has to match the Chromium bundled in that image, so it goes stale on
+# every FlareSolverr update: v3.5.2's Chromium 152 cannot start under the
+# ChromeDriver 142 seeded from v3.4.6, and the container crash-loops (#383).
+# chromedriver.image beside it records the image reference (tag and digest)
+# it came from, and a different FLARESOLVERR_VERSION re-extracts it, when the
+# profile is enabled. `make start` (and so `make update`) runs this ahead of
+# permissions_repair, which hands the new file to the FlareSolverr user:
+# undetected_chromedriver patches it in place and fails with "Permission
+# denied" otherwise. The new binary is written beside the old one and moved
+# over it, so a failed extraction leaves the old one in place.
+FLARESOLVERR_CHROMEDRIVER := configs/flaresolverr/config/chromedriver
+seed_flaresolverr_chromedriver:
 	@mkdir -p configs/flaresolverr/config
-	@if [ ! -s configs/flaresolverr/config/chromedriver ]; then \
-		echo "[configs/flaresolverr/config/chromedriver] Extracting from the flaresolverr image..."; \
-		$(RUNTIME) run --rm --entrypoint cat "docker.io/flaresolverr/flaresolverr:$(FLARESOLVERR_VERSION)" /app/chromedriver \
-			> configs/flaresolverr/config/chromedriver; \
-		chmod 755 configs/flaresolverr/config/chromedriver; \
-		echo "[configs/flaresolverr/config/chromedriver] Seeded from the flaresolverr image."; \
+	@if [ ! -s $(FLARESOLVERR_CHROMEDRIVER) ] \
+		|| { [ "$(FLARESOLVERR_PROFILE)" = "enabled" ] \
+			&& [ "$$(cat $(FLARESOLVERR_CHROMEDRIVER).image 2>/dev/null)" != "$(FLARESOLVERR_VERSION)" ]; }; then \
+		echo "[$(FLARESOLVERR_CHROMEDRIVER)] Extracting from flaresolverr:$(FLARESOLVERR_VERSION)..."; \
+		if ! $(RUNTIME) run --rm --entrypoint cat "docker.io/flaresolverr/flaresolverr:$(FLARESOLVERR_VERSION)" /app/chromedriver \
+			> $(FLARESOLVERR_CHROMEDRIVER).new || [ ! -s $(FLARESOLVERR_CHROMEDRIVER).new ]; then \
+			rm -f $(FLARESOLVERR_CHROMEDRIVER).new; \
+			echo "ERROR: could not extract /app/chromedriver from flaresolverr:$(FLARESOLVERR_VERSION)"; \
+			exit 1; \
+		fi; \
+		chmod 755 $(FLARESOLVERR_CHROMEDRIVER).new; \
+		mv -f $(FLARESOLVERR_CHROMEDRIVER).new $(FLARESOLVERR_CHROMEDRIVER); \
+		printf '%s\n' "$(FLARESOLVERR_VERSION)" >$(FLARESOLVERR_CHROMEDRIVER).image; \
+		echo "[$(FLARESOLVERR_CHROMEDRIVER)] Seeded from the flaresolverr image."; \
 	fi
 
 # Split out of bootstrap so anything that needs a fully seeded tree without
@@ -280,7 +300,7 @@ configs/flaresolverr/config/chromedriver:
 # seeds it earlier in bootstrap's own recipe, since a Proton VPN setup needs
 # to edit it right away. Seeding it again later would hit seed-configs.sh's
 # already-exists prompt on every single bootstrap run.
-seed_all: configs/flaresolverr/config/chromedriver
+seed_all: seed_flaresolverr_chromedriver
 	@echo "Remapping directory ownership into the container user namespace..."
 	@echo "  (rootless Podman: host uid maps to uid=0 inside containers;"
 	@echo "   app processes run as service-specific non-root UIDs)"
@@ -343,7 +363,7 @@ seed_all: configs/flaresolverr/config/chromedriver
 	@./scripts/seed-configs.sh configs/recyclarr/config/secrets.yml
 	@./scripts/permissions.py repair --runtime $(RUNTIME) --recursive
 
-bootstrap: configs/flaresolverr/config/chromedriver
+bootstrap: seed_flaresolverr_chromedriver
 	@echo "Detecting UID/GID/TIMEZONE for .env..."
 	@./scripts/detect-system-values.sh .env
 	@echo "Checking Gluetun VPN credentials..."
@@ -953,7 +973,7 @@ storage_guard:
 		fi; \
 	}
 
-start: storage_guard permissions_repair
+start: storage_guard seed_flaresolverr_chromedriver permissions_repair
 	@# Says so when .env still carries pins that override versions.env, the
 	@# reason a deployment that pulled would otherwise keep its old images.
 	@./scripts/migrate-versions.py --check
