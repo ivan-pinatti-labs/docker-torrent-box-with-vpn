@@ -3426,7 +3426,7 @@
     {
       "id": 401,
       "type": "stat",
-      "title": "podman_cpu_exporter",
+      "title": "podman_limits_exporter",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -3437,7 +3437,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "podman_container_state{name=~\".*podman_cpu_exporter\"}",
+          "expr": "podman_container_state{name=~\".*podman_limits_exporter\"}",
           "legendFormat": "{{name}}",
           "refId": "A",
           "instant": true
@@ -3447,7 +3447,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(max(podman_container_health{name=~\".*podman_cpu_exporter\"}) unless on() (podman_container_state{name=~\".*podman_cpu_exporter\"} != 2)) or on() vector(-1)",
+          "expr": "(max(podman_container_health{name=~\".*podman_limits_exporter\"}) unless on() (podman_container_state{name=~\".*podman_limits_exporter\"} != 2)) or on() vector(-1)",
           "legendFormat": "Health",
           "refId": "B",
           "instant": true

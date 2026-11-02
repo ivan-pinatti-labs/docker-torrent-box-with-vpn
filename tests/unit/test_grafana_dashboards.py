@@ -66,6 +66,35 @@ def test_no_name_regex_assumes_an_empty_prefix():
     )
 
 
+def _compose_container_names() -> set[str]:
+    names = set()
+    for compose in Path(__file__).resolve().parents[2].glob("docker-compose*.yml"):
+        names.update(
+            re.findall(
+                r"container_name:\s*\$\{CONTAINER_PREFIX\}(\S+)", compose.read_text()
+            )
+        )
+    return names
+
+
+def test_every_container_a_query_names_exists():
+    # A panel for a container no compose file defines always reads "Down",
+    # as the one for the renamed podman_cpu_exporter did (#391).
+    known = _compose_container_names()
+    assert "gluetun" in known
+    unknown = set()
+    for where, query in _queries():
+        for match in re.finditer(
+            r"\bname\s*(?:=~|!~)\s*\"\.\*\(?([A-Za-z0-9_.|-]+)\)?\"", query
+        ):
+            unknown.update(
+                (where, name) for name in match[1].split("|") if name not in known
+            )
+    assert not unknown, (
+        f"queries name containers no compose file defines: {sorted(unknown)}"
+    )
+
+
 def test_the_stack_variable_values_are_matched_by_suffix():
     doc = json.loads(
         (DASHBOARDS / "node_containers/podman_containers.json").read_text()

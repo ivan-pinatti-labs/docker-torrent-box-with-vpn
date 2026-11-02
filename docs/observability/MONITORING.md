@@ -147,7 +147,16 @@ Dashboard queries match containers by suffix (`name=~".*sonarr"`), never by exac
 podman_exporter's `name` label is the real container name, which carries `CONTAINER_PREFIX`,
 and Grafana does not interpolate environment variables in queries. Like the alert rules, this
 assumes one stack per podman user; with two, a panel shows both stacks' containers.
-`tests/unit/test_grafana_dashboards.py` refuses exact and bare-regex name matchers.
+`tests/unit/test_grafana_dashboards.py` refuses exact and bare-regex name matchers, and any
+container name that no compose file defines.
+
+The Podman Containers dashboard scopes its container queries to the stack's pod through a
+`pod` variable, found from the stack's own gluetun container
+(`label_values(podman_container_info{name=~".*gluetun"}, pod_name)`). podman-compose names
+the pod `pod_<project>`, and the project name is `COMPOSE_PROJECT_NAME` or, by default, the
+checkout's directory name, so it cannot be written into the dashboard. Its qBittorrent and
+SABnzbd application rows read those apps' own exporters, which this stack's Prometheus
+scrapes, so they ignore the `pod` and `container` variables and always show this stack.
 
 The bundled SABnzbd dashboard is provisioned from
 `configs/grafana/config/provisioning/dashboards/downloaders/sabnzbd.json`. Alerting includes
