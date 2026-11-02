@@ -507,6 +507,16 @@ check_requirements:
 	@(command -v podman-compose && podman-compose --version) || docker compose version
 	@echo
 	yq --version
+	@# The scripts are written for mikefarah/yq v4. Debian's and Ubuntu's yq
+	@# package is kislyuk/yq, a jq wrapper that prints JSON unless told
+	@# otherwise, so an in-place edit can rewrite a YAML config as JSON (#373).
+	@# Measured: mikefarah v4 says "yq (https://github.com/mikefarah/yq/)
+	@# version v4.44.3", v3 "yq version 3.4.1", kislyuk "yq 3.4.3".
+	@yq --version 2>&1 | grep -Eq 'mikefarah/yq/?\) version v4\.' || { \
+		echo "ERROR: yq must be mikefarah/yq v4 (https://github.com/mikefarah/yq#install)."; \
+		echo "  The Debian/Ubuntu yq package is kislyuk/yq, which these scripts cannot use."; \
+		exit 1; \
+	}
 	@echo
 	xmlstarlet --version
 	@echo
@@ -689,6 +699,7 @@ install_requirements:
 	@echo "  sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras xmlstarlet wireguard"
 	@echo ""
 	@echo "yq: https://github.com/mikefarah/yq#install"
+	@echo "  (not the Debian/Ubuntu yq package: that is kislyuk/yq, a different tool)"
 
 pre_commit:
 	@echo "Running pre-commit checks..."

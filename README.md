@@ -232,6 +232,38 @@ crontab -e
 # @reboot /path/to/docker-torrent-box-with-vpn/scripts/auto-start.sh >> /path/to/docker-torrent-box-with-vpn/logs/auto-start.log 2>&1
 ```
 
+With rootless Podman, a systemd unit has to stay active for as long as the stack runs.
+Each container's `conmon` stays in the cgroup of whatever started it, and `make start`
+returns once the stack is up, so a unit whose only process is `make start` (a plain
+`Type=oneshot`, `Type=simple`, or `systemd-run`) finishes, and systemd then kills every
+`conmon` left in its cgroup. The apps keep answering, but Podman can no longer health-check,
+`exec` into, stop or restart them (`conmon exited prematurely`), and recovering takes a
+`make stop` and a fresh start. Use `Type=oneshot` with `RemainAfterExit=yes` instead, as a
+user unit (`~/.config/systemd/user/docker-torrent-box-with-vpn.service`):
+
+```ini
+[Unit]
+Description=docker-torrent-box-with-vpn
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/path/to/docker-torrent-box-with-vpn
+ExecStart=/path/to/docker-torrent-box-with-vpn/scripts/auto-start.sh
+ExecStop=/usr/bin/make stop
+TimeoutStartSec=30min
+TimeoutStopSec=10min
+
+[Install]
+WantedBy=default.target
+```
+
+```shell
+loginctl enable-linger "$USER"   # start user units at boot, without a login
+systemctl --user daemon-reload
+systemctl --user enable --now docker-torrent-box-with-vpn.service
+```
+
 ### 4. Customize your setup
 
 Everything below is optional, and safe to do any time after your first

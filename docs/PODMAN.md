@@ -23,6 +23,12 @@ sudo dnf install podman podman-docker podman-compose xmlstarlet wireguard-tools
 sudo apt install podman podman-docker podman-compose xmlstarlet wireguard
 ```
 
+yq comes from [mikefarah/yq's install instructions](https://github.com/mikefarah/yq#install)
+(v4), on every distribution. Do not `apt install yq` on Debian or Ubuntu: that package is
+[kislyuk/yq](https://github.com/kislyuk/yq), a different tool that prints JSON by default, so
+the scripts' in-place edits could rewrite a YAML config as JSON. `make check_requirements`
+refuses anything but mikefarah/yq v4.
+
 Set `CONTAINER_RUNTIME=podman` (or `docker`) in your `.env` file to make your choice explicit. If
 left unset, the `Makefile` auto-detects: Podman wins when both are installed.
 
