@@ -872,7 +872,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (name) (rate(podman_container_cpu_seconds_total[2m]) * on(id) group_left(name) podman_container_info{name=\"nginx\"}) * 100",
+          "expr": "sum by (name) (rate(podman_container_cpu_seconds_total[2m]) * on(id) group_left(name) podman_container_info{name=~\".*nginx\"}) * 100",
           "legendFormat": "CPU %",
           "refId": "A"
         }
@@ -953,7 +953,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "podman_container_mem_usage_bytes * on(id) group_left(name) podman_container_info{name=\"nginx\"}",
+          "expr": "podman_container_mem_usage_bytes * on(id) group_left(name) podman_container_info{name=~\".*nginx\"}",
           "legendFormat": "Usage",
           "refId": "A"
         },
@@ -962,7 +962,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "podman_container_mem_limit_bytes * on(id) group_left(name) podman_container_info{name=\"nginx\"}",
+          "expr": "podman_container_mem_limit_bytes * on(id) group_left(name) podman_container_info{name=~\".*nginx\"}",
           "legendFormat": "Limit",
           "refId": "B"
         }

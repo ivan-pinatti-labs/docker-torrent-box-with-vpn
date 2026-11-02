@@ -1579,7 +1579,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (name) (rate(podman_container_cpu_seconds_total[2m]) * on(id) group_left(name) podman_container_info{name=\"qbittorrent\"}) * 100",
+          "expr": "sum by (name) (rate(podman_container_cpu_seconds_total[2m]) * on(id) group_left(name) podman_container_info{name=~\".*qbittorrent\"}) * 100",
           "legendFormat": "{{name}} CPU %",
           "refId": "A"
         }
@@ -1660,7 +1660,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "podman_container_mem_usage_bytes * on(id) group_left(name) podman_container_info{name=\"qbittorrent\"}",
+          "expr": "podman_container_mem_usage_bytes * on(id) group_left(name) podman_container_info{name=~\".*qbittorrent\"}",
           "legendFormat": "{{name}} Usage",
           "refId": "A"
         },
@@ -1669,7 +1669,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "podman_container_mem_limit_bytes * on(id) group_left(name) podman_container_info{name=\"qbittorrent\"}",
+          "expr": "podman_container_mem_limit_bytes * on(id) group_left(name) podman_container_info{name=~\".*qbittorrent\"}",
           "legendFormat": "{{name}} Limit",
           "refId": "B"
         }
@@ -1750,7 +1750,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (name) (rate(podman_container_block_input_total[2m]) * on(id) group_left(name) podman_container_info{name=\"qbittorrent\"})",
+          "expr": "sum by (name) (rate(podman_container_block_input_total[2m]) * on(id) group_left(name) podman_container_info{name=~\".*qbittorrent\"})",
           "legendFormat": "{{name}} Read",
           "refId": "A"
         },
@@ -1759,7 +1759,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (name) (rate(podman_container_block_output_total[2m]) * on(id) group_left(name) podman_container_info{name=\"qbittorrent\"})",
+          "expr": "sum by (name) (rate(podman_container_block_output_total[2m]) * on(id) group_left(name) podman_container_info{name=~\".*qbittorrent\"})",
           "legendFormat": "{{name}} Write",
           "refId": "B"
         }
@@ -1841,7 +1841,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(podman_container_net_input_total{name=\"gluetun\"}[2m]) * 8",
+          "expr": "rate(podman_container_net_input_total{name=~\".*gluetun\"}[2m]) * 8",
           "legendFormat": "Rx",
           "refId": "A"
         },
@@ -1850,7 +1850,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(podman_container_net_output_total{name=\"gluetun\"}[2m]) * 8",
+          "expr": "rate(podman_container_net_output_total{name=~\".*gluetun\"}[2m]) * 8",
           "legendFormat": "Tx",
           "refId": "B"
         }
@@ -2012,7 +2012,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(podman_container_mem_swap_usage_bytes - podman_container_mem_usage_bytes) * on(id) group_left(name) podman_container_info{name=\"qbittorrent\"}",
+          "expr": "(podman_container_mem_swap_usage_bytes - podman_container_mem_usage_bytes) * on(id) group_left(name) podman_container_info{name=~\".*qbittorrent\"}",
           "legendFormat": "{{name}} Used",
           "refId": "A"
         },
@@ -2021,7 +2021,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(podman_container_mem_swap_limit_bytes - podman_container_mem_limit_bytes) * on(id) group_left(name) podman_container_info{name=\"qbittorrent\"}",
+          "expr": "(podman_container_mem_swap_limit_bytes - podman_container_mem_limit_bytes) * on(id) group_left(name) podman_container_info{name=~\".*qbittorrent\"}",
           "legendFormat": "{{name}} Allocated",
           "refId": "B"
         }
