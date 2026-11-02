@@ -21,7 +21,8 @@ RULES = (
     Path(__file__).resolve().parents[2]
     / "configs/grafana/config/provisioning/alerting/rules.yaml"
 )
-EXACT_NAME = re.compile(r"\bname\s*=\s*\"")
+# PromQL takes double, single and backtick quoted strings.
+EXACT_NAME = re.compile(r"\bname\s*=\s*[\"'`]")
 
 
 def _rules() -> list[dict]:
@@ -64,4 +65,6 @@ def test_gluetun_container_down_matches_any_prefix():
     assert _exprs(rule) == ['podman_container_state{name=~".*gluetun"}']
     # No data still alerts, and says it is about missing data.
     assert rule["noDataState"] == "Alerting"
-    assert "{{ if $labels.name }}" in rule["annotations"]["description"]
+    description = rule["annotations"]["description"]
+    assert "{{ if $labels.name }}" in description
+    assert "its state is unknown" in description

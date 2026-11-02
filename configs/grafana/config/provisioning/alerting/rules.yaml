@@ -675,9 +675,11 @@ groups:
               # variables in rule queries (measured on 13.0.2: a
               # ${CONTAINER_PREFIX} here is stored and queried literally), so
               # match the suffix instead. PromQL anchors the regex, so only
-              # names ending in gluetun match; another stack's gluetun under
-              # the same podman user becomes its own alert instance, named by
-              # its name label.
+              # names ending in gluetun match. The rule assumes one stack per
+              # podman user: another stack's gluetun under the same user is
+              # its own alert instance, named by its name label, but while it
+              # runs it also keeps this rule out of no data if this stack's
+              # gluetun is removed altogether (a stopped one still alerts).
               expr: podman_container_state{name=~".*gluetun"}
               refId: A
               instant: true

@@ -38,6 +38,9 @@ matches a container by its exact name: Gluetun Container Down matches `name=~".*
 Grafana does not interpolate environment variables in rule queries, so `${CONTAINER_PREFIX}`
 cannot be used there. With no series at all the rule still alerts (no data means the VPN cannot
 be shown to be up), and its description then says the state is unknown rather than down.
+The match cannot tell stacks apart, so it assumes one stack per podman user: with two, each
+gluetun is its own alert instance, but a running gluetun from the other stack keeps the rule out
+of no data when this stack's gluetun container is removed altogether (a stopped one still alerts).
 `tests/unit/test_grafana_alert_rules.py` refuses an exact `name="..."` selector.
 
 ## Email via AWS SES
