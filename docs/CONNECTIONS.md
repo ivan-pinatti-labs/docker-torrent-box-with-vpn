@@ -272,7 +272,16 @@ set up just confirms it and moves on.
   same per-app canonical placeholder).
 - **Mylar/LazyLibrarian → qBittorrent/SABnzbd**: their `config.ini.example`
   files are pre-filled the same way, since both apps are configured from a
-  flat file rather than a database.
+  flat file rather than a database. The addresses in them are
+  `.env.example`'s `GLUETUN_SERVICES_IP`, so a checkout with another services
+  subnet (`.env.tests` uses 172.25.0.0/24) would leave both apps pointed at
+  an address nothing answers on. The script compares `sab_host`, `sab_port`,
+  `qbittorrent_host` and `qbittorrent_port` with `GLUETUN_SERVICES_IP` and the
+  HTTPS ports in `.env`, and rewrites the ones that differ, stopping a running
+  app for the edit and starting it again (both write their config back on
+  shutdown). This matters most for Mylar: on every start it checks SABnzbd
+  with no timeout before opening its own port, so a wrong address held each
+  restart up for about 270s on CI runners (issue #379).
 
 ## Credentials this script sets up
 

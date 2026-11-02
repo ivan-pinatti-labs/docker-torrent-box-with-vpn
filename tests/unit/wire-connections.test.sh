@@ -133,8 +133,23 @@ EOF
     k="key-${app}"
     put "configs/${app}/config/config.xml" "<Config><ApiKey>${k}</ApiKey></Config>"
   done
-  put configs/lazylibrarian/config/config.ini "api_key = key-lazylibrarian"
-  put configs/mylar/config/mylar/config.ini "api_key = key-mylar"
+  # Download client addresses where the .env above says.
+  put configs/lazylibrarian/config/config.ini <<'EOF'
+api_key = key-lazylibrarian
+[SABNZBD]
+sab_host = https://10.0.0.2
+sab_port = 8090
+[QBITTORRENT]
+qbittorrent_host = https://10.0.0.2
+qbittorrent_port = 8443
+EOF
+  put configs/mylar/config/mylar/config.ini <<'EOF'
+api_key = key-mylar
+[SABnzbd]
+sab_host = https://10.0.0.2:8090/sabnzbd
+[qBittorrent]
+qbittorrent_host = https://10.0.0.2:8443
+EOF
   put configs/qbittorrent/secrets/username.txt qbittorrent
   put configs/qbittorrent/secrets/password.txt qbittorrent-password # pragma: allowlist secret
   put configs/sabnzbd/secrets/api_key.txt sabnzbd-key
@@ -296,7 +311,10 @@ check "a wired stack is left alone" 0 out \
   "[Prowlarr] Application 'Sonarr' already exists, skipping." \
   "[Prowlarr] Indexer 'Internet Archive' already exists, skipping." \
   "[Prowlarr] Indexers present in every enabled arr app." "[Mylar] Already has comics, skipping placeholder." \
-  "[qBittorrent] Already trusts only nginx (10.0.0.5) as its reverse proxy, skipping."
+  "[qBittorrent] Already trusts only nginx (10.0.0.5) as its reverse proxy, skipping." \
+  "[Mylar] qBittorrent/SABnzbd addresses already match GLUETUN_SERVICES_IP, skipping." \
+  "[LazyLibrarian] qBittorrent/SABnzbd addresses already match GLUETUN_SERVICES_IP, skipping."
+refute "nothing is stopped" log "podman stop"
 refute "nothing is created" out "Creating"
 refute "qBittorrent's preferences are left alone" log "setPreferences"
 refute "nothing is updated" log "-X PUT"
@@ -336,16 +354,55 @@ check "settings with no key in them are reported" 0 out \
 refute "and none of them is rewritten" log "curl -sSk -X PUT"
 refute "nor does the read crash" err "Traceback"
 
-# Run C: no containers at all.
+# Mylar and LazyLibrarian still on .env.example's address (#379): Mylar is
+# running, so it is stopped for the edit and started again; LazyLibrarian is
+# stopped, so it is only edited, and a key its file lacks is not added.
+deployment
+put configs/mylar/config/mylar/config.ini <<'EOF'
+api_key = key-mylar
+[SABnzbd]
+sab_host = https://172.28.0.10:8087/sabnzbd
+[qBittorrent]
+qbittorrent_host = https://10.0.0.2:8443
+EOF
+put configs/lazylibrarian/config/config.ini <<'EOF'
+api_key = key-lazylibrarian
+[SABNZBD]
+sab_host = https://172.28.0.10
+sab_port = 8087
+[QBITTORRENT]
+qbittorrent_host = https://172.28.0.10
+EOF
+stopped lazylibrarian
+run
+check "stale addresses are corrected" 0 out \
+  "[Mylar] qBittorrent/SABnzbd addresses stale, correcting to 10.0.0.2..." \
+  "[Mylar]   sab_host = https://10.0.0.2:8090/sabnzbd" "[Mylar] Updated." \
+  "[LazyLibrarian]   sab_host = https://10.0.0.2" "[LazyLibrarian]   sab_port = 8090" \
+  "[LazyLibrarian]   qbittorrent_host = https://10.0.0.2" "[LazyLibrarian] Updated."
+check "Mylar's file holds the new address" 0 configs/mylar/config/mylar/config.ini \
+  "sab_host = https://10.0.0.2:8090/sabnzbd" "qbittorrent_host = https://10.0.0.2:8443"
+check "LazyLibrarian's file holds the new address" 0 configs/lazylibrarian/config/config.ini \
+  "sab_host = https://10.0.0.2" "sab_port = 8090" "qbittorrent_host = https://10.0.0.2"
+refute "a key the file lacks is not added" configs/lazylibrarian/config/config.ini "qbittorrent_port"
+refute "an address that matches is not rewritten" out "[Mylar]   qbittorrent_host"
+check "running Mylar is stopped and started around the edit" 0 log "podman stop mylar" "podman start mylar"
+refute "stopped LazyLibrarian is not stopped" log "podman stop --time 60 lazylibrarian"
+refute "nor started" log "podman start lazylibrarian"
+
+# Run C: no containers at all, and no LazyLibrarian config.
 deployment
 containers
+rm "${__repo}/configs/lazylibrarian/config/config.ini"
 run
 check "missing containers are skipped" 0 out \
   "[Audiobookshelf] Container doesn't exist, skipping." "[Calibre] Container doesn't exist, skipping." \
   "[Calibre-Web] Container doesn't exist, skipping." "[Jellyfin] Container doesn't exist, skipping." \
   "[sonarr] Container does not exist, skipping." \
   "[Prowlarr] Container doesn't exist (PROWLARR_PROFILE=disabled), skipping." \
-  "[Mylar] Container doesn't exist, skipping." "[qBittorrent] Container doesn't exist, skipping."
+  "[Mylar] Container doesn't exist, skipping." "[qBittorrent] Container doesn't exist, skipping." \
+  "[Mylar] qBittorrent/SABnzbd addresses already match GLUETUN_SERVICES_IP, skipping."
+refute "a missing config is left to the seed" out "[LazyLibrarian] qBittorrent/SABnzbd"
 
 # Run D: most things fail.
 deployment

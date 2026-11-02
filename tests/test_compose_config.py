@@ -203,6 +203,73 @@ def test_lazylibrarian_seed_generic_provider_hosts_blanked():
         assert parser.get(section, key) == "", f"[{section}] {key} should be blank"
 
 
+def _env_example(key: str) -> str:
+    for line in (REPO_ROOT / ".env.example").read_text().splitlines():
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1]
+    raise AssertionError(f"{key} is not in .env.example")
+
+
+@pytest.mark.parametrize(
+    ("seed", "section", "key", "template"),
+    [
+        (
+            "configs/mylar/config/mylar/config.ini.example",
+            "SABnzbd",
+            "sab_host",
+            "https://{ip}:{sab}/sabnzbd",
+        ),
+        (
+            "configs/mylar/config/mylar/config.ini.example",
+            "qBittorrent",
+            "qbittorrent_host",
+            "https://{ip}:{qbt}",
+        ),
+        (
+            "configs/lazylibrarian/config/config.ini.example",
+            "SABNZBD",
+            "sab_host",
+            "https://{ip}",
+        ),
+        (
+            "configs/lazylibrarian/config/config.ini.example",
+            "SABNZBD",
+            "sab_port",
+            "{sab}",
+        ),
+        (
+            "configs/lazylibrarian/config/config.ini.example",
+            "QBITTORRENT",
+            "qbittorrent_host",
+            "https://{ip}",
+        ),
+        (
+            "configs/lazylibrarian/config/config.ini.example",
+            "QBITTORRENT",
+            "qbittorrent_port",
+            "{qbt}",
+        ),
+    ],
+)
+def test_download_client_seeds_match_env_example(seed, section, key, template):
+    """The seeded addresses are the ones wire-connections.sh would write.
+
+    ensure_ini_client_addresses rewrites these from GLUETUN_SERVICES_IP and
+    the HTTPS ports, restarting the app to do it, so a seed that drifted from
+    .env.example would cost every default checkout a restart on every wiring
+    run, and a wrong address costs Mylar minutes on every start (#379).
+    """
+    parser = configparser.ConfigParser(strict=False, interpolation=None)
+    parser.read_string((REPO_ROOT / seed).read_text())
+    expected = template.format(
+        ip=_env_example("GLUETUN_SERVICES_IP"),
+        sab=_env_example("SABNZBD_HTTPS_PORT"),
+        qbt=_env_example("QBITTORRENT_HTTPS_PORT"),
+    )
+
+    assert parser.get(section, key) == expected
+
+
 def test_bazarr_seed_listens_on_all_interfaces():
     config = yaml.safe_load(
         (REPO_ROOT / "configs/bazarr/config/config/config.yaml.example").read_text()

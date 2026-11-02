@@ -41,7 +41,9 @@ set -euo pipefail
 #     they match by construction.
 #   - Mylar/LazyLibrarian's qBittorrent/SABnzbd connections: their
 #     config.ini.example files are pre-filled the same way, since both apps
-#     are configured from a flat file rather than a database.
+#     are configured from a flat file rather than a database. The one thing
+#     done for them here is moving those addresses when GLUETUN_SERVICES_IP
+#     is not .env.example's (ensure_ini_client_addresses).
 # See docs/CONNECTIONS.md for the full picture.
 #
 # Idempotent: every creation is preceded by a check for an existing entry, so
@@ -762,6 +764,56 @@ PYEOF
     fi
   done
   echo "[Mylar] Done."
+}
+
+# Mylar and LazyLibrarian read their qBittorrent and SABnzbd addresses from
+# config.ini, and both config.ini.example files ship .env.example's
+# GLUETUN_SERVICES_IP (172.28.0.10). A checkout whose services subnet
+# differs, .env.tests' 172.25.0.0/24 for one, otherwise leaves both apps
+# pointed at an address nothing answers on. Mylar pays for that on every
+# start, not only when it downloads: the startup SABnzbd check described
+# above connects with no timeout, twice, and a connection to an address on
+# none of its networks leaves through its default route and is never
+# answered. Measured on ubuntu-26.04 runners: about 135s per attempt, so
+# Mylar answered 270s after each restart and password rotation's 180s
+# validation failed (#379). This is the correction ensure_qbittorrent_client
+# gives the arr apps when GLUETUN_SERVICES_IP moves, applied to the flat
+# file. Only keys the file already has are compared, and nothing restarts
+# when they all match. A running app is stopped for the edit and started
+# again, since both write their config back on shutdown and would put the
+# old address back; a stopped one is only edited.
+# Args: service display_name ini key=value...
+ensure_ini_client_addresses() {
+  local service="$1" display_name="$2" ini="$3"
+  shift 3
+  [[ -f "$ini" ]] || return 0
+  local pair key value current stale=()
+  for pair in "$@"; do
+    key="${pair%%=*}" value="${pair#*=}"
+    grep -q "^${key} = " "$ini" || continue
+    current=$(awk -v key="$key" '$1 == key && $2 == "=" { print $3; exit }' "$ini")
+    [[ "$current" == "$value" ]] || stale+=("$pair")
+  done
+  if [[ ${#stale[@]} -eq 0 ]]; then
+    echo "[${display_name}] qBittorrent/SABnzbd addresses already match GLUETUN_SERVICES_IP, skipping."
+    return 0
+  fi
+
+  echo "[${display_name}] qBittorrent/SABnzbd addresses stale, correcting to ${GLUETUN_SERVICES_IP}..."
+  local running=false
+  if podman container inspect -f '{{.State.Running}}' "$(cname "$service")" 2>/dev/null | grep -q '^true$'; then
+    running=true
+    stop_container "$service"
+  fi
+  for pair in "${stale[@]}"; do
+    key="${pair%%=*}" value="${pair#*=}"
+    sed -i "s|^${key} = .*|${key} = ${value}|" "$ini"
+    echo "[${display_name}]   ${key} = ${value}"
+  done
+  if [[ "$running" == true ]]; then
+    podman start "$(cname "$service")" >/dev/null
+  fi
+  echo "[${display_name}] Updated."
 }
 
 # ---------------------------------------------------------------------------
@@ -1945,6 +1997,14 @@ echo "======================================================================"
 echo " First-run setup, download client wiring, and Prowlarr registration"
 echo " (running concurrently; each line is prefixed with its own app name)"
 echo "======================================================================"
+# Before the jobs, not among them: these may restart Mylar and LazyLibrarian,
+# which wire_prowlarr_apps is about to check connectivity against.
+ensure_ini_client_addresses mylar Mylar "$MYLAR_INI" \
+  "sab_host=https://${GLUETUN_SERVICES_IP}:${SABNZBD_HTTPS_PORT}/sabnzbd" \
+  "qbittorrent_host=https://${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}"
+ensure_ini_client_addresses lazylibrarian LazyLibrarian "$LAZYLIBRARIAN_INI" \
+  "sab_host=https://${GLUETUN_SERVICES_IP}" "sab_port=${SABNZBD_HTTPS_PORT}" \
+  "qbittorrent_host=https://${GLUETUN_SERVICES_IP}" "qbittorrent_port=${QBITTORRENT_HTTPS_PORT}"
 start_job audiobookshelf ensure_audiobookshelf_setup
 start_job calibre ensure_calibre_content_server_user
 start_job calibre-web ensure_calibre_web_setup
@@ -2034,5 +2094,6 @@ echo ""
 echo "======================================================================"
 echo " Done. Bazarr's Sonarr/Radarr connections and Mylar/LazyLibrarian's"
 echo " qBittorrent/SABnzbd connections are pre-wired via their .example"
-echo " templates and need no action here. See docs/CONNECTIONS.md."
+echo " templates; only the latter's addresses are kept in step with"
+echo " GLUETUN_SERVICES_IP here. See docs/CONNECTIONS.md."
 echo "======================================================================"
