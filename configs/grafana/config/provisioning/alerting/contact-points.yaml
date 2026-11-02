@@ -9,15 +9,17 @@ contactPoints:
         settings:
           addresses: ${GRAFANA_ALERT_EMAIL_TO}
           subject: '[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
+          # Plain text, one field per line. Grafana's email template HTML-escapes
+          # each line of the message and adds the <br> itself, so HTML tags here
+          # would arrive as literal text. A blank line separates alerts.
           message: |
             {{ range .Alerts -}}
-            <p>
-              <strong>Status:</strong> {{ .Status | title }}<br>
-              <strong>Alert:</strong> {{ .Labels.alertname }}
-              {{- if .Labels.name }}<br><strong>Container:</strong> {{ .Labels.name }}{{ end }}
-              {{- if .Labels.mountpoint }}<br><strong>Mount:</strong> {{ .Labels.mountpoint }}{{ end }}
-              {{- if .Annotations.description }}<br><strong>Value:</strong> {{ .Annotations.description }}{{ end }}
-            </p>
+            Status: {{ .Status | title }}
+            Alert: {{ .Labels.alertname }}
+            {{ if .Labels.name }}Container: {{ .Labels.name }}
+            {{ end }}{{ if .Labels.mountpoint }}Mount: {{ .Labels.mountpoint }}
+            {{ end }}{{ if .Annotations.description }}Value: {{ .Annotations.description }}
+            {{ end }}
             {{ end -}}
         disableResolveMessage: false
 
