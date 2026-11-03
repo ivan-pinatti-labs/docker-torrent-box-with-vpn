@@ -202,6 +202,15 @@ mv "${__scratch}/python3.real" "${__bin}/python3"
 check "mount warns when a lock cannot be upgraded" 0 out \
   "WARNING: the share cannot upgrade a shared lock to an exclusive one"
 
+# No python3 to probe with is a skipped check, not a failed one.
+fresh_repo
+mv "${__bin}/python3" "${__scratch}/python3.real"
+run mount
+mv "${__scratch}/python3.real" "${__bin}/python3"
+check "mount skips the lock check without python3" 0 out \
+  "WARNING: python3 is not installed; skipping the SQLite locking check."
+refute "a missing python3 is not a lock failure" "${__scratch}/out" "cannot upgrade a shared lock"
+
 fresh_repo
 touch "${__state}/mount-fails"
 run mount

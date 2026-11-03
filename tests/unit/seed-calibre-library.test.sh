@@ -31,6 +31,8 @@ if [[ "\$1 \$2" == "container inspect" && -n "\${STUB_RUNNING:-}" && "\${*: -1}"
 fi
 EOF
 chmod +x "${__scratch}/bin/podman"
+sed 's/^echo "podman /echo "docker /' "${__scratch}/bin/podman" >"${__scratch}/bin/docker"
+chmod +x "${__scratch}/bin/docker"
 echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
 
 run() {
@@ -139,6 +141,29 @@ check "refuses a database that fails its integrity check" 1 err \
   "ERROR: the copy of ${LIBRARY}/metadata.db did not check out; nothing was changed."
 [[ -f "${__scratch}/work/${LIBRARY}/metadata.db" && ! -e "${__scratch}/work/${DB_DIR}/metadata.db" &&
   ! -e "${__scratch}/work/${DB_DIR}/metadata.db.partial" ]] || fail "a failed check changes nothing"
+
+# The folders come from .env, as compose reads them: a library under another
+# DATA_FOLDER is the one moved, into the database folder under CONFIG_FOLDER.
+old_library
+mkdir -p "${__scratch}/work/elsewhere/media"
+mv "${__scratch}/work/data/media/calibre-library" "${__scratch}/work/elsewhere/media/"
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "DATA_FOLDER=./elsewhere" "CONFIG_FOLDER=./cfg" >"${__scratch}/work/.env"
+run
+check "moves the library under DATA_FOLDER" 0 out \
+  "Moving the Calibre library's metadata.db to cfg/calibre/library-db..."
+[[ -f "${__scratch}/work/cfg/calibre/library-db/metadata.db" ]] || fail "the database lands under CONFIG_FOLDER"
+rm -rf "${__scratch}/work/elsewhere" "${__scratch}/work/cfg"
+
+# The runtime make passes, and an absolute DATA_FOLDER mounted as it is.
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "DATA_FOLDER=${__scratch}/abs" >"${__scratch}/work/.env"
+rm -f "${__scratch}/log"
+touch "${__scratch}/log"
+__status=0
+(cd "${__scratch}/work" && PATH="${__scratch}/bin:${PATH}" RUNTIME=docker bash "${__script}") \
+  >"${__scratch}/out" 2>"${__scratch}/err" || __status=$?
+check "creates the library with the runtime make passes" 0 log \
+  "docker run --rm -v ${__scratch}/abs/media/calibre-library:/library:z -v ${__scratch}/work/configs/calibre/library-db:/calibre-db:z"
+echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
 
 if [[ "${__failures}" -gt 0 ]]; then
   echo "${__failures} failed" >&2

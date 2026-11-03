@@ -27,17 +27,32 @@ set -euo pipefail
 #   "library database appears to be corrupted" on first login. With the
 #   database already there, its first open is a normal one.
 
-readonly LIBRARY_DIR="data/media/calibre-library"
-readonly DB_DIR="configs/calibre/library-db"
-
 # One key from .env, else from versions.env (the pin .env holds back on
 # purpose, if there is one; see the header of versions.env).
 env_value() {
   awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' .env versions.env 2>/dev/null || true
 }
 
+# The folders compose mounts, from .env as compose reads them, so a moved
+# DATA_FOLDER moves the library this looks at too. Make passes RUNTIME.
+data_folder="$(env_value DATA_FOLDER)"
+config_folder="$(env_value CONFIG_FOLDER)"
+data_folder="${data_folder:-./data}"
+config_folder="${config_folder:-./configs}"
+readonly LIBRARY_DIR="${data_folder#./}/media/calibre-library"
+readonly DB_DIR="${config_folder#./}/calibre/library-db"
+readonly RUNTIME="${RUNTIME:-podman}"
+
+# An absolute path for a bind mount.
+absolute() {
+  case "$1" in
+  /*) printf '%s' "$1" ;;
+  *) printf '%s/%s' "$(pwd)" "$1" ;;
+  esac
+}
+
 container_running() {
-  podman container inspect -f '{{.State.Running}}' "$(env_value CONTAINER_PREFIX)$1" 2>/dev/null | grep -q '^true$'
+  "$RUNTIME" container inspect -f '{{.State.Running}}' "$(env_value CONTAINER_PREFIX)$1" 2>/dev/null | grep -q '^true$'
 }
 
 integrity() {
@@ -86,7 +101,7 @@ echo "Pre-creating the Calibre library at ${LIBRARY_DIR}, with its database in $
 # pulls is the one the stack starts later, and no second registry is involved.
 # It came from lscr.io before; a pull from there that hung for 15 minutes
 # ended a CI run (#305).
-podman run --rm -v "$(pwd)/${LIBRARY_DIR}:/library:z" -v "$(pwd)/${DB_DIR}:/calibre-db:z" \
+"$RUNTIME" run --rm -v "$(absolute "$LIBRARY_DIR"):/library:z" -v "$(absolute "$DB_DIR"):/calibre-db:z" \
   -e CALIBRE_OVERRIDE_DATABASE_PATH=/calibre-db/metadata.db --entrypoint calibredb \
   "docker.io/linuxserver/calibre:${CALIBRE_VERSION}" list --library-path /library >/dev/null
 echo "Calibre library pre-created."

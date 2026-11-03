@@ -566,12 +566,14 @@ calibre_web_db_ready() {
 import sys
 sys.path.insert(0, "scripts")
 from live_db import live_db
+# Ready means a settings table with the split library columns, which
+# Calibre-Web adds to an older app.db when it starts.
 try:
     with live_db('$CALIBREWEB_DB') as conn:
-        row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'").fetchone()
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(settings)")}
 except FileNotFoundError:
-    row = None
-sys.exit(0 if row else 1)
+    columns = set()
+sys.exit(0 if {"config_calibre_dir", "config_calibre_split", "config_calibre_split_dir"} <= columns else 1)
 PYEOF
 }
 

@@ -302,7 +302,7 @@ seed_flaresolverr_chromedriver:
 # seeds or moves on the next start.
 calibre_library:
 	@if [ "$(CALIBRE_PROFILE)" != "enabled" ] && [ "$(CALIBREWEB_PROFILE)" != "enabled" ]; then exit 0; fi; \
-	./scripts/seed-calibre-library.sh
+	RUNTIME=$(RUNTIME) ./scripts/seed-calibre-library.sh
 
 # Split out of bootstrap so anything that needs a fully seeded tree without
 # the rest of bootstrap's own steps (VPN credential prompts, certificate
@@ -335,7 +335,7 @@ seed_all: seed_flaresolverr_chromedriver
 		storage/prometheus/data \
 		storage/grafana/data
 	@touch data/torrents/blackhole/.gitkeep data/usenet/blackhole/.gitkeep
-	@./scripts/seed-calibre-library.sh
+	@RUNTIME=$(RUNTIME) ./scripts/seed-calibre-library.sh
 	@./scripts/seed-secrets.sh configs/grafana
 	@./scripts/seed-secrets.sh configs/qbittorrent
 	@./scripts/seed-secrets.sh configs/qbittorrent_exporter

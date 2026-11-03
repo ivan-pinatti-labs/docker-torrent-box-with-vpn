@@ -36,20 +36,21 @@ def _recipe(target: str) -> str:
     return "\n".join(recipe)
 
 
-def _run(tmp_path: Path, calibre: str, calibre_web: str) -> bool:
-    """Runs the recipe; True when it ran the seed script."""
+def _run(tmp_path: Path, calibre: str, calibre_web: str) -> str | None:
+    """Runs the recipe; the RUNTIME the seed script saw, or None if it did not run."""
     script = tmp_path / "scripts" / "seed-calibre-library.sh"
     script.parent.mkdir()
-    script.write_text(f'#!/bin/sh\n: >"{tmp_path}/ran"\n')
+    script.write_text(f'#!/bin/sh\nprintf %s "$RUNTIME" >"{tmp_path}/ran"\n')
     script.chmod(script.stat().st_mode | stat.S_IXUSR)
     recipe = (
         _recipe("calibre_library")
         .replace("$(CALIBRE_PROFILE)", calibre)
         .replace("$(CALIBREWEB_PROFILE)", calibre_web)
-        .replace("\\\n", "\n")
+        .replace("$(RUNTIME)", "docker")
     )
     subprocess.run(["sh", "-c", recipe], cwd=tmp_path, check=True)  # nosec B603 B607
-    return (tmp_path / "ran").exists()
+    ran = tmp_path / "ran"
+    return ran.read_text() if ran.exists() else None
 
 
 @pytest.mark.parametrize(
@@ -62,7 +63,8 @@ def _run(tmp_path: Path, calibre: str, calibre_web: str) -> bool:
     ],
 )
 def test_runs_when_either_app_is_enabled(tmp_path, calibre, calibre_web, runs):
-    assert _run(tmp_path, calibre, calibre_web) is runs
+    # With the Makefile's runtime, so a Docker host runs it with docker.
+    assert _run(tmp_path, calibre, calibre_web) == ("docker" if runs else None)
 
 
 def test_start_runs_it_before_the_permissions_repair():

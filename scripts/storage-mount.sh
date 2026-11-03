@@ -189,7 +189,7 @@ verify_mount() {
   # would take somebody else's data with it.
   probe="$(mktemp -d "$mountpoint_abs/.storage-probe.XXXXXX" 2>/dev/null || true)"
   if [[ -z "$probe" ]]; then
-    log "WARNING: could not create a probe directory on the share; skipping the hardlink check."
+    log "WARNING: could not create a probe directory on the share; skipping the hardlink and SQLite locking checks."
     return 0
   fi
   if mkdir -p "$probe/a" "$probe/b" 2>/dev/null &&
@@ -200,7 +200,9 @@ verify_mount() {
   else
     log "WARNING: hardlink probe failed; imports will copy instead of link."
   fi
-  if lock_upgrade_ok "$probe"; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    log "WARNING: python3 is not installed; skipping the SQLite locking check."
+  elif lock_upgrade_ok "$probe"; then
     log "SQLite locking: OK (a shared lock upgrades to an exclusive one)"
   else
     log "WARNING: the share cannot upgrade a shared lock to an exclusive one, so SQLite could read a database on it but never write it again. Keep every database off data/ (docs/STORAGE.md)."
