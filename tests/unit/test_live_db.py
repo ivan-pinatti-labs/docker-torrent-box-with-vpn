@@ -64,6 +64,33 @@ def test_reads_what_is_only_in_the_write_ahead_log(module, tmp_path):
         writer.close()
 
 
+def test_a_killed_writers_journal_is_rolled_back_in_the_copy(module, tmp_path):
+    # What Mylar, which is always SIGKILLed, can leave: a rollback mode
+    # database holding pages of a transaction that never committed, next to
+    # the hot journal that undoes them.
+    work = tmp_path / "work"
+    work.mkdir()
+    db = work / "mylar.db"
+    writer = sqlite3.connect(db, isolation_level=None)
+    writer.execute("PRAGMA journal_mode = DELETE")
+    writer.execute("PRAGMA cache_size = 1")
+    writer.execute("CREATE TABLE t (v TEXT)")
+    writer.executemany("INSERT INTO t VALUES (?)", [("committed",)] * 2000)
+    writer.execute("BEGIN")
+    # Spills to the database file at once, with a cache of one page.
+    writer.execute("UPDATE t SET v = 'uncommitted'")
+    live = tmp_path / "live"
+    live.mkdir()
+    shutil.copyfile(db, live / "mylar.db")
+    shutil.copyfile(work / "mylar.db-journal", live / "mylar.db-journal")
+    writer.execute("ROLLBACK")
+    writer.close()
+
+    with module.live_db(live / "mylar.db") as conn:
+        assert conn.execute("SELECT DISTINCT v FROM t").fetchall() == [("committed",)]
+    assert (live / "mylar.db-journal").stat().st_size > 0
+
+
 def test_a_missing_database_is_not_created(module, tmp_path):
     db = tmp_path / "app.db"
     with pytest.raises(FileNotFoundError), module.live_db(db):

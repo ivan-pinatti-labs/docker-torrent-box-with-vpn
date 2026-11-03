@@ -50,26 +50,31 @@ def live_db(path, attempts=20, pause=0.25):
     Raises FileNotFoundError when there is no database there, rather than
     creating one.
 
-    The two files are copied one after the other, so a checkpoint in between
+    The rollback -journal comes along too: one an app left behind when it was
+    killed mid-write holds what SQLite needs to undo that write, and without
+    it the copy would show rows that were never committed.
+
+    The files are copied one after the other, so a checkpoint in between
     would pair a database from before it with a log from after it, or with
-    none. The copy is kept only when neither file changed while it was taken,
-    and taken again otherwise, up to `attempts` times.
+    none. The copy is kept only when no file changed while it was taken, and
+    taken again otherwise, up to `attempts` times.
     """
     path = Path(path)
-    wal = Path(f"{path}-wal")
+    sidecars = [Path(f"{path}-wal"), Path(f"{path}-journal")]
 
     with tempfile.TemporaryDirectory() as tmp:
         copy = Path(tmp) / path.name
-        copy_wal = Path(f"{copy}-wal")
         for _ in range(attempts):
-            before = _stamp(path), _stamp(wal)
+            before = [_stamp(path), *map(_stamp, sidecars)]
             shutil.copyfile(path, copy)
-            copy_wal.unlink(missing_ok=True)
-            try:
-                shutil.copyfile(wal, copy_wal)
-            except FileNotFoundError:
-                pass
-            if (_stamp(path), _stamp(wal)) == before:
+            for sidecar in sidecars:
+                copy_sidecar = Path(tmp) / sidecar.name
+                copy_sidecar.unlink(missing_ok=True)
+                try:
+                    shutil.copyfile(sidecar, copy_sidecar)
+                except FileNotFoundError:
+                    pass
+            if [_stamp(path), *map(_stamp, sidecars)] == before:
                 break
             time.sleep(pause)
         else:
