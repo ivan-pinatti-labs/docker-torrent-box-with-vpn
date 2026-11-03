@@ -221,6 +221,9 @@ if [[ "${__status}" -ne 0 || -s "${__scratch}/out" ]]; then
 else
   echo "ok skips the address while Readarr is disabled"
 fi
+# The profile from the environment wins over .env's, as it does for compose.
+READARR_PROFILE=enabled run "${__scratch}/readarr" "${docker_bin}"
+check "checks the address when the environment enables Readarr" 1 "ERROR: READARR_SERVICES_IP 10.6.0.13 is not an address inside SERVICES_SUBNET 10.5.0.0/24."
 
 # A /31 has no network or broadcast address to refuse.
 readarr_env READARR_SERVICES_IP=10.5.0.12

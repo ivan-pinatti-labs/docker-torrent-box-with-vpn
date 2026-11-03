@@ -157,12 +157,13 @@ check() {
 # qBittorrent's login in Readarr's place.
 #
 # Skipped while Readarr is disabled, so an older .env that never set the
-# address cannot stop the rest of the stack over .env.example's. The address
-# comes from the environment before .env: the Makefile exports the one compose
-# will hand Readarr, a command line override included.
+# address cannot stop the rest of the stack over .env.example's. The profile
+# and the address come from the environment before .env, as compose reads
+# them: the Makefile exports the address compose will hand Readarr, a command
+# line override included.
 check_readarr_address() {
   local want subnet pool other
-  [[ "$(setting READARR_PROFILE)" == enabled ]] || return 0
+  [[ "${READARR_PROFILE-$(env_value READARR_PROFILE)}" == enabled ]] || return 0
   want="${READARR_SERVICES_IP-$(env_value READARR_SERVICES_IP)}"
   [[ -n "$want" ]] || return 0
   subnet="$(setting SERVICES_SUBNET)"

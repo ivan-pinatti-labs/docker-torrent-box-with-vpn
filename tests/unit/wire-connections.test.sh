@@ -23,7 +23,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/stack-stubs.bash"
 
 # A value make exports stands in for a key .env lacks; each run below that
 # wants one passes it.
-unset NGINX_SERVICES_IP CONTAINER_PREFIX READARR_SERVICES_IP
+unset NGINX_SERVICES_IP CONTAINER_PREFIX READARR_SERVICES_IP READARR_PROFILE
 
 readonly ARR_APPS=(sonarr radarr lidarr readarr whisparr)
 # Prowlarr's application schema, one implementation per app it can register.
@@ -352,7 +352,7 @@ check "a wired stack is left alone" 0 out \
   "[readarr] qBittorrent download client already exists, skipping." \
   "[Mylar] qBittorrent/SABnzbd addresses already match GLUETUN_SERVICES_IP, skipping." \
   "[LazyLibrarian] qBittorrent/SABnzbd addresses already match GLUETUN_SERVICES_IP, skipping."
-refute "a wired Readarr is not probed" log "/api/v2/app/version"
+check "a wired Readarr is still proven let in" 0 log "podman exec readarr curl -sk --fail -o /dev/null https://10.0.0.2:8443/api/v2/app/version"
 refute "nothing is stopped" log "podman stop"
 refute "nothing is created" out "Creating"
 refute "qBittorrent's preferences are left alone" log "setPreferences"
@@ -733,13 +733,13 @@ qbt_bypass() {
 deployment
 containers readarr qbittorrent
 rule 'exec readarr curl -sk --fail -H X-Api-Key: \S+ \S+/downloadclient$' 0 "$(readarr_qbt_client qbittorrent '********')"
-qbt_bypass true '192.168.5.0/24'
+qbt_bypass true '203.0.113.0/24'
 run
 check "an old Readarr client loses its credentials" 0 out \
   "[readarr] qBittorrent download client stale (10.0.0.2:8443, useSsl true, credentials true, disabled false), correcting to 10.0.0.2:8443, useSsl true, no credentials, enabled..." \
   "[readarr] Updated." "[qBittorrent] Letting Readarr (10.0.0.13) in without a login..." "[qBittorrent] Done."
 check "an entry already there is kept" 0 log \
-  'json={"bypass_auth_subnet_whitelist_enabled": true, "bypass_auth_subnet_whitelist": "192.168.5.0/24\n10.0.0.13/32"}'
+  'json={"bypass_auth_subnet_whitelist_enabled": true, "bypass_auth_subnet_whitelist": "203.0.113.0/24\n10.0.0.13/32"}'
 if [[ "$(sent readarr 1)" != *'"name": "username",\n      "value": ""'* || "$(sent readarr 1)" != *'"name": "password",\n      "value": ""'* ]]; then
   fail "the update clears Readarr's username and password"
 fi
@@ -757,10 +757,10 @@ check "a switched off list is switched on" 0 log \
 # Readarr would let those in unasked, so nothing is set.
 deployment
 containers readarr qbittorrent
-qbt_bypass false '192.168.5.0/24,10.0.0.13/32'
+qbt_bypass false '203.0.113.0/24,10.0.0.13/32'
 run
 check "a switched off list with other entries is left off" 0 out \
-  "[qBittorrent] WARNING: its login bypass list is off but holds 192.168.5.0/24, which switching it on for Readarr would let in too."
+  "[qBittorrent] WARNING: its login bypass list is off but holds 203.0.113.0/24, which switching it on for Readarr would let in too."
 refute "and nothing is sent" log "setPreferences"
 
 # Routed through the VPN, Readarr holds no address of its own: its requests
@@ -804,6 +804,25 @@ rule 'exec readarr curl -sSk -X PUT .*/downloadclient/1\?forceSave=true$' 0 $'[{
 run
 check "a refused disable is reported" 0 out '[readarr] WARNING: failed to disable its qBittorrent client: [{"errorMessage": "no"}]'
 
+# Its download clients cannot be read: said so, not passed over in silence.
+deployment
+containers readarr qbittorrent
+readarr_addresses ''
+rule 'exec readarr curl -sk --fail -H X-Api-Key: \S+ \S+/downloadclient$' 22 ""
+run
+check "an unreadable client list is reported" 0 out \
+  "[readarr] WARNING: could not read its download clients, so a qBittorrent client it may still have was not disabled."
+
+# A client that looks right is not current while qBittorrent still asks
+# Readarr to log in: it is reported, not skipped.
+deployment
+containers readarr qbittorrent
+rule 'exec readarr curl -sk --fail -o /dev/null \S+/api/v2/app/version$' 22 ""
+run
+check "a current client without the bypass is reported" 0 out \
+  "[readarr] WARNING: qBittorrent still asks Readarr to log in, so its qBittorrent client was not wired." "[arr]   - readarr"
+refute "and not called current" out "[readarr] qBittorrent download client already exists, skipping."
+
 # Back on its own address, the disabled client is enabled again.
 deployment
 containers readarr qbittorrent
@@ -843,6 +862,10 @@ run
 check "a disabled Readarr is not let in" 0 out \
   "[qBittorrent] READARR_PROFILE is not enabled, skipping Readarr's login bypass."
 refute "and nothing is sent" log "setPreferences"
+# The profile from the environment wins over .env's, as it does for compose.
+READARR_PROFILE=enabled run
+check "the profile from the environment comes before .env's" 0 out \
+  "[qBittorrent] Letting Readarr (10.0.0.13) in without a login..."
 
 # A bypass entry that lets nginx's address in would let every browser in, so
 # nothing is set, and Readarr, never let in, is not wired either.
@@ -868,7 +891,7 @@ for covering in "10.0.0.2/32|gluetun's address 10.0.0.2" "10.0.0.128/25|SERVICES
   "127.0.0.2/32|loopback" "::1/128|loopback"; do
   deployment
   containers qbittorrent readarr
-  qbt_bypass true "192.168.5.0/24,${covering%%|*}"
+  qbt_bypass true "203.0.113.0/24,${covering%%|*}"
   run
   check "a bypass of ${covering%%|*} is refused" 0 out \
     "[qBittorrent] WARNING: its login bypass list holds ${covering%%|*}, which lets ${covering#*|} in"

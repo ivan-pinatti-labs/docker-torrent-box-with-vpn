@@ -115,11 +115,12 @@ FLARESOLVERR_HTTP_PORT="$(env_value FLARESOLVERR_HTTP_PORT)"
 NGINX_SERVICES_IP="$(env_value NGINX_SERVICES_IP)"
 readonly NGINX_SERVICES_IP
 # Readarr's fixed address on services, the one address qBittorrent lets in
-# without a login (see ensure_qbittorrent_readarr_bypass). From the
-# environment before .env, as compose reads it: the Makefile exports the
-# address Readarr is given, a command line override included.
+# without a login (see ensure_qbittorrent_readarr_bypass). It and Readarr's
+# profile come from the environment before .env, as compose reads them: the
+# Makefile exports the address Readarr is given, a command line override
+# included.
 READARR_SERVICES_IP="${READARR_SERVICES_IP-$(env_value READARR_SERVICES_IP)}"
-READARR_PROFILE="$(env_value READARR_PROFILE)"
+READARR_PROFILE="${READARR_PROFILE-$(env_value READARR_PROFILE)}"
 SERVICES_SUBNET="$(env_value SERVICES_SUBNET)"
 readonly READARR_SERVICES_IP READARR_PROFILE SERVICES_SUBNET
 readonly LAN_IP GLUETUN_SERVICES_IP QBITTORRENT_HTTPS_PORT SABNZBD_HTTP_PORT \
@@ -1057,8 +1058,11 @@ readarr_holds_services_ip() {
 # enables it again. Args: base_url api_key
 disable_readarr_qbittorrent_client() {
   local base_url="$1" api_key="$2" existing id payload response
-  existing=$(container_curl readarr -sk --fail -H "X-Api-Key: ${api_key}" "$base_url" | jq 'map(select(.implementation == "QBittorrent")) | first') || existing=""
-  if [[ -z "$existing" || "$existing" == "null" || "$(jq '.enable' <<<"$existing")" != true ]]; then
+  if ! existing=$(container_curl readarr -sk --fail -H "X-Api-Key: ${api_key}" "$base_url" | jq 'map(select(.implementation == "QBittorrent")) | first'); then
+    echo "[readarr] WARNING: could not read its download clients, so a qBittorrent client it may still have was not disabled."
+    return 0
+  fi
+  if [[ "$existing" == "null" || "$(jq '.enable' <<<"$existing")" != true ]]; then
     return 0
   fi
   id=$(jq -r '.id' <<<"$existing")
@@ -1139,6 +1143,11 @@ ensure_qbittorrent_client() {
       has_credentials=$(jq 'any(.fields[]; (.name == "username" or .name == "password") and (.value // "") != "")' <<<"$existing")
       disabled=$(jq '.enable != true' <<<"$existing")
     fi
+    # Readarr's client works only while qBittorrent lets it in, so a client
+    # that looks right is not current until that is proven too.
+    if [[ "$credential_free" == true ]]; then
+      readarr_bypass_ready || return 1
+    fi
     if [[ "$existing_host" == "$GLUETUN_SERVICES_IP" && "$existing_port" == "$QBITTORRENT_HTTPS_PORT" && "$existing_ssl" == true && "$has_credentials" == false && "$disabled" == false ]]; then
       echo "[$app_name] qBittorrent download client already exists, skipping."
       return 0
@@ -1147,7 +1156,6 @@ ensure_qbittorrent_client() {
     local id payload
     id=$(jq -r '.id' <<<"$existing")
     if [[ "$credential_free" == true ]]; then
-      readarr_bypass_ready || return 1
       echo "[$app_name] qBittorrent download client stale (${existing_host}:${existing_port}, useSsl ${existing_ssl}, credentials ${has_credentials}, disabled ${disabled}), correcting to ${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}, useSsl true, no credentials, enabled..."
       payload=$(jq --arg host "$GLUETUN_SERVICES_IP" --arg port "$QBITTORRENT_HTTPS_PORT" "$(credential_free_client_jq)" <<<"$existing")
     else
