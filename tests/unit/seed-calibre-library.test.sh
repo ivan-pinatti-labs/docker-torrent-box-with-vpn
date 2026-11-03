@@ -245,18 +245,37 @@ check "an unreachable runtime is not a missing container" 1 err \
 # A reference compose would expand is refused, not seeded literally.
 printf '%s\n' "CALIBRE_VERSION=v8.1.0" "CONFIG_FOLDER=\${HOME}/configs" >"${__scratch}/work/.env"
 run
-check "refuses a folder holding a reference" 1 err "ERROR: \${HOME}/configs holds a \${...} reference"
+check "refuses a folder holding a reference" 1 err "ERROR: \${HOME}/configs holds a \$ reference"
 
 # Nor a backslash escape, which compose would read differently.
 printf '%s\n' "CALIBRE_VERSION=v8.1.0" 'DATA_FOLDER=./a\b' >"${__scratch}/work/.env"
 run
-check "refuses a folder holding a backslash" 1 err 'ERROR: ./a\b holds a ${...} reference or a backslash escape'
+check "refuses a folder holding a backslash" 1 err 'ERROR: ./a\b holds a $ reference or a backslash escape'
 
 # The last assignment in .env wins, as it does for compose, and versions.env
 # only fills in a key .env lacks.
 printf '%s\n' "CALIBRE_VERSION=v8.1.0" "DATA_FOLDER=./first" "DATA_FOLDER=./last" >"${__scratch}/work/.env"
 run
 check "takes the last assignment in .env" 0 out "Pre-creating the Calibre library at last/media/calibre-library"
+
+# An unbraced reference is refused too.
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "DATA_FOLDER=\$LIB_ROOT/books" >"${__scratch}/work/.env"
+run
+check "refuses an unbraced reference" 1 err "ERROR: \$LIB_ROOT/books holds a \$ reference"
+
+# A CRLF .env reads as compose reads it, carriage returns dropped.
+printf '%s\r\n' "CALIBRE_VERSION=v8.2.0" "DATA_FOLDER=./crlf" >"${__scratch}/work/.env"
+run
+check "drops a CRLF file's carriage returns" 0 out "Pre-creating the Calibre library at crlf/media/calibre-library,"
+check "and from the image tag" 0 log "docker.io/linuxserver/calibre:v8.2.0 list"
+
+# The last pin in versions.env wins, as it does for make, which hands it to
+# compose. From an empty tree, so it seeds rather than moves.
+rm -rf "${__scratch}/work/data" "${__scratch}/work/configs"
+printf '%s\n' "CALIBRE_VERSION=v9.0.0" "CALIBRE_VERSION=v9.1.0" >"${__scratch}/work/versions.env"
+echo "LAN_IP=192.168.1.20" >"${__scratch}/work/.env"
+run
+check "takes the last pin in versions.env" 0 log "docker.io/linuxserver/calibre:v9.1.0 list"
 echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
 
 if [[ "${__failures}" -gt 0 ]]; then

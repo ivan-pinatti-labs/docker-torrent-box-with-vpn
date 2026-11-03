@@ -29,9 +29,10 @@ set -euo pipefail
 
 # One key from .env, else from versions.env (the pin .env holds back on
 # purpose, if there is one; see the header of versions.env), read the way
-# compose reads it: whitespace around the key and the value dropped, the
-# quotes around a quoted value dropped, a " # comment" after an unquoted one
-# dropped, and the last assignment in .env winning. The program is a here
+# compose reads it: whitespace (a CRLF file's carriage return too) around the
+# key and the value dropped, the quotes around a quoted value dropped, a
+# " # comment" after an unquoted one dropped, and the last assignment in each
+# file winning, as it does for compose and make. The program is a here
 # document because kcov counts each line of a multi line quoted argument as
 # a command that never runs.
 env_value() {
@@ -44,11 +45,11 @@ env_value() {
   awk -F= -v key="$1" -f /dev/stdin "${files[@]}" <<'AWK'
 {
   name = $1
-  gsub(/^[ \t]+|[ \t]+$/, "", name)
+  gsub(/^[ \t\r]+|[ \t\r]+$/, "", name)
 }
 name == key {
   sub(/^[^=]*=/, "")
-  gsub(/^[ \t]+|[ \t]+$/, "")
+  gsub(/^[ \t\r]+|[ \t\r]+$/, "")
   if (/^"/) {
     sub(/^"/, ""); sub(/".*$/, "")
   } else if (/^'/) {
@@ -58,7 +59,7 @@ name == key {
   }
   if (FILENAME == ".env") {
     from_env = $0; in_env = 1
-  } else if (!in_versions) {
+  } else {
     from_versions = $0; in_versions = 1
   }
 }
@@ -71,16 +72,16 @@ AWK
 
 # The folders compose mounts, read the way compose reads them: the
 # environment first, then .env. A moved DATA_FOLDER moves the library this
-# looks at too. A value holding a ${...} reference compose would expand is
-# refused rather than taken literally, which would seed a folder nothing
-# mounts. Make passes RUNTIME.
+# looks at too. A value holding a $ reference compose would expand, braced or
+# not, or a backslash escape, is refused rather than taken literally, which
+# would seed a folder nothing mounts. Make passes RUNTIME.
 data_folder="${DATA_FOLDER:-$(env_value DATA_FOLDER)}"
 config_folder="${CONFIG_FOLDER:-$(env_value CONFIG_FOLDER)}"
 data_folder="${data_folder:-./data}"
 config_folder="${config_folder:-./configs}"
 for folder in "$data_folder" "$config_folder"; do
-  if [[ "$folder" == *'${'* || "$folder" == *\\* ]]; then
-    echo "ERROR: ${folder} holds a \${...} reference or a backslash escape; set DATA_FOLDER and CONFIG_FOLDER to plain paths." >&2
+  if [[ "$folder" == *'$'* || "$folder" == *\\* ]]; then
+    echo "ERROR: ${folder} holds a \$ reference or a backslash escape; set DATA_FOLDER and CONFIG_FOLDER to plain paths." >&2
     exit 1
   fi
 done
