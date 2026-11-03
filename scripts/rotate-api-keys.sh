@@ -216,6 +216,25 @@ stop_container() {
   wait "${pids[@]}"
 }
 
+# Lets the host write an app's SQLite database, which the app must already be
+# stopped for. The host reaches the app's files through the default ACL
+# permissions.yml gives every config directory, but a file the app creates
+# itself, such as its -wal and -shm or the rollback -journal a killed app
+# leaves behind, gets an ACL mask from the app's own 0644, which leaves the
+# host read only on it. SQLite then refuses the write with "attempt to write
+# a readonly database". Restores the host's rwx on the database and on
+# whichever of those files are there. Args: db_path
+host_writable_db() {
+  local file
+  for file in "$1" "$1-wal" "$1-shm" "$1-journal"; do
+    if [[ -e "$file" ]]; then
+      # A filesystem without ACLs, which permissions.py leaves alone, has none
+      # to restore; the write then says for itself whether it can go ahead.
+      podman unshare setfacl -m u:0:rwx,m::rwx "$file" 2>/dev/null || true
+    fi
+  done
+}
+
 STOPPED_CONTAINERS=()
 stop_existing() {
   STOPPED_CONTAINERS=()
@@ -729,6 +748,11 @@ rotate_nzbhydra2() {
   apiKey="$new_key" yq -i '(.main.apiKey) = strenv(apiKey)' "$NZBHYDRA_YML"
 
   echo "[NZBHydra2] Updating consumers (arr Indexers tables, LazyLibrarian, Mylar)..."
+  local db
+  for db in configs/sonarr/config/sonarr.db configs/radarr/config/radarr.db configs/lidarr/config/lidarr.db \
+    configs/readarr/config/readarr.db configs/whisparr/config/whisparr3.db; do
+    host_writable_db "$db"
+  done
   python3 - <<PYEOF
 import json
 import re

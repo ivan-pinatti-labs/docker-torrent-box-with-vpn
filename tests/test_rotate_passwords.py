@@ -252,7 +252,10 @@ def test_rotate_qbittorrent_password_propagates(running_containers):
             continue
         db_path = REPO_ROOT / ARR_DB_PATHS[svc]
         stored = _read_qbt_password_from_db(db_path)
-        assert stored == new_password, f"{svc} DB still holds old qBittorrent password"
+        assert stored == new_password, (
+            f"{svc} DB still holds old qBittorrent password; the rotation printed:\n"
+            f"{result.stdout}"
+        )
 
     # Prowlarr keeps its own qBittorrent DownloadClient (wire-connections.sh),
     # separate from the arr apps' above; this is exactly the gap that left it
