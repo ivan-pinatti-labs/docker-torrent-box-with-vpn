@@ -496,6 +496,15 @@ paths:
     owner: calibre
     mode: "0750"
     chown_files: true
+  # The library's metadata.db, kept off data/ so it never lands on a CIFS
+  # share (#402). Calibre-Web writes metadata edits to it, and SQLite creates
+  # its journal next to it, hence rwx on the folder and on new files.
+  - path: configs/calibre/library-db
+    owner: calibre
+    mode: "0770"
+    chown_files: true
+    acl: [{identity: calibre_web, perms: rwx}]
+    default_acl: [{identity: calibre_web, perms: rwx}]
   - path: configs/calibre-web/config
     owner: calibre_web
     mode: "0750"

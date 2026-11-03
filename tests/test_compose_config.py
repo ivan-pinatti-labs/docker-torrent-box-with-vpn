@@ -18,6 +18,25 @@ def test_audiobookshelf_mounts_full_metadata_tree():
     assert "${CONFIG_FOLDER}/audiobookshelf/metadata:/metadata:z" in volumes
 
 
+@pytest.mark.parametrize("service", ["calibre", "calibre-web"])
+def test_calibre_database_is_kept_off_data(service):
+    """Both apps open metadata.db from local storage, never from /data.
+
+    /data can be a CIFS share, and SMB refuses the lock upgrade every SQLite
+    commit needs, so a database there could be read but never written (#402).
+    """
+    compose = yaml.safe_load(
+        (REPO_ROOT / "docker-compose-media-library.yml").read_text()
+    )
+    definition = compose["services"][service]
+
+    assert (
+        definition["environment"]["CALIBRE_OVERRIDE_DATABASE_PATH"]
+        == "/calibre-db/metadata.db"
+    )
+    assert "${CONFIG_FOLDER}/calibre/library-db:/calibre-db:z" in definition["volumes"]
+
+
 # These read services.yaml.template, not the runtime-generated
 # services.yaml: the generated file is filtered down to whatever profiles
 # are actually enabled (scripts/generate-homepage-services.py), and

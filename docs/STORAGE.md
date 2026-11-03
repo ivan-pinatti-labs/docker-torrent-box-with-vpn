@@ -97,11 +97,28 @@ options are load bearing and should not be "tidied up":
 - **`serverino`** — keeps the server's real inode numbers, which is the only
   reason hardlinks are visible to `rsync -H` and to the apps at all.
 
-`nobrl` is deliberately **absent**. It disables byte-range locking, and both
-Calibre and Calibre-Web write `data/media/calibre-library/metadata.db`, so
-SQLite needs the server to arbitrate those locks. That database is in
-`journal_mode=delete` rather than WAL, which is what makes it viable over a
-network filesystem at all; WAL requires shared memory that CIFS cannot provide.
+`nobrl` is deliberately **absent**, so byte-range locks reach the server and
+two clients cannot both write one file unseen. That does **not** make the
+share safe for SQLite. Every lock SQLite takes works on its own, but its
+commit takes a shared lock on a range and then upgrades it to an exclusive
+one, and SMB without the Unix extensions cannot convert a lock in place: the
+upgrade fails with "permission denied", so a database on the share can be read but never
+written again (#402). `nobrl` would hide that by keeping every lock on the
+client, for the whole share.
+
+No SQLite database belongs on the share, then. Calibre's library is split for
+that reason: the books stay in `data/media/calibre-library`, and its
+`metadata.db` lives in `configs/calibre/library-db` on local storage. Calibre
+finds it through `CALIBRE_OVERRIDE_DATABASE_PATH`, and Calibre-Web through its
+split library settings, which `make wire_connections` writes. `make start`
+moves the database of an install from before this out of the library, with
+the stack down, and keeps the original beside it as
+`metadata.db.on-share-<date>`. Each book still has its `metadata.opf` on the
+share, and Calibre's "Restore database" rebuilds the catalogue from those.
+
+`make storage_mount` tries that lock upgrade on a freshly mounted share and
+warns when it fails, so the next app that keeps a database under `data/` is
+caught at mount time rather than as a "corrupted library" dialog later.
 
 ### SELinux
 

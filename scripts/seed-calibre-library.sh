@@ -5,42 +5,88 @@ set -euo pipefail
 
 # Usage: ./scripts/seed-calibre-library.sh
 #
-# Pre-creates a valid, empty Calibre library at data/media/calibre-library
-# before any container ever starts, using a throwaway container running
-# calibredb (the same image the real calibre/calibre-web containers use).
+# Makes sure the Calibre library has its metadata.db in DB_DIR, on local
+# storage, with the books in LIBRARY_DIR under data/. Calibre and Calibre-Web
+# find it there through CALIBRE_OVERRIDE_DATABASE_PATH and Calibre-Web's split
+# library settings. data/ can be a CIFS share, and SMB refuses the lock
+# upgrade SQLite needs for every commit, so a metadata.db there could be read
+# but never written again (#402).
 #
-# Calibre's desktop GUI auto-opens its configured library immediately on
-# container boot; on a fresh bootstrap, that means it's the one creating
-# metadata.db for the very first time, in-process, at the same moment the
-# container's own startup scripts are still running. That's a real reported
-# failure mode ("library database appears to be corrupted" on first login),
-# not reproduced via any headless check afterward (calibredb, SQLite
-# integrity, Calibre-Web's own dbconfig page all show a healthy library
-# once things settle), consistent with a narrow first-open race rather than
-# lasting damage. Pre-creating the library here removes that race entirely:
-# by the time the real container starts, metadata.db already exists and is
-# already valid, so its own first open is just a normal, existing-library
-# open, not a first-ever creation.
+# Three cases, run before any calibre container starts (`make seed_all` and
+# `make start`):
 #
-# Skips entirely if metadata.db already exists, so this is a no-op on every
-# run after the first.
+# - DB_DIR/metadata.db exists: nothing to do, on every run after the first.
+# - Only LIBRARY_DIR/metadata.db exists, an install from before #402: copy it
+#   into DB_DIR, check the copy, and rename the original aside rather than
+#   delete it. Refuses while calibre or calibre-web runs, since either may be
+#   writing it, and never overwrites a database already in DB_DIR.
+# - Neither exists: pre-create an empty library with calibredb, in the same
+#   image the stack runs. Calibre's GUI opens its library the moment the
+#   container boots, and creating metadata.db for the first time in-process,
+#   while the container's own startup scripts are still running, was a real
+#   "library database appears to be corrupted" on first login. With the
+#   database already there, its first open is a normal one.
 
 readonly LIBRARY_DIR="data/media/calibre-library"
+readonly DB_DIR="configs/calibre/library-db"
+
+# One key from .env, else from versions.env (the pin .env holds back on
+# purpose, if there is one; see the header of versions.env).
+env_value() {
+  awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' .env versions.env 2>/dev/null || true
+}
+
+container_running() {
+  podman container inspect -f '{{.State.Running}}' "$(env_value CONTAINER_PREFIX)$1" 2>/dev/null | grep -q '^true$'
+}
+
+integrity() {
+  python3 -I -c 'import sqlite3, sys; print(sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True).execute("PRAGMA integrity_check").fetchone()[0])' "$1"
+}
+
+if [[ -f "${DB_DIR}/metadata.db" ]]; then
+  exit 0
+fi
+mkdir -p "$LIBRARY_DIR" "$DB_DIR"
 
 if [[ -f "${LIBRARY_DIR}/metadata.db" ]]; then
+  for app in calibre calibre-web; do
+    if container_running "$app"; then
+      echo "ERROR: ${app} is running, so ${LIBRARY_DIR}/metadata.db cannot be moved to ${DB_DIR}." >&2
+      echo "Run 'make down', then 'make start' again." >&2
+      exit 1
+    fi
+  done
+  for sidecar in "${LIBRARY_DIR}/metadata.db-journal" "${LIBRARY_DIR}/metadata.db-wal"; do
+    if [[ -e "$sidecar" ]]; then
+      echo "ERROR: ${sidecar} exists, so the database may hold an unfinished write. Move it aside by hand once Calibre has been closed cleanly." >&2
+      exit 1
+    fi
+  done
+  echo "Moving the Calibre library's metadata.db to ${DB_DIR}..."
+  cp -p "${LIBRARY_DIR}/metadata.db" "${DB_DIR}/metadata.db.partial"
+  if ! cmp -s "${LIBRARY_DIR}/metadata.db" "${DB_DIR}/metadata.db.partial" ||
+    [[ "$(integrity "${DB_DIR}/metadata.db.partial")" != ok ]]; then
+    rm -f "${DB_DIR}/metadata.db.partial"
+    echo "ERROR: the copy of ${LIBRARY_DIR}/metadata.db did not check out; nothing was changed." >&2
+    exit 1
+  fi
+  mv "${DB_DIR}/metadata.db.partial" "${DB_DIR}/metadata.db"
+  aside="${LIBRARY_DIR}/metadata.db.on-share-$(date +%Y%m%d%H%M%S)"
+  mv "${LIBRARY_DIR}/metadata.db" "$aside"
+  echo "Moved. The original is kept as ${aside}; delete it once the library looks right."
   exit 0
 fi
 
-# The pin .env holds back on purpose if there is one, else the committed one
-# in versions.env (see its header).
-CALIBRE_VERSION="$(awk -F= '$1 == "CALIBRE_VERSION" { sub(/^[^=]*=/, ""); print; exit }' .env versions.env)"
+CALIBRE_VERSION="$(env_value CALIBRE_VERSION)"
 readonly CALIBRE_VERSION
 
-echo "Pre-creating the Calibre library at ${LIBRARY_DIR}..."
+echo "Pre-creating the Calibre library at ${LIBRARY_DIR}, with its database in ${DB_DIR}..."
 # The same reference docker-compose-media-library.yml runs, so the image this
 # pulls is the one the stack starts later, and no second registry is involved.
 # It came from lscr.io before; a pull from there that hung for 15 minutes
 # ended a CI run (#305).
-podman run --rm -v "$(pwd)/${LIBRARY_DIR}:/library:z" --entrypoint calibredb \
+podman run --rm -v "$(pwd)/${LIBRARY_DIR}:/library:z" -v "$(pwd)/${DB_DIR}:/calibre-db:z" \
+  -e CALIBRE_OVERRIDE_DATABASE_PATH=/calibre-db/metadata.db --entrypoint calibredb \
   "docker.io/linuxserver/calibre:${CALIBRE_VERSION}" list --library-path /library >/dev/null
 echo "Calibre library pre-created."

@@ -188,12 +188,19 @@ services:
       TZ: "${TIMEZONE}"
       FILE__CUSTOM_USER: /run/secrets/calibre_username
       FILE__PASSWORD: /run/secrets/calibre_password
+      # metadata.db lives on local storage, the books stay under /data. A
+      # share mounted over CIFS cannot hold a SQLite database: SMB refuses the
+      # lock upgrade every commit needs, so the library could be read but
+      # never written again (#402). Calibre-Web gets the same variable, so
+      # every calibredb it runs opens the same database.
+      CALIBRE_OVERRIDE_DATABASE_PATH: /calibre-db/metadata.db
     secrets: [calibre_username, calibre_password]
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${CERTIFICATES_FOLDER}:/certs:ro,z
       - ${CONFIG_FOLDER}/calibre/config:/config:z
       - ${CONFIG_FOLDER}/calibre/custom-cont-init.d:/custom-cont-init.d:z
+      - ${CONFIG_FOLDER}/calibre/library-db:/calibre-db:z
       - ${DATA_FOLDER}:/data${DATA_VOLUME_FLAGS}
     healthcheck:
       <<: *healthcheck-defaults
@@ -227,10 +234,14 @@ services:
       UMASK: "${UMASK}"
       TZ: "${TIMEZONE}"
       DOCKER_MODS: linuxserver/mods:universal-calibre
+      # See calibre above. Calibre-Web itself finds the database through its
+      # split library settings, which wire-connections.sh writes.
+      CALIBRE_OVERRIDE_DATABASE_PATH: /calibre-db/metadata.db
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${CERTIFICATES_FOLDER}:/certs:ro,z
       - ${CONFIG_FOLDER}/calibre-web/config:/config:z
+      - ${CONFIG_FOLDER}/calibre/library-db:/calibre-db:z
       - ${DATA_FOLDER}:/data${DATA_VOLUME_FLAGS}
     healthcheck:
       <<: *healthcheck-defaults

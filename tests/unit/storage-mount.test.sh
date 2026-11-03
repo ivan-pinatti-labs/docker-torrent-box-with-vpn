@@ -27,7 +27,7 @@ __bin="${__scratch}/bin"
 __fstab="${__scratch}/fstab"
 
 mkdir -p "${__bin}" "${__state}"
-for tool in awk basename cat cp date dirname ln ls mkdir mktemp rm stat tail; do
+for tool in awk basename cat cp date dirname ln ls mkdir mktemp python3 rm stat tail; do
   ln -s "$(command -v "${tool}")" "${__bin}/${tool}"
 done
 
@@ -189,7 +189,18 @@ run mount
 check "mount builds the options from .env" 0 log "sudo mount -t cifs -o credentials=${__repo}/configs/storage/.smbcredentials,uid=1001,gid=1000,vers=3.1.1,file_mode=0664,dir_mode=0775,noperm,context=system_u:object_r:container_file_t:s0 //server/share ${__repo}/data"
 check "mount warns about noserverino" 0 out "WARNING: mounted with noserverino"
 check "mount proves hardlinks work" 0 out "hardlinks: OK"
+check "mount proves a lock upgrades" 0 out "SQLite locking: OK"
 refute "the hardlink probe cleans up after itself" <(ls -A "${__repo}/data") ".storage-probe"
+
+# A share that refuses the lock upgrade, as SMB does (#402).
+fresh_repo
+stub python3.fail 'exit 1'
+mv "${__bin}/python3" "${__scratch}/python3.real"
+mv "${__bin}/python3.fail" "${__bin}/python3"
+run mount
+mv "${__scratch}/python3.real" "${__bin}/python3"
+check "mount warns when a lock cannot be upgraded" 0 out \
+  "WARNING: the share cannot upgrade a shared lock to an exclusive one"
 
 fresh_repo
 touch "${__state}/mount-fails"

@@ -160,6 +160,21 @@ stack_containers_running() {
   [[ -n "$(podman ps --filter "label=com.docker.compose.project=$(basename "$repo_root")" --format '{{.Names}}' 2>/dev/null)" ]]
 }
 
+# True when a shared lock on a file in the given directory upgrades to an
+# exclusive one, on the range SQLite locks. Every SQLite commit does exactly
+# that, and SMB without the Unix extensions refuses it with EACCES, while
+# every single lock on its own works (#402). A share that fails this can hold
+# a database SQLite reads but never writes again.
+# cspell:ignore EACCES lockprobe fcntl RDWR CREAT lockf
+lock_upgrade_ok() {
+  python3 -I - "$1/lockprobe" <<'PY' 2>/dev/null
+import fcntl, os, sys
+f = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o664)
+fcntl.lockf(f, fcntl.LOCK_SH | fcntl.LOCK_NB, 510, 0x40000002)
+fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB, 510, 0x40000002)
+PY
+}
+
 verify_mount() {
   local opts probe
   opts="$(findmnt --noheadings --output OPTIONS --target "$mountpoint_abs" 2>/dev/null || true)"
@@ -184,6 +199,11 @@ verify_mount() {
     log "hardlinks: OK (link count 2 across subdirectories)"
   else
     log "WARNING: hardlink probe failed; imports will copy instead of link."
+  fi
+  if lock_upgrade_ok "$probe"; then
+    log "SQLite locking: OK (a shared lock upgrades to an exclusive one)"
+  else
+    log "WARNING: the share cannot upgrade a shared lock to an exclusive one, so SQLite could read a database on it but never write it again. Keep every database off data/ (docs/STORAGE.md)."
   fi
   rm -rf "$probe" 2>/dev/null || true
 }

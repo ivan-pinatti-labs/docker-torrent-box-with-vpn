@@ -83,6 +83,7 @@ Importers own only their target libraries and recycle folders:
 | `data/media/mature` | `whisparr` | `jellyfin` read |
 | `data/media/podcasts` | `root` | `audiobookshelf` write |
 | `data/media/calibre-library` | `calibre` | `calibre_web` read |
+| `configs/calibre/library-db` | `calibre` | `calibre_web` write |
 | `configs/korsync/data` | `korsync` | |
 
 Two app-owned trees sit under `data/` without being libraries. Each app writes

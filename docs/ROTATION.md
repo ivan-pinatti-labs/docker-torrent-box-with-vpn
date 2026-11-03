@@ -192,8 +192,8 @@ alphabetical by service.
   image's own hardcoded default, not this project's usual per-app
   placeholder) directly to `app.db` (no API exists) and updates the shared
   secret file `configs/calibre-web/secrets/password.txt`, which Homepage
-  reads directly. `ensure_calibre_web_setup()` sets `config_calibre_dir` to
-  this stack's shared Calibre library automatically as part of
+  reads directly. `ensure_calibre_web_setup()` points Calibre-Web at
+  this stack's shared Calibre library (split, see CONNECTIONS.md) as part of
   `make wire_connections`/`make bootstrap`, so the container isn't stuck
   redirecting every request to its own `/admin/dbconfig` setup page.
   It deliberately does **not** configure Calibre-Web's own HTTPS or rename

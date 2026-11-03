@@ -248,9 +248,14 @@ runs. Jellyfin is not: see its entry below.
   documented, non-interactive `calibre-server --manage-users -- add`
   command; this is a separate account from the desktop GUI/noVNC login,
   which already works out of the box from its own committed secret file.
-- **Calibre-Web**: sets `config_calibre_dir` directly in `app.db` (while
-  stopped) to this stack's shared Calibre library, so the container isn't
-  stuck redirecting every request to its own `/admin/dbconfig` setup page.
+- **Calibre-Web**: sets this stack's shared Calibre library directly in
+  `app.db` (while stopped), so the container isn't stuck redirecting every
+  request to its own `/admin/dbconfig` setup page. The library is split:
+  `config_calibre_dir` is `/calibre-db`, which holds `metadata.db` on local
+  storage, and `config_calibre_split_dir` the books in
+  `/data/media/calibre-library`, since `data/` can be a CIFS share SQLite
+  cannot write (see [STORAGE.md](STORAGE.md)). An `app.db` set up before the
+  split is set up again on the next run.
   Deliberately does **not** configure Calibre-Web's own HTTPS or rename its
   default user (image default: `admin`); both were tried, and reproducibly
   wiped the entire `user` table (including the built-in "Guest" row) on the
@@ -260,7 +265,7 @@ runs. Jellyfin is not: see its entry below.
 
 Every one of these checks first-run state before acting (Jellyfin's
 `StartupWizardCompleted`, Audiobookshelf's `isInit`, a `calibre-server
---manage-users -- list` check, Calibre-Web's `config_calibre_dir` column),
+--manage-users -- list` check, Calibre-Web's library settings),
 so re-running `make wire_connections` after any of these has already been
 set up just confirms it and moves on.
 
