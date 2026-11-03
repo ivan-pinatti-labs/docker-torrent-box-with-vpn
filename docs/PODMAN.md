@@ -43,7 +43,7 @@ Error: --userns and --pod cannot be set together
 ```
 
 That includes podman 5.7.0, the version Ubuntu 26.04 ships. Podman 5.8.0 dropped this check
-([containers/podman#26848](https://github.com/containers/podman/issues/26848)) in favor of one that
+([podman#26848](https://github.com/podman-container-tools/podman/issues/26848)) in favor of one that
 refuses only a pod with an infra container, and podman-compose's pod has none. With either exporter
 enabled on an older podman, `make start` and `make start_observability` stop before starting
 anything and list the three ways out:
