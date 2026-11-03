@@ -98,11 +98,15 @@ def test_a_missing_database_is_not_created(module, tmp_path):
     assert not db.exists()
 
 
-def test_a_copy_taken_while_the_file_changed_is_taken_again(
-    module, tmp_path, monkeypatch
+@pytest.mark.parametrize("changed", ["", "-wal", "-journal"])
+def test_a_copy_taken_while_a_file_changed_is_taken_again(
+    module, tmp_path, monkeypatch, changed
 ):
     db = tmp_path / "mylar.db"
     wal_database(db, ["a"])
+    target = tmp_path / f"mylar.db{changed}"
+    # An empty log or journal is one SQLite ignores, so the copy still reads.
+    target.touch()
     copy = shutil.copyfile
     calls = []
 
@@ -110,9 +114,9 @@ def test_a_copy_taken_while_the_file_changed_is_taken_again(
         calls.append(src)
         result = copy(src, dst)
         if len(calls) == 1:
-            # A write landing between the database and its log.
-            stat = db.stat()
-            os.utime(db, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
+            # A write landing between the database and its sidecars.
+            stat = target.stat()
+            os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
         return result
 
     pauses = []
