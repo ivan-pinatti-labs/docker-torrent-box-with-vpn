@@ -667,7 +667,7 @@ ensure_calibre_web_setup() {
   # app.db was just created live by the container under its own remapped
   # UID; the one-time `permissions.py repair` earlier in bootstrap ran
   # before this file existed, so it isn't host-writable yet without this.
-  ./scripts/permissions.py repair --runtime podman --recursive >/dev/null 2>&1 || true
+  ./scripts/permissions.py repair --runtime podman --recursive 2>&1 | sed "s/^/[diag] repair: /" || echo "[diag] repair failed"
   ensure_calibre_web_users
   db_diag "$CALIBREWEB_DB"
   python3 - <<PYEOF
