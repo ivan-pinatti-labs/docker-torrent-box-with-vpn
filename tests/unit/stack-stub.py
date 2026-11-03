@@ -337,11 +337,14 @@ FILTERS = {
             for f in d["fields"]
         )
     ],
-    '.fields |= map( if .name == "host" then .value = $host elif .name == "port" then .value = ($port | tonumber) '
-    'elif .name == "useSsl" then .value = true elif .name == "username" or .name == "password" then .value = "" '
-    "else . end)": lambda d, a: [
+    ".enable": lambda d, a: [d.get("enable")],
+    ".enable != true": lambda d, a: [d.get("enable") is not True],
+    ".enable = false": lambda d, a: [set_keys(d, enable=False)],
+    '.enable = true | .fields |= map( if .name == "host" then .value = $host elif .name == "port" then .value = '
+    '($port | tonumber) elif .name == "useSsl" then .value = true elif .name == "username" or .name == "password" '
+    'then .value = "" else . end)': lambda d, a: [
         map_fields(
-            d,
+            set_keys(d, enable=True),
             {
                 "host": a["host"],
                 "port": int(a["port"]),

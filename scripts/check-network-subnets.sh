@@ -102,6 +102,19 @@ in_subnet() {
   (((address & mask) == (network & mask)))
 }
 
+# subnet_edge <address> <subnet>: whether the address is the subnet's network
+# or broadcast address, which no container can hold. A /31 or /32 has neither.
+# Expects both to be valid, as in_subnet has already checked.
+subnet_edge() {
+  local address network bits mask
+  address="$(ipv4_number "$1")"
+  network="$(ipv4_number "${2%/*}")"
+  bits="${2#*/}"
+  ((bits <= 30)) || return 1
+  mask=$(((0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF))
+  ((address == (network & mask) || address == ((network & mask) | (~mask & 0xFFFFFFFF))))
+}
+
 # The four that declare a subnet. wan and edge are created without one, so
 # podman picks a free range and there is nothing to disagree about.
 #
@@ -142,13 +155,22 @@ check() {
 # SERVICES_SUBNET Readarr cannot attach at all. Inside the dynamic pool, or on
 # another fixed address, a different container can hold it, and would skip
 # qBittorrent's login in Readarr's place.
+#
+# Skipped while Readarr is disabled, so an older .env that never set the
+# address cannot stop the rest of the stack over .env.example's. The address
+# comes from the environment before .env: the Makefile exports the one compose
+# will hand Readarr, a command line override included.
 check_readarr_address() {
   local want subnet pool other
-  want="$(setting READARR_SERVICES_IP)"
+  [[ "$(setting READARR_PROFILE)" == enabled ]] || return 0
+  want="${READARR_SERVICES_IP-$(env_value READARR_SERVICES_IP)}"
   [[ -n "$want" ]] || return 0
   subnet="$(setting SERVICES_SUBNET)"
   if [[ -n "$subnet" ]] && ! in_subnet "$want" "$subnet"; then
     echo "ERROR: READARR_SERVICES_IP ${want} is not an address inside SERVICES_SUBNET ${subnet}." >&2
+    address_problem=1
+  elif [[ -n "$subnet" ]] && subnet_edge "$want" "$subnet"; then
+    echo "ERROR: READARR_SERVICES_IP ${want} is the network or broadcast address of SERVICES_SUBNET ${subnet}." >&2
     address_problem=1
   fi
   pool="$(setting SERVICES_DYNAMIC_IP_RANGE)"

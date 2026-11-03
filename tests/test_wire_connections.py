@@ -874,13 +874,17 @@ def test_qbittorrent_lets_only_readarr_in_without_a_login(running_containers):
         )
         if entry.strip()
     ]
-    assert f"{_readarr_services_ip()}/32" in entries, entries
-    for name in ("NGINX_SERVICES_IP", "GLUETUN_SERVICES_IP"):
-        address = ipaddress.ip_address(_env(name))
-        for entry in entries:
-            assert address not in ipaddress.ip_network(entry, strict=False), (
-                f"bypass entry {entry} lets {name} ({address}) in"
-            )
+    own = f"{_readarr_services_ip()}/32"
+    assert own in entries, entries
+    services = ipaddress.ip_network(_env("SERVICES_SUBNET"))
+    for entry in entries:
+        if entry == own:
+            continue
+        network = ipaddress.ip_network(entry, strict=False)
+        assert not network.overlaps(services), (
+            f"bypass entry {entry} lets other containers on {services} in"
+        )
+        assert not network.is_loopback, f"bypass entry {entry} lets loopback in"
     assert preferences.get("bypass_local_auth") is False, (
         "qBittorrent lets localhost in without a login"
     )
@@ -926,12 +930,13 @@ def test_other_services_containers_still_need_a_login(running_containers):
     ]
     if not others:
         pytest.skip("no other Servarr app is running")
-    status, body = container_http(
-        container_name(others[0]), _qbittorrent_version_url(), timeout=TIMEOUT
-    )
-    assert status == 403, (
-        f"qBittorrent let {others[0]} in without a login: {status} {body[:200]}"
-    )
+    for app in others:
+        status, body = container_http(
+            container_name(app), _qbittorrent_version_url(), timeout=TIMEOUT
+        )
+        assert status == 403, (
+            f"qBittorrent let {app} in without a login: {status} {body[:200]}"
+        )
 
 
 @pytest.mark.wiring_readonly

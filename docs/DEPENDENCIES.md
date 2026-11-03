@@ -131,8 +131,8 @@ Grafana              |          |        |           |         |         |      
 
 - Produces: API key (see `configs/readarr/config/config.xml` `<ApiKey>`)
 - Consumed by: Prowlarr (Applications table, id=2), Homepage (`HOMEPAGE_FILE_READARR_API_KEY`)
-- Consumes: qBittorrent password and SABnzbd API key/password (stored in DownloadClients
-  table of readarr.db)
+- Consumes: SABnzbd API key/password (stored in DownloadClients table of readarr.db). Its
+  qBittorrent client has no credentials; see qBittorrent below
 
 **Whisparr**
 
@@ -157,11 +157,11 @@ Grafana              |          |        |           |         |         |      
 
 **qBittorrent**
 
-- Produces: WebUI password (username `qbittorrent`, see DownloadClients table in any arr
+- Produces: WebUI password (username `qbittorrent`, see DownloadClients table in Sonarr's
   DB for current value)
-- Consumed by: Sonarr, Radarr, Lidarr, Whisparr (each app's DownloadClients table). Not
-  Readarr, whose client has no credentials: qBittorrent lets `READARR_SERVICES_IP` in
-  without a login (see [CONNECTIONS.md](CONNECTIONS.md))
+- Consumed by: Sonarr, Radarr, Lidarr, Whisparr, Prowlarr (each app's DownloadClients
+  table). Not Readarr, whose client has no credentials: qBittorrent lets
+  `READARR_SERVICES_IP` in without a login (see [CONNECTIONS.md](CONNECTIONS.md))
 - Consumes: nothing from other services
 
 **SABnzbd**

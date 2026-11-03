@@ -115,9 +115,13 @@ FLARESOLVERR_HTTP_PORT="$(env_value FLARESOLVERR_HTTP_PORT)"
 NGINX_SERVICES_IP="$(env_value NGINX_SERVICES_IP)"
 readonly NGINX_SERVICES_IP
 # Readarr's fixed address on services, the one address qBittorrent lets in
-# without a login (see ensure_qbittorrent_readarr_bypass).
-READARR_SERVICES_IP="$(env_value READARR_SERVICES_IP)"
-readonly READARR_SERVICES_IP
+# without a login (see ensure_qbittorrent_readarr_bypass). From the
+# environment before .env, as compose reads it: the Makefile exports the
+# address Readarr is given, a command line override included.
+READARR_SERVICES_IP="${READARR_SERVICES_IP-$(env_value READARR_SERVICES_IP)}"
+READARR_PROFILE="$(env_value READARR_PROFILE)"
+SERVICES_SUBNET="$(env_value SERVICES_SUBNET)"
+readonly READARR_SERVICES_IP READARR_PROFILE SERVICES_SUBNET
 readonly LAN_IP GLUETUN_SERVICES_IP QBITTORRENT_HTTPS_PORT SABNZBD_HTTP_PORT \
   SABNZBD_HTTPS_PORT SONARR_HTTP_PORT RADARR_HTTPS_PORT LIDARR_HTTPS_PORT READARR_HTTPS_PORT \
   WHISPARR_HTTPS_PORT PROWLARR_HTTPS_PORT LAZYLIBRARIAN_HTTP_PORT MYLAR_HTTPS_PORT \
@@ -1026,6 +1030,7 @@ JQ
 # and password cleared, so Readarr sends no login (see above).
 credential_free_client_jq() {
   cat <<'JQ'
+.enable = true |
 .fields |= map(
   if .name == "host" then .value = $host
   elif .name == "port" then .value = ($port | tonumber)
@@ -1043,6 +1048,26 @@ readarr_holds_services_ip() {
   local addresses
   addresses=$(podman inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "$(cname readarr)" 2>/dev/null) || return 1
   [[ " ${addresses} " == *" ${READARR_SERVICES_IP} "* ]]
+}
+
+# Routed through the VPN, Readarr reaches qBittorrent from gluetun's address,
+# which is never let in, so a qBittorrent client an earlier run gave it
+# fails every request and would still be picked for downloads. It is
+# disabled, not deleted, and the next run with Readarr on its own address
+# enables it again. Args: base_url api_key
+disable_readarr_qbittorrent_client() {
+  local base_url="$1" api_key="$2" existing id payload response
+  existing=$(container_curl readarr -sk --fail -H "X-Api-Key: ${api_key}" "$base_url" | jq 'map(select(.implementation == "QBittorrent")) | first') || existing=""
+  if [[ -z "$existing" || "$existing" == "null" || "$(jq '.enable' <<<"$existing")" != true ]]; then
+    return 0
+  fi
+  id=$(jq -r '.id' <<<"$existing")
+  payload=$(jq '.enable = false' <<<"$existing")
+  if ! response=$(send_arr_connection readarr PUT "${base_url}/${id}?forceSave=true" "$api_key" "$payload"); then # pragma: allowlist secret
+    echo "[readarr] WARNING: failed to disable its qBittorrent client: ${response:0:300}"
+    return 0
+  fi
+  echo "[readarr] Disabled its existing qBittorrent client, which cannot reach qBittorrent from there."
 }
 
 # Readarr saves a download client only once its own test of it passes, and
@@ -1083,6 +1108,7 @@ ensure_qbittorrent_client() {
   if [[ "$app_name" == "readarr" ]]; then
     if ! readarr_holds_services_ip; then
       echo "[readarr] WARNING: Readarr does not hold READARR_SERVICES_IP (${READARR_SERVICES_IP:-not set}) on the services network, so qBittorrent cannot let it in without a login, and Readarr cannot log in to qBittorrent 5.2 or later. Its qBittorrent client was not wired. This is expected while Readarr is routed through the VPN (VPN_ON); see docs/CONNECTIONS.md."
+      disable_readarr_qbittorrent_client "$base_url" "$api_key"
       return 1
     fi
     credential_free=true
@@ -1103,14 +1129,17 @@ ensure_qbittorrent_client() {
     # qBittorrent's WebUI serves TLS only, so useSsl is part of the address
     # and is corrected with it (#300). Readarr's credentials are part of it
     # too: a client created before #411 still has them, and fails every login.
-    local existing_host existing_port existing_ssl has_credentials=false
+    # So is its being enabled: a run while Readarr was routed through the VPN
+    # disabled it (disable_readarr_qbittorrent_client).
+    local existing_host existing_port existing_ssl has_credentials=false disabled=false
     existing_host=$(jq -r '.fields[] | select(.name == "host") | .value' <<<"$existing")
     existing_port=$(jq -r '.fields[] | select(.name == "port") | .value' <<<"$existing")
     existing_ssl=$(jq 'any(.fields[]; .name == "useSsl" and .value == true)' <<<"$existing")
     if [[ "$credential_free" == true ]]; then
       has_credentials=$(jq 'any(.fields[]; (.name == "username" or .name == "password") and (.value // "") != "")' <<<"$existing")
+      disabled=$(jq '.enable != true' <<<"$existing")
     fi
-    if [[ "$existing_host" == "$GLUETUN_SERVICES_IP" && "$existing_port" == "$QBITTORRENT_HTTPS_PORT" && "$existing_ssl" == true && "$has_credentials" == false ]]; then
+    if [[ "$existing_host" == "$GLUETUN_SERVICES_IP" && "$existing_port" == "$QBITTORRENT_HTTPS_PORT" && "$existing_ssl" == true && "$has_credentials" == false && "$disabled" == false ]]; then
       echo "[$app_name] qBittorrent download client already exists, skipping."
       return 0
     fi
@@ -1119,7 +1148,7 @@ ensure_qbittorrent_client() {
     id=$(jq -r '.id' <<<"$existing")
     if [[ "$credential_free" == true ]]; then
       readarr_bypass_ready || return 1
-      echo "[$app_name] qBittorrent download client stale (${existing_host}:${existing_port}, useSsl ${existing_ssl}, credentials ${has_credentials}), correcting to ${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}, useSsl true, no credentials..."
+      echo "[$app_name] qBittorrent download client stale (${existing_host}:${existing_port}, useSsl ${existing_ssl}, credentials ${has_credentials}, disabled ${disabled}), correcting to ${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}, useSsl true, no credentials, enabled..."
       payload=$(jq --arg host "$GLUETUN_SERVICES_IP" --arg port "$QBITTORRENT_HTTPS_PORT" "$(credential_free_client_jq)" <<<"$existing")
     else
       echo "[$app_name] qBittorrent download client stale (${existing_host}:${existing_port}, useSsl ${existing_ssl}), correcting to ${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}, useSsl true..."
@@ -1195,12 +1224,14 @@ ensure_qbittorrent_reverse_proxy() {
 # The qBittorrent preferences Readarr's login bypass needs, from its current
 # ones: READARR_SERVICES_IP/32 added to the subnets that skip the login, the
 # entries already there kept, and the list switched on. Prints nothing when
-# that is already the case. Exits 3, naming the entry, when any entry would
-# let in nginx's address, gluetun's or loopback: nginx forwards every browser
-# and gluetun's namespace holds SABnzbd, JDownloader and every app routed
-# through the VPN, so only a single address can be Readarr's alone.
-# qBittorrent joins the list with newlines and splits it on newlines and
-# commas. Args: readarr_ip nginx_ip gluetun_ip preferences
+# that is already the case. Exits 3, naming the entry, when any other entry
+# overlaps SERVICES_SUBNET (nginx, gluetun's namespace and every other
+# services container are there), nginx's or gluetun's address, or loopback,
+# which anything in qBittorrent's namespace can use. Exits 5, naming them,
+# when the list is off and holds other entries, which switching it on for
+# Readarr would let in unasked. qBittorrent joins the list with newlines and
+# splits it on newlines and commas.
+# Args: readarr_ip services_subnet nginx_ip gluetun_ip preferences
 readarr_bypass_preferences() {
   python3 - "$@" <<'PYEOF'
 import ipaddress
@@ -1208,7 +1239,7 @@ import json
 import re
 import sys
 
-readarr, nginx, gluetun, preferences = sys.argv[1:5]
+readarr, services, nginx, gluetun, preferences = sys.argv[1:6]
 preferences = json.loads(preferences)
 try:
     own = ipaddress.ip_network(f"{readarr}/32")
@@ -1228,18 +1259,35 @@ for entry in entries:
     except ValueError:
         pass
 present = any(network == own for _, network in networks)
+others = [entry for entry, network in networks if network != own]
+
+protected = [
+    (f"nginx's address {nginx}", ipaddress.ip_network(f"{nginx}/32")),
+    (f"gluetun's address {gluetun}", ipaddress.ip_network(f"{gluetun}/32")),
+    (f"SERVICES_SUBNET {services}", ipaddress.ip_network(services, strict=False)),
+    ("loopback", ipaddress.ip_network("127.0.0.0/8")),
+    ("loopback", ipaddress.ip_network("::1/128")),
+]
 if not present:
     entries.append(str(own))
     networks.append((str(own), own))
-
-protected = [ipaddress.ip_address(a) for a in (nginx, gluetun, "127.0.0.1", "::1")]
 for entry, network in networks:
-    for address in protected:
-        if address.version == network.version and address in network:
-            print(f"{entry} (it lets {address} in)")
+    if network == own:
+        continue
+    for what, guarded in protected:
+        if network.version == guarded.version and network.overlaps(guarded):
+            print(f"{entry}, which lets {what} in")
             sys.exit(3)
+for what, guarded in protected[:2]:
+    if own.overlaps(guarded):
+        print(f"{own}, which lets {what} in")
+        sys.exit(3)
 
-if present and preferences.get("bypass_auth_subnet_whitelist_enabled") is True:
+enabled = preferences.get("bypass_auth_subnet_whitelist_enabled") is True
+if not enabled and others:
+    print(", ".join(others))
+    sys.exit(5)
+if present and enabled:
     sys.exit(0)
 print(
     json.dumps(
@@ -1264,15 +1312,24 @@ PYEOF
 # Args: base_url jar preferences
 ensure_qbittorrent_readarr_bypass() {
   local base_url="$1" jar="$2" preferences="$3"
+  # A Readarr disabled on a running stack keeps its container, and its
+  # address, until the stack is stopped.
+  if [[ "$READARR_PROFILE" != enabled ]]; then
+    echo "[qBittorrent] READARR_PROFILE is not enabled, skipping Readarr's login bypass."
+    return 0
+  fi
   if ! readarr_holds_services_ip; then
     echo "[qBittorrent] Readarr is not on READARR_SERVICES_IP (${READARR_SERVICES_IP:-not set}), skipping its login bypass."
     return 0
   fi
 
   local wanted status=0
-  wanted=$(readarr_bypass_preferences "$READARR_SERVICES_IP" "$NGINX_SERVICES_IP" "$GLUETUN_SERVICES_IP" "$preferences" 2>&1) || status=$?
+  wanted=$(readarr_bypass_preferences "$READARR_SERVICES_IP" "$SERVICES_SUBNET" "$NGINX_SERVICES_IP" "$GLUETUN_SERVICES_IP" "$preferences" 2>&1) || status=$?
   if [[ "$status" -eq 3 ]]; then
-    echo "[qBittorrent] WARNING: its login bypass list holds ${wanted}, which lets more than Readarr skip the login. Remove it under Tools > Options > WebUI; Readarr's login bypass was not set."
+    echo "[qBittorrent] WARNING: its login bypass list holds ${wanted}, so more than Readarr would skip the login. Remove it under Tools > Options > WebUI; Readarr's login bypass was not set."
+    return 1
+  elif [[ "$status" -eq 5 ]]; then
+    echo "[qBittorrent] WARNING: its login bypass list is off but holds ${wanted}, which switching it on for Readarr would let in too. Remove them under Tools > Options > WebUI; Readarr's login bypass was not set."
     return 1
   elif [[ "$status" -ne 0 ]]; then
     echo "[qBittorrent] WARNING: Readarr's login bypass was not set: ${wanted:0:300}"

@@ -20,7 +20,7 @@ set -o nounset
 # and the Makefile exports the ones it fills in. `make coverage` would hand
 # those to every case below, so start from none.
 unset APPS_SUBNET SERVICES_SUBNET OBSERVABILITY_SUBNET MEDIA_SUBNET \
-  SERVICES_DYNAMIC_IP_RANGE GLUETUN_SERVICES_IP NGINX_SERVICES_IP VPN_MOCK_IP READARR_SERVICES_IP
+  SERVICES_DYNAMIC_IP_RANGE GLUETUN_SERVICES_IP NGINX_SERVICES_IP VPN_MOCK_IP READARR_SERVICES_IP READARR_PROFILE
 
 __script="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/check-network-subnets.sh"
 __bash="$(command -v bash)"
@@ -151,7 +151,7 @@ mkdir -p "${__scratch}/readarr"
 readarr_env() {
   printf '%s\n' COMPOSE_PROJECT_NAME=other SERVICES_SUBNET=10.5.0.0/24 \
     SERVICES_DYNAMIC_IP_RANGE=10.5.0.128/25 GLUETUN_SERVICES_IP=10.5.0.10 \
-    VPN_MOCK_IP=10.5.0.11 "$@" >"${__scratch}/readarr/.env"
+    VPN_MOCK_IP=10.5.0.11 READARR_PROFILE=enabled "$@" >"${__scratch}/readarr/.env"
 }
 
 readarr_env READARR_SERVICES_IP=10.5.0.13
@@ -195,6 +195,45 @@ for subnet in 10.5.0/24 10.5.0.0/33 10.5.0.0; do
   check "refuses against ${subnet}, which is no subnet" 1 "ERROR: READARR_SERVICES_IP 10.5.0.13 is not an address inside SERVICES_SUBNET ${subnet}."
 done
 
+readarr_env READARR_SERVICES_IP=10.5.0.0
+run "${__scratch}/readarr" "${docker_bin}"
+check "refuses the network address" 1 "ERROR: READARR_SERVICES_IP 10.5.0.0 is the network or broadcast address of SERVICES_SUBNET 10.5.0.0/24."
+
+readarr_env READARR_SERVICES_IP=10.5.0.127
+sed -i "s|^SERVICES_SUBNET=.*|SERVICES_SUBNET=10.5.0.0/25|" "${__scratch}/readarr/.env"
+run "${__scratch}/readarr" "${docker_bin}"
+check "refuses the broadcast address" 1 "ERROR: READARR_SERVICES_IP 10.5.0.127 is the network or broadcast address of SERVICES_SUBNET 10.5.0.0/25."
+
+# The environment comes first: make exports the address compose will use, a
+# command line override included, so that is the one checked.
+readarr_env READARR_SERVICES_IP=10.5.0.13
+READARR_SERVICES_IP=10.6.0.13 run "${__scratch}/readarr" "${docker_bin}"
+check "checks the address from the environment over .env's" 1 "ERROR: READARR_SERVICES_IP 10.6.0.13 is not an address inside SERVICES_SUBNET 10.5.0.0/24."
+
+# Readarr disabled: its address is not checked at all.
+readarr_env READARR_SERVICES_IP=10.6.0.13
+sed -i "s|^READARR_PROFILE=.*|READARR_PROFILE=disabled|" "${__scratch}/readarr/.env"
+run "${__scratch}/readarr" "${docker_bin}"
+if [[ "${__status}" -ne 0 || -s "${__scratch}/out" ]]; then
+  echo "FAIL a disabled Readarr's address was checked: exit ${__status}" >&2
+  cat "${__scratch}/out" >&2
+  __failures=$((__failures + 1))
+else
+  echo "ok skips the address while Readarr is disabled"
+fi
+
+# A /31 has no network or broadcast address to refuse.
+readarr_env READARR_SERVICES_IP=10.5.0.12
+sed -i "s|^SERVICES_SUBNET=.*|SERVICES_SUBNET=10.5.0.12/31|" "${__scratch}/readarr/.env"
+run "${__scratch}/readarr" "${docker_bin}"
+if [[ "${__status}" -ne 0 ]]; then
+  echo "FAIL the low address of a /31: exit ${__status}" >&2
+  cat "${__scratch}/out" >&2
+  __failures=$((__failures + 1))
+else
+  echo "ok a /31 has no edge addresses"
+fi
+
 # A whole-range subnet holds every address.
 readarr_env READARR_SERVICES_IP=10.5.0.13
 sed -i "s|^SERVICES_SUBNET=.*|SERVICES_SUBNET=0.0.0.0/0|" "${__scratch}/readarr/.env"
@@ -211,7 +250,7 @@ fi
 # advice, and the run still fails.
 podman_env="${__scratch}/podman/.env"
 printf '%s\n' COMPOSE_PROJECT_NAME=proj SERVICES_SUBNET=10.1.0.0/24 OBSERVABILITY_SUBNET=10.3.0.0/24 \
-  READARR_SERVICES_IP=10.9.9.9 >"${podman_env}"
+  READARR_PROFILE=enabled READARR_SERVICES_IP=10.9.9.9 >"${podman_env}"
 run "${__scratch}/podman" "${podman_bin}"
 check "names a bad address alongside a bad network" 1 "ERROR: READARR_SERVICES_IP 10.9.9.9 is not an address inside SERVICES_SUBNET 10.1.0.0/24."
 check "and still gives the network advice" 1 "podman network rm proj_observability"

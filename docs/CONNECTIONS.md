@@ -89,11 +89,14 @@ password are empty, so the script (#411):
 - Has qBittorrent skip its login for Readarr's own address,
   `READARR_SERVICES_IP` (`172.28.0.13`, fixed in `docker-compose-servarr.yml`),
   and nothing else: it adds `<address>/32` to qBittorrent's authentication
-  bypass list (Tools > Options > WebUI), keeps any entries already there, and
-  refuses, with a warning, a list holding an entry that covers nginx's address,
-  gluetun's or loopback. `make start` refuses a `READARR_SERVICES_IP` outside
-  `SERVICES_SUBNET`, inside `SERVICES_DYNAMIC_IP_RANGE` or equal to another
-  fixed address, so no other container can be handed it.
+  bypass list (Tools > Options > WebUI) and keeps any entries already there.
+  It sets nothing, with a warning, when another entry overlaps
+  `SERVICES_SUBNET`, nginx's or gluetun's address, or loopback, or when the
+  list is off but holds other entries, which switching it on would let in.
+  `make start` refuses a `READARR_SERVICES_IP` outside `SERVICES_SUBNET`, on
+  its network or broadcast address, inside `SERVICES_DYNAMIC_IP_RANGE` or
+  equal to another fixed address, so no other container can be handed it.
+  Neither runs while `READARR_PROFILE` is not enabled.
 - Leaves Readarr out of qBittorrent's password rotation, which would put the
   failing login back.
 
@@ -108,9 +111,11 @@ gluetun's network namespace and has no address of its own: its requests reach
 qBittorrent from gluetun's address, as SABnzbd's, JDownloader's and every other
 routed app's do. Letting that address in would let all of them in, so the
 script sets no bypass, leaves Readarr's qBittorrent client not wired, and says
-so. Readarr's SABnzbd client is unaffected either way. If
-`READARR_SERVICES_IP` changes, the old address stays in qBittorrent's bypass
-list until removed there by hand.
+so. A client an earlier run gave Readarr is disabled, since every request it
+made would fail, and enabled again once Readarr is back on its own address.
+Readarr's SABnzbd client is unaffected either way. If `READARR_SERVICES_IP`
+changes, the old address stays in qBittorrent's bypass list until removed there
+by hand.
 
 ### Jellyfin library updates (Sonarr, Radarr, Lidarr, Whisparr → Jellyfin)
 

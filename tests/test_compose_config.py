@@ -357,11 +357,15 @@ def test_env_tests_moves_every_network_address():
     .env.example's value sits outside its network there, and make start
     refuses READARR_SERVICES_IP outright (#411).
     """
-    pattern = re.compile(r"^([A-Z_]+_(?:IP|SUBNET|IP_RANGE))=", re.MULTILINE)
-    example = set(pattern.findall((REPO_ROOT / ".env.example").read_text()))
-    tests = set(pattern.findall((REPO_ROOT / ".env.tests").read_text()))
+    pattern = re.compile(r"^([A-Z_]+_(?:IP|SUBNET|IP_RANGE))=(.*)$", re.MULTILINE)
+    example = dict(pattern.findall((REPO_ROOT / ".env.example").read_text()))
+    tests = dict(pattern.findall((REPO_ROOT / ".env.tests").read_text()))
+    example.pop("LAN_IP")
 
-    assert example - {"LAN_IP"} <= tests, sorted(example - {"LAN_IP"} - tests)
+    unmoved = sorted(
+        key for key, value in example.items() if tests.get(key, value) == value
+    )
+    assert not unmoved, f".env.tests keeps .env.example's value for {unmoved}"
 
 
 def test_readarr_has_its_fixed_services_address():
