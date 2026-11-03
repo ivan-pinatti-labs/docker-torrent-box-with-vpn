@@ -668,15 +668,17 @@ PYEOF
 # Calibre-Web stores its role bitmask in user.role, where bit 0 is
 # ROLE_ADMIN (Guest, for instance, is 32 and not an admin). Picks the
 # lowest-id admin so the choice is stable, and prints nothing if app.db is
-# missing or has no admin row, leaving the caller with the default.
+# missing or has no admin row, leaving the caller with the default. Read
+# from a copy (scripts/live_db.py), since Calibre-Web is running.
 calibre_web_admin_user() {
   [[ -f "$CALIBREWEB_DB" ]] || return 0
   python3 - <<PYEOF 2>/dev/null || true
-import sqlite3
+import sys
+sys.path.insert(0, "scripts")
+from live_db import live_db
 try:
-    conn = sqlite3.connect("file:$CALIBREWEB_DB?mode=ro", uri=True)
-    row = conn.execute("SELECT name FROM user WHERE role & 1 = 1 ORDER BY id LIMIT 1").fetchone()
-    conn.close()
+    with live_db('$CALIBREWEB_DB') as conn:
+        row = conn.execute("SELECT name FROM user WHERE role & 1 = 1 ORDER BY id LIMIT 1").fetchone()
     if row:
         print(row[0])
 except Exception:
@@ -947,18 +949,19 @@ rotate_prowlarr() {
   SUMMARY_PROWLARR_NEW="$new_password"
 }
 
-# The qBittorrent password Sonarr holds, which is the current one.
+# The qBittorrent password Sonarr holds, which is the current one. Read from
+# a copy (scripts/live_db.py): Sonarr is still running here, and opening its
+# live database even read only can leave it unable to open it (#334).
 sonarr_qbt_password() {
   python3 - <<PYEOF
-import sqlite3, json
-conn = sqlite3.connect('$SONARR_DB')
-cur = conn.cursor()
-cur.execute("SELECT Settings FROM DownloadClients WHERE ConfigContract='QBittorrentSettings' LIMIT 1")
-row = cur.fetchone()
+import json, sys
+sys.path.insert(0, "scripts")
+from live_db import live_db
+with live_db('$SONARR_DB') as conn:
+    row = conn.execute("SELECT Settings FROM DownloadClients WHERE ConfigContract='QBittorrentSettings' LIMIT 1").fetchone()
 if row:
     s = json.loads(row[0])
     print(s.get('password', ''))
-conn.close()
 PYEOF
 }
 

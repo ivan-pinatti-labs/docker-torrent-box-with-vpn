@@ -475,6 +475,16 @@ if [[ "$(grep -c 'prowlarr curl -skS --fail -X POST .*"name": "Radarr"' "${__sta
 fi
 refute "readarr's own failure is not a Jellyfin one" out "[Jellyfin]   - readarr"
 
+# Calibre-Web has not created app.db yet. Waiting for it must not create one:
+# Calibre-Web seeds its users only when the file does not exist (#334).
+deployment
+rm "${__repo}/configs/calibre-web/config/app.db"
+run
+check "a missing app.db is waited for" 0 out "[Calibre-Web] app.db not initialized yet after 180s, skipping."
+if [[ -e "${__repo}/configs/calibre-web/config/app.db" ]]; then
+  fail "waiting for app.db does not create it"
+fi
+
 # Run E: half set up, and the rest of the ways things go wrong.
 deployment
 : >"${__repo}/configs/jellyfin/secrets/api_key.txt"

@@ -8,7 +8,8 @@
 #
 # The script runs through a symlink in a scratch repository, so the .env,
 # configs/ and databases it reads and writes are the test's own, and so is
-# scripts/permissions.py, a stub. podman, podman-compose, jq, yq, xmlstarlet,
+# scripts/permissions.py, a stub. scripts/live_db.py, which the scripts read
+# databases through, is the real one, linked in the same way. podman, podman-compose, jq, yq, xmlstarlet,
 # openssl and timeout are tests/unit/stack-stub.py, first on PATH; see its
 # docstring for how it answers. sleep is a shell function exported into the
 # script, which advances $SECONDS instead of waiting, so every retry loop
@@ -41,6 +42,7 @@ fresh_repo() {
   rm -rf "${__repo}" "${__state}"
   mkdir -p "${__repo}/scripts" "${__state}/rules" "${__state}/health"
   ln -s "${__script}" "${__repo}/scripts/${__script_name}"
+  ln -s "$(dirname "${__script}")/live_db.py" "${__repo}/scripts/live_db.py"
   printf '#!/usr/bin/env bash\necho "permissions.py $*" >>"%s/log"\n' "${__state}" >"${__repo}/scripts/permissions.py"
   chmod +x "${__repo}/scripts/permissions.py"
   cat >"${__repo}/.env"

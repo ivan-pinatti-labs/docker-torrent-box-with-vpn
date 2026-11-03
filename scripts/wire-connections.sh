@@ -529,22 +529,32 @@ ensure_calibre_content_server_user() {
 # risk it. See docs/ROTATION.md: Calibre-Web is only ever configured for
 # plain HTTP here, and its default admin user keeps the image's own
 # hardcoded username ("admin"), not this project's usual per-app placeholder.
+#
+# The reads below, made while Calibre-Web may be running, go through a copy
+# (scripts/live_db.py). Opening app.db itself before Calibre-Web has created
+# it would create an empty one, and Calibre-Web then never seeds its users
+# (see ensure_calibre_web_users).
 calibre_web_db_ready() {
   python3 - <<PYEOF
-import sqlite3, sys
-conn = sqlite3.connect('$CALIBREWEB_DB')
-row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'").fetchone()
-conn.close()
+import sys
+sys.path.insert(0, "scripts")
+from live_db import live_db
+try:
+    with live_db('$CALIBREWEB_DB') as conn:
+        row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'").fetchone()
+except FileNotFoundError:
+    row = None
 sys.exit(0 if row else 1)
 PYEOF
 }
 
 calibre_web_user_count() {
   python3 - <<PYEOF
-import sqlite3
-conn = sqlite3.connect('$CALIBREWEB_DB')
-row = conn.execute("SELECT COUNT(*) FROM user").fetchone()
-conn.close()
+import sys
+sys.path.insert(0, "scripts")
+from live_db import live_db
+with live_db('$CALIBREWEB_DB') as conn:
+    row = conn.execute("SELECT COUNT(*) FROM user").fetchone()
 print(row[0] if row else 0)
 PYEOF
 }
@@ -553,10 +563,13 @@ PYEOF
 # Guest rows when app.db does not already exist as a file; if one exists
 # (even schema-only, zero rows), it takes the migrate-and-clean branch
 # instead and never seeds anything, on this run or any future one. An
-# app.db in exactly that state (confirmed live, cause not fully identified:
-# most likely the "universal-calibre" mod's package install outlasting a
-# liveness probe mid-init_db(), between the schema DDL and the two
-# INSERT+commit calls that follow it) is otherwise permanent: no amount of
+# app.db in exactly that state was confirmed live. This script was one way
+# into it: calibre_web_db_ready() used to poll with a plain
+# sqlite3.connect(), which creates an empty app.db when Calibre-Web has not
+# made one yet (#334). Another may be the "universal-calibre" mod's package
+# install outlasting a liveness probe mid-init_db(), between the schema DDL
+# and the two INSERT+commit calls that follow it. Either way the state is
+# otherwise permanent: no amount of
 # restarting or waiting fixes it, since the file already exists. Repairs it
 # by asking Calibre-Web's own code for a real default row set (same image,
 # scratch path, so the exact column defaults/hashing match what a genuine
@@ -599,10 +612,11 @@ PYEOF
 
 calibre_web_configured() {
   python3 - <<PYEOF
-import sqlite3
-conn = sqlite3.connect('$CALIBREWEB_DB')
-row = conn.execute('SELECT config_calibre_dir FROM settings WHERE id = 1').fetchone()
-conn.close()
+import sys
+sys.path.insert(0, "scripts")
+from live_db import live_db
+with live_db('$CALIBREWEB_DB') as conn:
+    row = conn.execute('SELECT config_calibre_dir FROM settings WHERE id = 1').fetchone()
 print('yes' if row and row[0] else 'no')
 PYEOF
 }
@@ -675,11 +689,15 @@ PYEOF
 # budget on a container whose webserver has not opened its port yet, and
 # reports a 500 (issue #130). Every other widget's backing container had
 # that same startup delay behind it long before the test suite ever ran.
+#
+# The count is read while Mylar runs, so from a copy (scripts/live_db.py).
 mylar_comic_count() {
   python3 - <<PYEOF
-import sqlite3
-conn = sqlite3.connect('$MYLAR_DB')
-print(conn.execute("SELECT COUNT(*) FROM comics").fetchone()[0])
+import sys
+sys.path.insert(0, "scripts")
+from live_db import live_db
+with live_db('$MYLAR_DB') as conn:
+    print(conn.execute("SELECT COUNT(*) FROM comics").fetchone()[0])
 PYEOF
 }
 
@@ -1408,23 +1426,27 @@ ensure_jellyfin_connection_key() {
 }
 
 # The Jellyfin key an arr app's connection holds, from its database: the API
-# masks every API key field as "********", so it cannot say. Read only, the
-# same way rotate-passwords.sh reads these databases. Args: app_name
+# masks every API key field as "********", so it cannot say. Read from a copy
+# (scripts/live_db.py): the app may be running, or restarting, and opening
+# its live database even read only left Radarr and Lidarr unable to open it
+# (#334). Args: app_name
 stored_jellyfin_key() {
   local db="configs/$1/config/$1.db"
   [[ "$1" == whisparr ]] && db="configs/whisparr/config/whisparr3.db"
   python3 - "$db" <<'PYEOF'
 import json, sqlite3, sys
+sys.path.insert(0, "scripts")
+from live_db import StillChanging, live_db
 try:
-    conn = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
-    row = conn.execute(
-        "SELECT Settings FROM Notifications WHERE Implementation = 'MediaBrowser' LIMIT 1"
-    ).fetchone()
+    with live_db(sys.argv[1]) as conn:
+        row = conn.execute(
+            "SELECT Settings FROM Notifications WHERE Implementation = 'MediaBrowser' LIMIT 1"
+        ).fetchone()
     # Settings can be NULL, or JSON that is not an object; neither holds a key.
     settings = json.loads(row[0] or "null") if row else None
     if isinstance(settings, dict):
         print(settings.get("apiKey") or "")
-except (sqlite3.Error, ValueError):
+except (OSError, StillChanging, sqlite3.Error, ValueError):
     pass
 PYEOF
 }

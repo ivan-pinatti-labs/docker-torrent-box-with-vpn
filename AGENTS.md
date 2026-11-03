@@ -196,6 +196,11 @@ docs/MERGE_PIPELINE.md; do not restate that reasoning here.
 - After host side SQLite writes, run `scripts/permissions.py repair` so
   `-wal`/`-shm` sidecar files are not left owned by the host user, which the
   app user cannot open after a restart.
+- Read a database whose app may be running through `live_db()` in
+  `scripts/live_db.py` (scripts and tests alike), never the live file, not
+  even with `mode=ro`: a reader recreates `-wal`/`-shm` owned by the host
+  user, and the app then fails with `CantOpen` (#305, #334). A plain
+  `sqlite3.connect()` on a missing path also creates an empty database.
 - Never run `git commit` (or anything that stashes the working tree) while
   the stack is running: pre-commit's stash cycle rewrote tracked runtime files
   mid-flight on 2026-07-07 and corrupted live SQLite databases.
