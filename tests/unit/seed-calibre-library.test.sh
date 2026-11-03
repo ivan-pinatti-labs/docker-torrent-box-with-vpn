@@ -246,6 +246,17 @@ check "an unreachable runtime is not a missing container" 1 err \
 printf '%s\n' "CALIBRE_VERSION=v8.1.0" "CONFIG_FOLDER=\${HOME}/configs" >"${__scratch}/work/.env"
 run
 check "refuses a folder holding a reference" 1 err "ERROR: \${HOME}/configs holds a \${...} reference"
+
+# Nor a backslash escape, which compose would read differently.
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" 'DATA_FOLDER=./a\b' >"${__scratch}/work/.env"
+run
+check "refuses a folder holding a backslash" 1 err 'ERROR: ./a\b holds a ${...} reference or a backslash escape'
+
+# The last assignment in .env wins, as it does for compose, and versions.env
+# only fills in a key .env lacks.
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "DATA_FOLDER=./first" "DATA_FOLDER=./last" >"${__scratch}/work/.env"
+run
+check "takes the last assignment in .env" 0 out "Pre-creating the Calibre library at last/media/calibre-library"
 echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
 
 if [[ "${__failures}" -gt 0 ]]; then
