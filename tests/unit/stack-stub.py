@@ -337,9 +337,23 @@ FILTERS = {
             for f in d["fields"]
         )
     ],
-    ".enable": lambda d, a: [d.get("enable")],
     ".enable != true": lambda d, a: [d.get("enable") is not True],
-    ".enable = false": lambda d, a: [set_keys(d, enable=False)],
+    '.[] | select(.implementation == "QBittorrent" and .enable == true and any(.fields[]; .name == "host" and '
+    '.value == $host) and any(.fields[]; .name == "port" and (.value | tostring) == $port)) | .enable = false': (
+        lambda d, a: [
+            set_keys(c, enable=False)
+            for c in d
+            if c.get("implementation") == "QBittorrent"
+            and c.get("enable") is True
+            and any(
+                f["name"] == "host" and f.get("value") == a["host"] for f in c["fields"]
+            )
+            and any(
+                f["name"] == "port" and str(f.get("value")) == a["port"]
+                for f in c["fields"]
+            )
+        ]
+    ),
     '.enable = true | .fields |= map( if .name == "host" then .value = $host elif .name == "port" then .value = '
     '($port | tonumber) elif .name == "useSsl" then .value = true elif .name == "username" or .name == "password" '
     'then .value = "" else . end)': lambda d, a: [

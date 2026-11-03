@@ -776,10 +776,10 @@ run
 check "Readarr through the VPN is not let in" 0 out \
   "[readarr] WARNING: Readarr does not hold READARR_SERVICES_IP (10.0.0.13) on the services network" \
   "This is expected while Readarr is routed through the VPN (VPN_ON)" \
-  "[readarr] Disabled its existing qBittorrent client, which cannot reach qBittorrent from there." \
+  "[readarr] Disabled its qBittorrent client 1, which cannot reach qBittorrent from there." \
   "[qBittorrent] Readarr is not on READARR_SERVICES_IP (10.0.0.13), skipping its login bypass." \
   "[arr]   - readarr"
-if [[ "$(sent readarr '1?forceSave=true')" != *'"enable": false'* ]]; then
+if [[ "$(sent readarr '1?forceSave=true')" != *'"enable":false'* ]]; then
   fail "the old client is saved disabled, without the test that would fail"
 fi
 if [[ "$(sent_post readarr)" == *QBittorrent* ]]; then
@@ -802,7 +802,26 @@ readarr_addresses ''
 rule 'exec readarr curl -sk --fail -H X-Api-Key: \S+ \S+/downloadclient$' 0 "$(readarr_qbt_client '' '')"
 rule 'exec readarr curl -sSk -X PUT .*/downloadclient/1\?forceSave=true$' 0 $'[{"errorMessage": "no"}]\n400'
 run
-check "a refused disable is reported" 0 out '[readarr] WARNING: failed to disable its qBittorrent client: [{"errorMessage": "no"}]'
+check "a refused disable is reported" 0 out '[readarr] WARNING: failed to disable its qBittorrent client 1: [{"errorMessage": "no"}]'
+
+# Only the clients that point at this stack's qBittorrent are disabled, every
+# one of them: one for another server can still work.
+deployment
+containers readarr qbittorrent
+readarr_addresses ''
+rule 'exec readarr curl -sk --fail -H X-Api-Key: \S+ \S+/downloadclient$' 0 '[
+  {"id": 1, "implementation": "QBittorrent", "enable": true, "fields": [{"name": "host", "value": "203.0.113.9"}, {"name": "port", "value": 8443}]},
+  {"id": 2, "implementation": "QBittorrent", "enable": true, "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 8443}]},
+  {"id": 3, "implementation": "QBittorrent", "enable": true, "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": "8443"}]},
+  {"id": 4, "implementation": "QBittorrent", "enable": true, "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 9999}]},
+  {"id": 5, "implementation": "Sabnzbd", "enable": true, "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 8443}]}]'
+run
+check "every client for this stack is disabled" 0 out \
+  "[readarr] Disabled its qBittorrent client 2, which cannot reach qBittorrent from there." \
+  "[readarr] Disabled its qBittorrent client 3, which cannot reach qBittorrent from there."
+for other in 1 4 5; do
+  refute "client ${other}, not this stack's qBittorrent, is left alone" log "/downloadclient/${other}?forceSave=true"
+done
 
 # Its download clients cannot be read: said so, not passed over in silence.
 deployment

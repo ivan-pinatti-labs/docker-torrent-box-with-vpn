@@ -210,6 +210,20 @@ readarr_env READARR_SERVICES_IP=10.5.0.13
 READARR_SERVICES_IP=10.6.0.13 run "${__scratch}/readarr" "${docker_bin}"
 check "checks the address from the environment over .env's" 1 "ERROR: READARR_SERVICES_IP 10.6.0.13 is not an address inside SERVICES_SUBNET 10.5.0.0/24."
 
+# So does the subnet, which make hands `network create` from its command line.
+readarr_env READARR_SERVICES_IP=10.7.0.13
+SERVICES_SUBNET=10.7.0.0/24 SERVICES_DYNAMIC_IP_RANGE=10.7.0.128/25 run "${__scratch}/readarr" "${docker_bin}"
+if [[ "${__status}" -ne 0 ]]; then
+  echo "FAIL the subnet from the environment was not the one checked: exit ${__status}" >&2
+  cat "${__scratch}/out" >&2
+  __failures=$((__failures + 1))
+else
+  echo "ok checks the address against the subnet from the environment"
+fi
+readarr_env READARR_SERVICES_IP=10.5.0.13
+SERVICES_DYNAMIC_IP_RANGE=10.5.0.0/28 run "${__scratch}/readarr" "${docker_bin}"
+check "and the dynamic range from the environment" 1 "ERROR: READARR_SERVICES_IP 10.5.0.13 is inside SERVICES_DYNAMIC_IP_RANGE 10.5.0.0/28"
+
 # Readarr disabled: its address is not checked at all.
 readarr_env READARR_SERVICES_IP=10.6.0.13
 sed -i "s|^READARR_PROFILE=.*|READARR_PROFILE=disabled|" "${__scratch}/readarr/.env"

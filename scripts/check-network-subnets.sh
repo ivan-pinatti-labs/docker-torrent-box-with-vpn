@@ -157,16 +157,17 @@ check() {
 # qBittorrent's login in Readarr's place.
 #
 # Skipped while Readarr is disabled, so an older .env that never set the
-# address cannot stop the rest of the stack over .env.example's. The profile
-# and the address come from the environment before .env, as compose reads
-# them: the Makefile exports the address compose will hand Readarr, a command
-# line override included.
+# address cannot stop the rest of the stack over .env.example's. The profile,
+# the address, the subnet and its dynamic range come from the environment
+# before .env, as compose and make read them: the Makefile exports the
+# address compose will hand Readarr, and make hands a command line override
+# of any of them to this script and to `network create` alike.
 check_readarr_address() {
   local want subnet pool other
   [[ "${READARR_PROFILE-$(env_value READARR_PROFILE)}" == enabled ]] || return 0
   want="${READARR_SERVICES_IP-$(env_value READARR_SERVICES_IP)}"
   [[ -n "$want" ]] || return 0
-  subnet="$(setting SERVICES_SUBNET)"
+  subnet="${SERVICES_SUBNET-$(env_value SERVICES_SUBNET)}"
   if [[ -n "$subnet" ]] && ! in_subnet "$want" "$subnet"; then
     echo "ERROR: READARR_SERVICES_IP ${want} is not an address inside SERVICES_SUBNET ${subnet}." >&2
     address_problem=1
@@ -174,7 +175,7 @@ check_readarr_address() {
     echo "ERROR: READARR_SERVICES_IP ${want} is the network or broadcast address of SERVICES_SUBNET ${subnet}." >&2
     address_problem=1
   fi
-  pool="$(setting SERVICES_DYNAMIC_IP_RANGE)"
+  pool="${SERVICES_DYNAMIC_IP_RANGE-$(env_value SERVICES_DYNAMIC_IP_RANGE)}"
   if [[ -n "$pool" ]] && in_subnet "$want" "$pool"; then
     echo "ERROR: READARR_SERVICES_IP ${want} is inside SERVICES_DYNAMIC_IP_RANGE ${pool}, so another container can be handed it." >&2
     address_problem=1

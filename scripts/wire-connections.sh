@@ -121,7 +121,7 @@ readonly NGINX_SERVICES_IP
 # included.
 READARR_SERVICES_IP="${READARR_SERVICES_IP-$(env_value READARR_SERVICES_IP)}"
 READARR_PROFILE="${READARR_PROFILE-$(env_value READARR_PROFILE)}"
-SERVICES_SUBNET="$(env_value SERVICES_SUBNET)"
+SERVICES_SUBNET="${SERVICES_SUBNET-$(env_value SERVICES_SUBNET)}"
 readonly READARR_SERVICES_IP READARR_PROFILE SERVICES_SUBNET
 readonly LAN_IP GLUETUN_SERVICES_IP QBITTORRENT_HTTPS_PORT SABNZBD_HTTP_PORT \
   SABNZBD_HTTPS_PORT SONARR_HTTP_PORT RADARR_HTTPS_PORT LIDARR_HTTPS_PORT READARR_HTTPS_PORT \
@@ -1053,25 +1053,37 @@ readarr_holds_services_ip() {
 
 # Routed through the VPN, Readarr reaches qBittorrent from gluetun's address,
 # which is never let in, so a qBittorrent client an earlier run gave it
-# fails every request and would still be picked for downloads. It is
-# disabled, not deleted, and the next run with Readarr on its own address
-# enables it again. Args: base_url api_key
+# fails every request and would still be picked for downloads. Every enabled
+# one pointing at this stack's qBittorrent is disabled, not deleted, and the
+# next run with Readarr on its own address enables it again. One pointing at
+# another server is left alone.
+stack_qbittorrent_clients_disabled_jq() {
+  cat <<'JQ'
+.[] | select(.implementation == "QBittorrent" and .enable == true
+  and any(.fields[]; .name == "host" and .value == $host)
+  and any(.fields[]; .name == "port" and (.value | tostring) == $port))
+| .enable = false
+JQ
+}
+
+# Args: base_url api_key
 disable_readarr_qbittorrent_client() {
-  local base_url="$1" api_key="$2" existing id payload response
-  if ! existing=$(container_curl readarr -sk --fail -H "X-Api-Key: ${api_key}" "$base_url" | jq 'map(select(.implementation == "QBittorrent")) | first'); then
+  local base_url="$1" api_key="$2" clients client id response
+  local disable_jq
+  disable_jq=$(stack_qbittorrent_clients_disabled_jq)
+  if ! clients=$(container_curl readarr -sk --fail -H "X-Api-Key: ${api_key}" "$base_url" | jq -c --arg host "$GLUETUN_SERVICES_IP" --arg port "$QBITTORRENT_HTTPS_PORT" "$disable_jq"); then
     echo "[readarr] WARNING: could not read its download clients, so a qBittorrent client it may still have was not disabled."
     return 0
   fi
-  if [[ "$existing" == "null" || "$(jq '.enable' <<<"$existing")" != true ]]; then
-    return 0
-  fi
-  id=$(jq -r '.id' <<<"$existing")
-  payload=$(jq '.enable = false' <<<"$existing")
-  if ! response=$(send_arr_connection readarr PUT "${base_url}/${id}?forceSave=true" "$api_key" "$payload"); then # pragma: allowlist secret
-    echo "[readarr] WARNING: failed to disable its qBittorrent client: ${response:0:300}"
-    return 0
-  fi
-  echo "[readarr] Disabled its existing qBittorrent client, which cannot reach qBittorrent from there."
+  while IFS= read -r client; do
+    [[ -n "$client" ]] || continue
+    id=$(jq -r '.id' <<<"$client")
+    if ! response=$(send_arr_connection readarr PUT "${base_url}/${id}?forceSave=true" "$api_key" "$client"); then # pragma: allowlist secret
+      echo "[readarr] WARNING: failed to disable its qBittorrent client ${id}: ${response:0:300}"
+      continue
+    fi
+    echo "[readarr] Disabled its qBittorrent client ${id}, which cannot reach qBittorrent from there."
+  done <<<"$clients"
 }
 
 # Readarr saves a download client only once its own test of it passes, and
