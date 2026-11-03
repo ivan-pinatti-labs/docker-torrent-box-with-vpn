@@ -331,6 +331,26 @@ FILTERS = {
     'any(.fields[]; .name == "useSsl" and .value == true)': lambda d, a: [
         any(f["name"] == "useSsl" and f.get("value") is True for f in d["fields"])
     ],
+    'any(.fields[]; (.name == "username" or .name == "password") and (.value // "") != "")': lambda d, a: [
+        any(
+            f["name"] in ("username", "password") and (f.get("value") or "") != ""
+            for f in d["fields"]
+        )
+    ],
+    '.fields |= map( if .name == "host" then .value = $host elif .name == "port" then .value = ($port | tonumber) '
+    'elif .name == "useSsl" then .value = true elif .name == "username" or .name == "password" then .value = "" '
+    "else . end)": lambda d, a: [
+        map_fields(
+            d,
+            {
+                "host": a["host"],
+                "port": int(a["port"]),
+                "useSsl": True,
+                "username": "",
+                "password": "",
+            },
+        )
+    ],
     ".username = $cred | .password = $cred | .passwordConfirmation = $cred | .certificateValidation = "
     '"disabledForLocalAddresses"': lambda d, a: [
         set_keys(

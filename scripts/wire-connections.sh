@@ -20,7 +20,9 @@ set -euo pipefail
 # creation needs both and nothing else in this stack sets them up.
 #
 # qBittorrent is also told to trust nginx's services address, and nothing
-# else, as its reverse proxy (see ensure_qbittorrent_reverse_proxy).
+# else, as its reverse proxy (see ensure_qbittorrent_reverse_proxy), and to
+# let Readarr's address in without a login (see
+# ensure_qbittorrent_readarr_bypass).
 #
 # It also attempts the first-run setup that Jellyfin, Audiobookshelf,
 # Calibre's content server, and Calibre-Web each need before they have any
@@ -109,9 +111,13 @@ AUDIOBOOKSHELF_HTTP_PORT="$(env_value AUDIOBOOKSHELF_HTTP_PORT)"
 CALIBREWEB_VERSION="$(pin_value CALIBREWEB_VERSION)"
 FLARESOLVERR_HTTP_PORT="$(env_value FLARESOLVERR_HTTP_PORT)"
 # nginx's address on services, the only reverse proxy qBittorrent trusts.
-# ensure_qbittorrent_reverse_proxy skips when it is set but empty.
+# wire_qbittorrent skips when it is set but empty.
 NGINX_SERVICES_IP="$(env_value NGINX_SERVICES_IP)"
 readonly NGINX_SERVICES_IP
+# Readarr's fixed address on services, the one address qBittorrent lets in
+# without a login (see ensure_qbittorrent_readarr_bypass).
+READARR_SERVICES_IP="$(env_value READARR_SERVICES_IP)"
+readonly READARR_SERVICES_IP
 readonly LAN_IP GLUETUN_SERVICES_IP QBITTORRENT_HTTPS_PORT SABNZBD_HTTP_PORT \
   SABNZBD_HTTPS_PORT SONARR_HTTP_PORT RADARR_HTTPS_PORT LIDARR_HTTPS_PORT READARR_HTTPS_PORT \
   WHISPARR_HTTPS_PORT PROWLARR_HTTPS_PORT LAZYLIBRARIAN_HTTP_PORT MYLAR_HTTPS_PORT \
@@ -966,28 +972,22 @@ ensure_readarr_metadata_source() {
 # SABnzbd's genre-based categories (tv, movies, ebooks, ...) are unrelated
 # to qBittorrent's app-named ones, so each caller passes both explicitly.
 #
-# Readarr's own qBittorrent client creation fails every single time, against
-# every qBittorrent version this stack has pinned since #83 (5.2.2), and
-# reproduces the same way on a completely fresh, isolated bootstrap: not a
-# race, not a brute-force lockout, and not fixed by retrying. Confirmed
-# directly against Readarr's own current develop branch source
-# (QBittorrentProxyV2.cs, AuthenticateClient): it still checks
-# `response.Content != "Ok."` to decide whether the login POST to
-# /api/v2/auth/login succeeded, but qBittorrent 5.2.0 and later return
-# 204 No Content with an empty body on a successful login instead of the
-# old 200 "Ok." (the session cookie is still issued either way, confirmed
-# live by logging in with the exact same request qBittorrent's own log then
-# records as "WebAPI login success"). Readarr's check has no way to see
-# that, so it raises DownloadClientAuthenticationException on every
-# attempt. Sonarr/Radarr/Lidarr/Whisparr share the same QBittorrentProxyV2
-# lineage but are actively maintained forks that already handle the 204
-# response; Readarr's own upstream is retired (see README's Known Issues)
-# and has not picked up that fix. Downgrading this stack's own
-# QBITTORRENT_VERSION to work around one unmaintained app's bug would
-# regress a shared service for every other app that talks to it, so this is
-# left as a known, permanent limitation rather than "fixed" here: see
-# wire_arr_app below for why this failure is still caught rather than left
-# to abort Readarr's other, unrelated wiring steps.
+# Readarr cannot log in to qBittorrent 5.2 and later (#167). Its retired
+# upstream (QBittorrentProxyV2.AuthenticateClient) still takes a login as
+# successful only when the body is exactly "Ok.", and qBittorrent 5.2.0 and
+# later answer a successful one with 204 No Content and an empty body, so
+# every login, with the right password, raises
+# DownloadClientAuthenticationException. Sonarr, Radarr, Lidarr and Whisparr
+# share that code but are maintained, and handle the 204.
+#
+# The same method returns before sending any login when the client's username
+# and password are empty, so Readarr's client gets none, and qBittorrent lets
+# Readarr's own address (READARR_SERVICES_IP) in without a login
+# (ensure_qbittorrent_readarr_bypass, #411). That holds only while Readarr
+# has that address: routed through the VPN, it shares gluetun's namespace and
+# its requests come from gluetun's address, which SABnzbd, JDownloader and
+# every other routed app share. Letting that in would let them all in, so
+# Readarr's qBittorrent client is then not wired, with a warning.
 # ---------------------------------------------------------------------------
 
 # The jq programs the download client, Jellyfin connection and Prowlarr
@@ -1022,6 +1022,42 @@ qbittorrent_client_jq() {
 JQ
 }
 
+# Readarr's qBittorrent client, moved to the right address with its username
+# and password cleared, so Readarr sends no login (see above).
+credential_free_client_jq() {
+  cat <<'JQ'
+.fields |= map(
+  if .name == "host" then .value = $host
+  elif .name == "port" then .value = ($port | tonumber)
+  elif .name == "useSsl" then .value = true
+  elif .name == "username" or .name == "password" then .value = ""
+  else . end)
+JQ
+}
+
+# Whether Readarr holds READARR_SERVICES_IP on services, the address its
+# requests then reach qBittorrent from. It does not when routed through the
+# VPN (VPN_ON), or before it is recreated with the address.
+readarr_holds_services_ip() {
+  [[ -n "$READARR_SERVICES_IP" ]] || return 1
+  local addresses
+  addresses=$(podman inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "$(cname readarr)" 2>/dev/null) || return 1
+  [[ " ${addresses} " == *" ${READARR_SERVICES_IP} "* ]]
+}
+
+# Readarr saves a download client only once its own test of it passes, and
+# with no credentials that needs qBittorrent to let it in, which the
+# qBittorrent job sets up concurrently. So this waits until qBittorrent
+# answers Readarr without a login.
+readarr_bypass_ready() {
+  if retry 180 "[readarr]" container_curl readarr -sk --fail -o /dev/null \
+    "https://${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}/api/v2/app/version"; then
+    return 0
+  fi
+  echo "[readarr] WARNING: qBittorrent still asks Readarr to log in, so its qBittorrent client was not wired. See the [qBittorrent] lines above."
+  return 1
+}
+
 sabnzbd_client_jq() {
   cat <<'JQ'
 .name = "SABnzbd" | .enable = true |
@@ -1041,6 +1077,17 @@ ensure_qbittorrent_client() {
   local app_name="$1" container="$2" scheme="$3" port="$4" api_ver="$5" api_key="$6" category="$7"
   local base_url="${scheme}://127.0.0.1:${port}/${app_name}/api/${api_ver}/downloadclient"
 
+  # Readarr's client carries no credentials (see the comment above), which
+  # only works while Readarr holds the address qBittorrent lets in.
+  local credential_free=false
+  if [[ "$app_name" == "readarr" ]]; then
+    if ! readarr_holds_services_ip; then
+      echo "[readarr] WARNING: Readarr does not hold READARR_SERVICES_IP (${READARR_SERVICES_IP:-not set}) on the services network, so qBittorrent cannot let it in without a login, and Readarr cannot log in to qBittorrent 5.2 or later. Its qBittorrent client was not wired. This is expected while Readarr is routed through the VPN (VPN_ON); see docs/CONNECTIONS.md."
+      return 1
+    fi
+    credential_free=true
+  fi
+
   local existing
   existing=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "$base_url" | jq 'map(select(.implementation == "QBittorrent")) | first')
   if [[ -n "$existing" && "$existing" != "null" ]]; then
@@ -1054,20 +1101,30 @@ ensure_qbittorrent_client() {
     # creation, so username and password stay exactly what the client
     # already has instead of being read from files and resupplied here.
     # qBittorrent's WebUI serves TLS only, so useSsl is part of the address
-    # and is corrected with it (#300).
-    local existing_host existing_port existing_ssl
+    # and is corrected with it (#300). Readarr's credentials are part of it
+    # too: a client created before #411 still has them, and fails every login.
+    local existing_host existing_port existing_ssl has_credentials=false
     existing_host=$(jq -r '.fields[] | select(.name == "host") | .value' <<<"$existing")
     existing_port=$(jq -r '.fields[] | select(.name == "port") | .value' <<<"$existing")
     existing_ssl=$(jq 'any(.fields[]; .name == "useSsl" and .value == true)' <<<"$existing")
-    if [[ "$existing_host" == "$GLUETUN_SERVICES_IP" && "$existing_port" == "$QBITTORRENT_HTTPS_PORT" && "$existing_ssl" == true ]]; then
+    if [[ "$credential_free" == true ]]; then
+      has_credentials=$(jq 'any(.fields[]; (.name == "username" or .name == "password") and (.value // "") != "")' <<<"$existing")
+    fi
+    if [[ "$existing_host" == "$GLUETUN_SERVICES_IP" && "$existing_port" == "$QBITTORRENT_HTTPS_PORT" && "$existing_ssl" == true && "$has_credentials" == false ]]; then
       echo "[$app_name] qBittorrent download client already exists, skipping."
       return 0
     fi
 
-    echo "[$app_name] qBittorrent download client stale (${existing_host}:${existing_port}, useSsl ${existing_ssl}), correcting to ${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}, useSsl true..."
     local id payload
     id=$(jq -r '.id' <<<"$existing")
-    payload=$(jq --arg host "$GLUETUN_SERVICES_IP" --arg port "$QBITTORRENT_HTTPS_PORT" --argjson ssl true "$(client_address_jq)" <<<"$existing")
+    if [[ "$credential_free" == true ]]; then
+      readarr_bypass_ready || return 1
+      echo "[$app_name] qBittorrent download client stale (${existing_host}:${existing_port}, useSsl ${existing_ssl}, credentials ${has_credentials}), correcting to ${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}, useSsl true, no credentials..."
+      payload=$(jq --arg host "$GLUETUN_SERVICES_IP" --arg port "$QBITTORRENT_HTTPS_PORT" "$(credential_free_client_jq)" <<<"$existing")
+    else
+      echo "[$app_name] qBittorrent download client stale (${existing_host}:${existing_port}, useSsl ${existing_ssl}), correcting to ${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}, useSsl true..."
+      payload=$(jq --arg host "$GLUETUN_SERVICES_IP" --arg port "$QBITTORRENT_HTTPS_PORT" --argjson ssl true "$(client_address_jq)" <<<"$existing")
+    fi
 
     local response
     if ! response=$(send_arr_connection "$container" PUT "${base_url}/${id}" "$api_key" "$payload"); then
@@ -1078,11 +1135,15 @@ ensure_qbittorrent_client() {
     return 0
   fi
 
-  local username password
-  username=$(cat "$QBITTORRENT_USERNAME_FILE")
-  password=$(cat "$QBITTORRENT_PASSWORD_FILE")
-
-  echo "[$app_name] Creating qBittorrent download client..."
+  local username="" password=""
+  if [[ "$credential_free" == true ]]; then
+    readarr_bypass_ready || return 1
+    echo "[$app_name] Creating qBittorrent download client, with no credentials..."
+  else
+    username=$(cat "$QBITTORRENT_USERNAME_FILE")
+    password=$(cat "$QBITTORRENT_PASSWORD_FILE")
+    echo "[$app_name] Creating qBittorrent download client..."
+  fi
   local schema
   schema=$(container_curl "$container" -sk --fail -H "X-Api-Key: ${api_key}" "${base_url}/schema" | jq 'map(select(.implementation == "QBittorrent")) | first')
 
@@ -1113,9 +1174,130 @@ ensure_qbittorrent_client() {
 # from nobody else. Set through the live API rather than qBittorrent.conf,
 # which qBittorrent rewrites on shutdown, and from .env rather than the
 # .example, whose addresses are fixed at seed time (#121).
+# Args: base_url jar preferences
 ensure_qbittorrent_reverse_proxy() {
+  local base_url="$1" jar="$2" preferences="$3"
+  if echo "$preferences" | jq -e --arg ip "$NGINX_SERVICES_IP" \
+    '.web_ui_reverse_proxy_enabled == true and .web_ui_reverse_proxies_list == $ip' >/dev/null; then
+    echo "[qBittorrent] Already trusts only nginx (${NGINX_SERVICES_IP}) as its reverse proxy, skipping."
+    return 0
+  fi
+  echo "[qBittorrent] Trusting only nginx (${NGINX_SERVICES_IP}) as its reverse proxy..."
+  if ! container_curl qbittorrent -sk --fail -b "$jar" -o /dev/null \
+    --data-urlencode "json={\"web_ui_reverse_proxy_enabled\":true,\"web_ui_reverse_proxies_list\":\"${NGINX_SERVICES_IP}\"}" \
+    "${base_url}/app/setPreferences"; then
+    echo "[qBittorrent] WARNING: setPreferences failed, so reverse proxy trust was not applied."
+    return 1
+  fi
+  echo "[qBittorrent] Done."
+}
+
+# The qBittorrent preferences Readarr's login bypass needs, from its current
+# ones: READARR_SERVICES_IP/32 added to the subnets that skip the login, the
+# entries already there kept, and the list switched on. Prints nothing when
+# that is already the case. Exits 3, naming the entry, when any entry would
+# let in nginx's address, gluetun's or loopback: nginx forwards every browser
+# and gluetun's namespace holds SABnzbd, JDownloader and every app routed
+# through the VPN, so only a single address can be Readarr's alone.
+# qBittorrent joins the list with newlines and splits it on newlines and
+# commas. Args: readarr_ip nginx_ip gluetun_ip preferences
+readarr_bypass_preferences() {
+  python3 - "$@" <<'PYEOF'
+import ipaddress
+import json
+import re
+import sys
+
+readarr, nginx, gluetun, preferences = sys.argv[1:5]
+preferences = json.loads(preferences)
+try:
+    own = ipaddress.ip_network(f"{readarr}/32")
+except ValueError:
+    print(f"READARR_SERVICES_IP {readarr!r} is not an IPv4 address")
+    sys.exit(4)
+
+entries = [
+    entry.strip()
+    for entry in re.split(r"[\n,]", preferences.get("bypass_auth_subnet_whitelist") or "")
+    if entry.strip()
+]
+networks = []
+for entry in entries:
+    try:
+        networks.append((entry, ipaddress.ip_network(entry, strict=False)))
+    except ValueError:
+        pass
+present = any(network == own for _, network in networks)
+if not present:
+    entries.append(str(own))
+    networks.append((str(own), own))
+
+protected = [ipaddress.ip_address(a) for a in (nginx, gluetun, "127.0.0.1", "::1")]
+for entry, network in networks:
+    for address in protected:
+        if address.version == network.version and address in network:
+            print(f"{entry} (it lets {address} in)")
+            sys.exit(3)
+
+if present and preferences.get("bypass_auth_subnet_whitelist_enabled") is True:
+    sys.exit(0)
+print(
+    json.dumps(
+        {
+            "bypass_auth_subnet_whitelist_enabled": True,
+            "bypass_auth_subnet_whitelist": "\n".join(entries),
+        }
+    )
+)
+PYEOF
+}
+
+# Readarr cannot log in to qBittorrent 5.2 and later, so qBittorrent lets
+# Readarr's own address in without one (see the comment above
+# ensure_qbittorrent_client). Only its address: routed through the VPN,
+# Readarr shares gluetun's, and so does every other routed app, so nothing is
+# set then. Safe only behind an nginx that overwrites X-Forwarded-For
+# (configs/nginx/templates/default.conf.template), and only once nginx is the
+# one proxy qBittorrent trusts, since a trusted proxy could otherwise claim
+# Readarr's address for anyone. A Readarr address that was here before
+# READARR_SERVICES_IP changed stays until removed by hand.
+# Args: base_url jar preferences
+ensure_qbittorrent_readarr_bypass() {
+  local base_url="$1" jar="$2" preferences="$3"
+  if ! readarr_holds_services_ip; then
+    echo "[qBittorrent] Readarr is not on READARR_SERVICES_IP (${READARR_SERVICES_IP:-not set}), skipping its login bypass."
+    return 0
+  fi
+
+  local wanted status=0
+  wanted=$(readarr_bypass_preferences "$READARR_SERVICES_IP" "$NGINX_SERVICES_IP" "$GLUETUN_SERVICES_IP" "$preferences" 2>&1) || status=$?
+  if [[ "$status" -eq 3 ]]; then
+    echo "[qBittorrent] WARNING: its login bypass list holds ${wanted}, which lets more than Readarr skip the login. Remove it under Tools > Options > WebUI; Readarr's login bypass was not set."
+    return 1
+  elif [[ "$status" -ne 0 ]]; then
+    echo "[qBittorrent] WARNING: Readarr's login bypass was not set: ${wanted:0:300}"
+    return 1
+  fi
+  if [[ -z "$wanted" ]]; then
+    echo "[qBittorrent] Already lets Readarr (${READARR_SERVICES_IP}) in without a login, skipping."
+    return 0
+  fi
+
+  echo "[qBittorrent] Letting Readarr (${READARR_SERVICES_IP}) in without a login..."
+  if ! container_curl qbittorrent -sk --fail -b "$jar" -o /dev/null \
+    --data-urlencode "json=${wanted}" "${base_url}/app/setPreferences"; then
+    echo "[qBittorrent] WARNING: setPreferences failed, so Readarr's login bypass was not applied."
+    return 1
+  fi
+  echo "[qBittorrent] Done."
+}
+
+# One login for both of qBittorrent's settings above. Readarr's bypass waits
+# for reverse proxy trust: with another proxy trusted, that proxy could claim
+# Readarr's address for any browser.
+wire_qbittorrent() {
   if [[ -z "$NGINX_SERVICES_IP" ]]; then
-    echo "[qBittorrent] NGINX_SERVICES_IP is not set, skipping reverse proxy trust."
+    echo "[qBittorrent] NGINX_SERVICES_IP is not set, skipping reverse proxy trust and Readarr's login bypass."
     return 0
   fi
   if ! podman container exists "$(cname qbittorrent)" 2>/dev/null; then
@@ -1126,37 +1308,28 @@ ensure_qbittorrent_reverse_proxy() {
   local base_url="https://${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}/api/v2"
   # Per run: two wiring runs at once would otherwise share, and remove, one jar.
   local jar="/tmp/qbt_wire_cookies.${BASHPID}.txt"
-  local username password preferences
+  local username password preferences status=0
   username=$(<"$QBITTORRENT_USERNAME_FILE")
   password=$(<"$QBITTORRENT_PASSWORD_FILE")
   if ! retry 120 "[qBittorrent]" container_curl qbittorrent -sk --fail -c "$jar" -o /dev/null \
     --data-urlencode "username=${username}" --data-urlencode "password=${password}" "${base_url}/auth/login"; then
-    echo "[qBittorrent] Not reachable, skipping reverse proxy trust."
+    echo "[qBittorrent] Not reachable, skipping reverse proxy trust and Readarr's login bypass."
     return 0
   fi
 
   # A refused login still answers 200 (see rotate-passwords.sh), so the
   # session is proven by this read succeeding, not by the login's status.
   if ! preferences=$(container_curl qbittorrent -sk --fail -b "$jar" "${base_url}/app/preferences"); then
-    echo "[qBittorrent] WARNING: could not read its preferences, so reverse proxy trust was not checked."
-    podman exec "$(cname qbittorrent)" rm -f "$jar"
-    return 1
-  fi
-  if echo "$preferences" | jq -e --arg ip "$NGINX_SERVICES_IP" \
-    '.web_ui_reverse_proxy_enabled == true and .web_ui_reverse_proxies_list == $ip' >/dev/null; then
-    echo "[qBittorrent] Already trusts only nginx (${NGINX_SERVICES_IP}) as its reverse proxy, skipping."
+    echo "[qBittorrent] WARNING: could not read its preferences, so reverse proxy trust and Readarr's login bypass were not checked."
+    status=1
+  elif ! ensure_qbittorrent_reverse_proxy "$base_url" "$jar" "$preferences"; then
+    echo "[qBittorrent] Readarr's login bypass was not checked either."
+    status=1
   else
-    echo "[qBittorrent] Trusting only nginx (${NGINX_SERVICES_IP}) as its reverse proxy..."
-    if ! container_curl qbittorrent -sk --fail -b "$jar" -o /dev/null \
-      --data-urlencode "json={\"web_ui_reverse_proxy_enabled\":true,\"web_ui_reverse_proxies_list\":\"${NGINX_SERVICES_IP}\"}" \
-      "${base_url}/app/setPreferences"; then
-      echo "[qBittorrent] WARNING: setPreferences failed, so reverse proxy trust was not applied."
-      podman exec "$(cname qbittorrent)" rm -f "$jar"
-      return 1
-    fi
-    echo "[qBittorrent] Done."
+    ensure_qbittorrent_readarr_bypass "$base_url" "$jar" "$preferences" || status=1
   fi
   podman exec "$(cname qbittorrent)" rm -f "$jar"
+  return "$status"
 }
 
 # Args: app_name container scheme port api_ver api_key category
@@ -1273,11 +1446,9 @@ JELLYFIN_FAILED=()
 
 # Names of arr apps whose qBittorrent and/or SABnzbd client creation did not
 # succeed this run. Kept apart from JELLYFIN_FAILED/ARR_JOB_FAILED for the
-# same reason those two are kept apart from each other: readarr's
-# qBittorrent client is a known, permanent failure (see the comment above
-# ensure_qbittorrent_client), and folding it into either of those would
-# either bury it under a generic "check the output above" or misreport it as
-# a Jellyfin problem.
+# same reason those two are kept apart from each other: folding a download
+# client failure into either of those would either bury it under a generic
+# "the job stopped early" or misreport it as a Jellyfin problem.
 DOWNLOAD_CLIENT_FAILED=()
 
 # Names of arr apps whose job failed somewhere other than a download client
@@ -1297,9 +1468,10 @@ ARR_JOB_FAILED=()
 # ensure_jellyfin_connection or, for Readarr, ensure_readarr_metadata_source
 # ever ran. That is exactly the bug PROWLARR_FAILED's own comment already
 # describes and guards against for wire_prowlarr_apps, just not yet applied
-# here: confirmed live, readarr's qBittorrent client fails on every single
-# run (see that comment), which was silently skipping its otherwise-working
-# SABnzbd client every time too, not just its Jellyfin connection.
+# here: confirmed live, readarr's qBittorrent client then failed on every
+# run (before #411, see the comment above ensure_qbittorrent_client), which
+# was silently skipping its otherwise-working SABnzbd client every time too,
+# not just its Jellyfin connection.
 # ARR_JOB_STATUS_BASE=100 sits clear of the shell's own 1 and 2 and the 126
 # to 165 range it reserves for "cannot execute", "not found" and fatal
 # signals, with headroom above it for every combination of the bits below.
@@ -1524,9 +1696,10 @@ wire_arr_app() {
   # metadata source fix below. A bare
   # statement would let either one's failure kill this whole function before
   # those unrelated steps ever ran, which is exactly what used to happen to
-  # Readarr's SABnzbd client (works every time) on the back of its
-  # qBittorrent client (fails every time, see the comment above
-  # ensure_qbittorrent_client), confirmed live. Recorded into a bit in
+  # Readarr's SABnzbd client on the back of its qBittorrent client, which
+  # failed every time before #411 and still fails while Readarr is routed
+  # through the VPN (see the comment above ensure_qbittorrent_client),
+  # confirmed live. Recorded into a bit in
   # status_bits, not returned immediately, so both can fail independently
   # and still be reported accurately; see ARR_JOB_DOWNLOAD_CLIENT_FAILED_BIT.
   local status_bits=0
@@ -2071,7 +2244,7 @@ start_job readarr wire_arr_app readarr readarr https "$READARR_HTTPS_PORT" v1 re
 start_job sonarr wire_arr_app sonarr sonarr http "$SONARR_HTTP_PORT" v3 sonarr tv
 start_job whisparr wire_arr_app whisparr whisparr https "$WHISPARR_HTTPS_PORT" v3 whisparr mature
 start_job prowlarr wire_prowlarr_apps
-start_job qbittorrent ensure_qbittorrent_reverse_proxy
+start_job qbittorrent wire_qbittorrent
 
 for name in audiobookshelf calibre calibre-web jellyfin prowlarr qbittorrent; do
   wait_job "$name" || true
@@ -2124,12 +2297,7 @@ if [[ ${#DOWNLOAD_CLIENT_FAILED[@]} -gt 0 ]]; then
   for failed in "${DOWNLOAD_CLIENT_FAILED[@]}"; do
     echo "[arr]   - ${failed}"
   done
-  echo "[arr] Check the output above for the first error each one printed. If"
-  echo "[arr] readarr is in this list for its qBittorrent client, re-running"
-  echo "[arr] will not help: see the comment above ensure_qbittorrent_client"
-  echo "[arr] in scripts/wire-connections.sh, this is a known, permanent"
-  echo "[arr] incompatibility in Readarr's own retired upstream, not a"
-  echo "[arr] transient failure."
+  echo "[arr] Check the output above for the first error each one printed."
 fi
 
 if [[ ${#ARR_JOB_FAILED[@]} -gt 0 ]]; then

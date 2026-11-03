@@ -1048,8 +1048,13 @@ rotate_qbittorrent() {
   # config files, are edited on disk; stop everything in the blast radius so
   # nothing rewrites the files mid-edit or reloads stale state. homepage and
   # qbittorrent_exporter are handled separately, by RECREATE_CONSUMERS below.
+  #
+  # Not Readarr: it cannot log in to qBittorrent 5.2 and later, so its client
+  # has no credentials and qBittorrent lets its address in instead
+  # (wire-connections.sh, #411). Writing the password there would bring back
+  # the login that fails.
   echo "[qBittorrent] Stopping consumers for config and database edits..."
-  stop_existing sonarr radarr lidarr readarr whisparr prowlarr lazylibrarian mylar
+  stop_existing sonarr radarr lidarr whisparr prowlarr lazylibrarian mylar
 
   echo "[Sonarr DB] Updating qBittorrent password in DownloadClients..."
   update_arr_qbt_password Sonarr "$SONARR_DB" "$new_password"
@@ -1059,9 +1064,6 @@ rotate_qbittorrent() {
 
   echo "[Lidarr DB] Updating qBittorrent password in DownloadClients..."
   update_arr_qbt_password Lidarr "$LIDARR_DB" "$new_password"
-
-  echo "[Readarr DB] Updating qBittorrent password in DownloadClients..."
-  update_arr_qbt_password Readarr "$READARR_DB" "$new_password"
 
   echo "[Whisparr DB] Updating qBittorrent password in DownloadClients..."
   update_arr_qbt_password Whisparr "$WHISPARR_DB" "$new_password"

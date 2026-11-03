@@ -64,7 +64,6 @@ flowchart LR
     qBittorrent -->|password| Sonarr
     qBittorrent -->|password| Radarr
     qBittorrent -->|password| Lidarr
-    qBittorrent -->|password| Readarr
     qBittorrent -->|password| Whisparr
     qBittorrent -->|password| Homepage
 
@@ -98,7 +97,7 @@ Whisparr             | api_key  |        |           |        |        |        
 Prowlarr             |          |        |           |        |        |        |         |          |       |               |           |          | api_key
 Bazarr               |          |        |           |        |        |        |         |          |       |               |           |          | api_key
 Mylar                |          |        |           |        |        |        |         |          |       |               |           |          | api_key
-qBittorrent          |          |        |           | password| password| password| password| password |       |               |           |          | password
+qBittorrent          |          |        |           | password| password| password|         | password |       |               |           |          | password
 SABnzbd              |          |        |           | api_key | api_key | api_key | api_key | api_key  | api_key/password | api_key/password | api_key | api_key | api_key
 Grafana              |          |        |           |         |         |         |         |          |       |               |           |          | admin_user/password
 ```
@@ -160,7 +159,9 @@ Grafana              |          |        |           |         |         |      
 
 - Produces: WebUI password (username `qbittorrent`, see DownloadClients table in any arr
   DB for current value)
-- Consumed by: Sonarr, Radarr, Lidarr, Readarr, Whisparr (each app's DownloadClients table)
+- Consumed by: Sonarr, Radarr, Lidarr, Whisparr (each app's DownloadClients table). Not
+  Readarr, whose client has no credentials: qBittorrent lets `READARR_SERVICES_IP` in
+  without a login (see [CONNECTIONS.md](CONNECTIONS.md))
 - Consumes: nothing from other services
 
 **SABnzbd**
@@ -212,7 +213,6 @@ Grafana              |          |        |           |         |         |      
 | Sonarr        | qbt password              | `configs/sonarr/config/sonarr.db` (DownloadClients table)             | plain text JSON in Settings                               |
 | Radarr        | qbt password              | `configs/radarr/config/radarr.db` (DownloadClients table)             | plain text JSON in Settings                               |
 | Lidarr        | qbt password              | `configs/lidarr/config/lidarr.db` (DownloadClients table)             | plain text JSON in Settings                               |
-| Readarr       | qbt password              | `configs/readarr/config/readarr.db` (DownloadClients table)           | plain text JSON in Settings                               |
 | Whisparr      | qbt password              | `configs/whisparr/config/whisparr3.db` (DownloadClients table)        | plain text JSON in Settings                               |
 | Sonarr        | SABnzbd API key/password  | `configs/sonarr/config/sonarr.db` (DownloadClients table)             | plain text JSON in Settings                               |
 | Radarr        | SABnzbd API key/password  | `configs/radarr/config/radarr.db` (DownloadClients table)             | plain text JSON in Settings                               |

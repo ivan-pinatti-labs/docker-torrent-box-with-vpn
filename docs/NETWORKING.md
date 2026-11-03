@@ -298,6 +298,13 @@ redirected to `http://localhost/<app>/login`, losing https and nginx's port.
 qBittorrent with reverse proxy support off sees every browser as nginx, so its ban after
 five failed logins lands on nginx and locks everyone out for an hour.
 
+qBittorrent also lets Readarr's fixed address, `READARR_SERVICES_IP`, in without a login,
+since Readarr cannot log in to qBittorrent 5.2 and later (see
+[CONNECTIONS.md](CONNECTIONS.md)). Because qBittorrent takes the client from
+`X-Forwarded-For` when nginx sends it, nginx overwrites that header with the real client
+for `/qbittorrent/` and `/sabnzbd/` rather than appending to the browser's, so no browser
+can claim Readarr's address. The bypass never covers nginx's address or gluetun's.
+
 **Upgrading an existing deployment.** A `.env` from before these variables takes their
 values from `.env.example` (the Makefile fills them in), but the `apps` network it already
 has carries a range podman picked, so `make start` stops on the subnet check and names it.
@@ -305,8 +312,9 @@ Run `make down`, then `make start`, to recreate it, then `make wire_connections`
 qBittorrent. Under podman `make down` removes the stack's networks itself; under Docker it
 leaves them, since compose does not remove an external network, so run
 `docker network rm <COMPOSE_PROJECT_NAME>_apps` between the two. If `SERVICES_SUBNET` was
-moved off its default, set `NGINX_SERVICES_IP` in `.env` to an address inside it, below
-`SERVICES_DYNAMIC_IP_RANGE`.
+moved off its default, set `NGINX_SERVICES_IP` and `READARR_SERVICES_IP` in `.env` to
+free addresses inside it, below `SERVICES_DYNAMIC_IP_RANGE`; `make start` refuses a
+`READARR_SERVICES_IP` that is not.
 
 ### Post deploy verification
 

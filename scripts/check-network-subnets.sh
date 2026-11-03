@@ -5,6 +5,9 @@ set -euo pipefail
 
 # Usage: ./scripts/check-network-subnets.sh
 #
+# Also refuses a READARR_SERVICES_IP that another container could hold; see
+# check_readarr_address below.
+#
 # Refuses to start when a network already exists on a different subnet than .env
 # now asks for. `make start`'s own "ensure required networks exist" step is
 # `network exists X || network create --subnet ...`, so an existing network is
@@ -65,6 +68,39 @@ project="$(env_value COMPOSE_PROJECT_NAME)"
 [[ -n "$project" ]] || project="$(basename "$PWD")"
 
 problems=()
+address_problem=0
+
+# A setting from .env, else from the environment, where the Makefile puts
+# .env.example's value for one an older .env lacks.
+setting() {
+  local value
+  value="$(env_value "$1")"
+  [[ -n "$value" ]] || value="${!1:-}"
+  printf '%s' "$value"
+}
+
+# An IPv4 address as a number, failing for anything that is not one.
+ipv4_number() {
+  local a b c d extra octet
+  IFS=. read -r a b c d extra <<<"$1"
+  for octet in "$a" "$b" "$c" "$d"; do
+    [[ "$octet" =~ ^[0-9]{1,3}$ && "$octet" -le 255 ]] || return 1
+  done
+  [[ -z "$extra" ]] || return 1
+  printf '%s' "$(((10#$a << 24) | (10#$b << 16) | (10#$c << 8) | 10#$d))"
+}
+
+# in_subnet <address> <subnet>: whether an IPv4 address is inside a CIDR
+# subnet. Fails, as not inside, when either is malformed.
+in_subnet() {
+  local address network bits mask
+  address="$(ipv4_number "$1")" || return 1
+  network="$(ipv4_number "${2%/*}")" || return 1
+  bits="${2#*/}"
+  [[ "$bits" =~ ^[0-9]{1,2}$ && "$bits" -le 32 ]] || return 1
+  mask=$(((0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF))
+  (((address & mask) == (network & mask)))
+}
 
 # The four that declare a subnet. wan and edge are created without one, so
 # podman picks a free range and there is nothing to disagree about.
@@ -101,10 +137,42 @@ check() {
   fi
 }
 
+# qBittorrent lets READARR_SERVICES_IP in without a login (wire-connections.sh
+# sets that up), so the address has to be Readarr's alone. Outside
+# SERVICES_SUBNET Readarr cannot attach at all. Inside the dynamic pool, or on
+# another fixed address, a different container can hold it, and would skip
+# qBittorrent's login in Readarr's place.
+check_readarr_address() {
+  local want subnet pool other
+  want="$(setting READARR_SERVICES_IP)"
+  [[ -n "$want" ]] || return 0
+  subnet="$(setting SERVICES_SUBNET)"
+  if [[ -n "$subnet" ]] && ! in_subnet "$want" "$subnet"; then
+    echo "ERROR: READARR_SERVICES_IP ${want} is not an address inside SERVICES_SUBNET ${subnet}." >&2
+    address_problem=1
+  fi
+  pool="$(setting SERVICES_DYNAMIC_IP_RANGE)"
+  if [[ -n "$pool" ]] && in_subnet "$want" "$pool"; then
+    echo "ERROR: READARR_SERVICES_IP ${want} is inside SERVICES_DYNAMIC_IP_RANGE ${pool}, so another container can be handed it." >&2
+    address_problem=1
+  fi
+  for other in GLUETUN_SERVICES_IP NGINX_SERVICES_IP VPN_MOCK_IP; do
+    if [[ "$want" == "$(setting "$other")" ]]; then
+      echo "ERROR: READARR_SERVICES_IP ${want} is also ${other}." >&2
+      address_problem=1
+    fi
+  done
+}
+
 check apps APPS_SUBNET
 check services SERVICES_SUBNET
 check observability OBSERVABILITY_SUBNET
 check media MEDIA_SUBNET
+check_readarr_address
+
+if [[ "$address_problem" -eq 1 ]]; then
+  echo "Set READARR_SERVICES_IP in .env to a free address inside SERVICES_SUBNET, below SERVICES_DYNAMIC_IP_RANGE." >&2
+fi
 
 if [[ "${#problems[@]}" -gt 0 ]]; then
   cat >&2 <<EOF
@@ -123,3 +191,5 @@ why they are worth changing in the first place.
 EOF
   exit 1
 fi
+
+[[ "$address_problem" -eq 0 ]] || exit 1

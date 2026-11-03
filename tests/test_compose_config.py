@@ -332,6 +332,31 @@ def test_nginx_scopes_mylar_and_lazylibrarian_cookies():
         )
 
 
+@pytest.mark.parametrize("app", ["qbittorrent", "sabnzbd"])
+def test_nginx_overwrites_forwarded_for_to_downloaders(app):
+    """nginx sends the real client as X-Forwarded-For, never the browser's.
+
+    qBittorrent trusts nginx and takes the client from that header, and lets
+    READARR_SERVICES_IP in without a login. Appending to what the browser sent
+    would let any browser claim Readarr's address through nginx (#411).
+    """
+    template = (REPO_ROOT / "configs/nginx/templates/default.conf.template").read_text()
+    start = template.index(f"location /{app}/ {{")
+    end = template.index("\n  }", start)
+    block = template[start:end]
+
+    assert "proxy_set_header            X-Forwarded-For $remote_addr;" in block
+    assert "$proxy_add_x_forwarded_for" not in block
+
+
+def test_readarr_has_its_fixed_services_address():
+    """qBittorrent lets this one address in without a login, so it is pinned."""
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose-servarr.yml").read_text())
+    services = compose["services"]["readarr"]["networks"]["services"]
+
+    assert services == {"ipv4_address": "${READARR_SERVICES_IP}"}
+
+
 # The services given longer than the default ten seconds between SIGTERM and
 # SIGKILL. docs/CONTAINER_LIMITS.md, "Shutdown grace periods", says why each
 # needs it and which ways of stopping the stack honour it.

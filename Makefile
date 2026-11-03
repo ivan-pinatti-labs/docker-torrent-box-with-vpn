@@ -34,17 +34,19 @@ $(if $(VERSION_VARS),$(eval export $(VERSION_VARS)))
 JELLYFIN_BASE_URL ?= /jellyfin
 JELLYFIN_KNOWN_PROXY ?= $(NGINX_MEDIA_IP)
 
-# The apps subnet and nginx's two trusted addresses arrived after most .env
-# files were seeded, and seed-configs.sh never rewrites an existing .env. A
-# .env without them takes .env.example's values instead of handing
-# `network create --subnet` and nginx's `ipv4_address:` an empty string.
-# Exported so compose and check-network-subnets.sh see the same values.
+# The apps subnet, nginx's two trusted addresses and Readarr's services
+# address arrived after most .env files were seeded, and seed-configs.sh never
+# rewrites an existing .env. A .env without them takes .env.example's values
+# instead of handing `network create --subnet` and an `ipv4_address:` an empty
+# string. Exported so compose, check-network-subnets.sh and
+# wire-connections.sh see the same values.
 env_example_default = $(shell grep -m1 '^$(1)=' .env.example | cut -d= -f2-)
 APPS_SUBNET ?= $(call env_example_default,APPS_SUBNET)
 APPS_DYNAMIC_IP_RANGE ?= $(call env_example_default,APPS_DYNAMIC_IP_RANGE)
 NGINX_APPS_IP ?= $(call env_example_default,NGINX_APPS_IP)
 NGINX_SERVICES_IP ?= $(call env_example_default,NGINX_SERVICES_IP)
-export APPS_SUBNET APPS_DYNAMIC_IP_RANGE NGINX_APPS_IP NGINX_SERVICES_IP
+READARR_SERVICES_IP ?= $(call env_example_default,READARR_SERVICES_IP)
+export APPS_SUBNET APPS_DYNAMIC_IP_RANGE NGINX_APPS_IP NGINX_SERVICES_IP READARR_SERVICES_IP
 
 # CONTAINER_RUNTIME can be set in .env to 'podman' or 'docker'.
 # If not set, auto-detect: Podman takes priority when available.
