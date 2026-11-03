@@ -534,6 +534,14 @@ ensure_calibre_content_server_user() {
 # (scripts/live_db.py). Opening app.db itself before Calibre-Web has created
 # it would create an empty one, and Calibre-Web then never seeds its users
 # (see ensure_calibre_web_users).
+# DIAGNOSTIC, not for merge (#334): what the host sees of a database's files
+# just before it writes one.
+db_diag() {
+  echo "[diag] $(id -u):$(id -g) $1"
+  ls -lan --time-style=+%T "$(dirname "$1")" 2>&1 | grep -E 'db|journal|wal|shm| \.$' || true
+  getfacl -pn "$1"* 2>&1 | grep -v '^$' || true
+}
+
 calibre_web_db_ready() {
   python3 - <<PYEOF
 import sys
@@ -648,6 +656,7 @@ ensure_calibre_web_setup() {
   # before this file existed, so it isn't host-writable yet without this.
   ./scripts/permissions.py repair --runtime podman --recursive >/dev/null 2>&1 || true
   ensure_calibre_web_users
+  db_diag "$CALIBREWEB_DB"
   python3 - <<PYEOF
 import sqlite3
 conn = sqlite3.connect('$CALIBREWEB_DB')
@@ -715,6 +724,7 @@ ensure_mylar_placeholder_comic() {
 
   echo "[Mylar] Adding a placeholder comic so its Homepage widget has data..."
   stop_container mylar
+  db_diag "$MYLAR_DB"
   python3 - <<PYEOF
 import sqlite3
 from datetime import date
