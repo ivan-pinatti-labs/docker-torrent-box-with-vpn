@@ -83,7 +83,7 @@ fi
 
 env_file
 run
-check "applies the overrides and the invoking user's ids on podman 5" \
+check "applies the overrides and the invoking user's ids on podman 5.8" \
   "SONARR_PROFILE=enabled UID=1001 PODMAN_EXPORTER_PROFILE=enabled PODMAN_LIMITS_EXPORTER_PROFILE=enabled VPN_MOCK=true GID=1002"
 
 env_file
@@ -91,12 +91,31 @@ podman_answers 4.9.3
 run
 check "disables the podman exporters on podman 4" \
   "SONARR_PROFILE=enabled UID=1001 PODMAN_EXPORTER_PROFILE=disabled PODMAN_LIMITS_EXPORTER_PROFILE=disabled VPN_MOCK=true GID=1002"
-if grep --quiet --fixed-strings "PODMAN_EXPORTER_PROFILE=disabled (podman 4.x cannot set --userns inside a pod)" "${__scratch}/out"; then
+if grep --quiet --fixed-strings "PODMAN_EXPORTER_PROFILE=disabled (podman 4.9.3 cannot set --userns inside a pod before 5.8.0)" "${__scratch}/out"; then
   echo "ok says why it disabled them"
 else
   echo "FAIL says why it disabled them" >&2
   __failures=$((__failures + 1))
 fi
+
+# The cut-off is 5.8.0, not 5: Ubuntu 26.04's podman 5.7.0 still refuses (#399).
+env_file
+podman_answers 5.7.0
+run
+check "disables the podman exporters on podman 5.7" \
+  "SONARR_PROFILE=enabled UID=1001 PODMAN_EXPORTER_PROFILE=disabled PODMAN_LIMITS_EXPORTER_PROFILE=disabled VPN_MOCK=true GID=1002"
+
+env_file
+podman_answers 5.8.0
+run
+check "keeps the podman exporters from podman 5.8.0" \
+  "SONARR_PROFILE=enabled UID=1001 PODMAN_EXPORTER_PROFILE=enabled PODMAN_LIMITS_EXPORTER_PROFILE=enabled VPN_MOCK=true GID=1002"
+
+env_file
+podman_answers 6.0.0
+run
+check "keeps the podman exporters on podman 6" \
+  "SONARR_PROFILE=enabled UID=1001 PODMAN_EXPORTER_PROFILE=enabled PODMAN_LIMITS_EXPORTER_PROFILE=enabled VPN_MOCK=true GID=1002"
 
 env_file
 podman_answers fail

@@ -38,9 +38,9 @@ GRAFANA_PATH = "/admin/grafana/api"
 # service that provides it. Prometheus's own config is static, so a disabled
 # exporter leaves its job configured and its target permanently down, and
 # asserting every job is up would then fail for a service nobody asked to run.
-# CI disables podman_exporter and podman_limits_exporter because podman 4.9.3
-# refuses userns_mode inside a pod; both run on a bench, so `make
-# bootstrap_tests` still asserts them.
+# enable-test-profiles.sh disables podman_exporter and podman_limits_exporter
+# on podman before 5.8.0, which refuses userns_mode inside a pod (#399); CI's
+# nested podman is newer, so both run there and on a bench.
 PROFILE_GATED_PROMETHEUS_JOBS = {
     "podman": "podman_exporter",
     "podman_limits_exporter": "podman_limits_exporter",

@@ -2,7 +2,7 @@
 
 Quick reference for every user-facing `make` target. Grouped by what you'd
 reach for it to do, not alphabetically. Targets not listed here
-(`.env`, `certs/cert.conf`, `seed_flaresolverr_chromedriver`)
+(`.env`, `certs/cert.conf`, `seed_flaresolverr_chromedriver`, `podman_userns_guard`)
 are internal prerequisites, and the `suite_*` targets are the test
 tiers the nested test runner calls from the inside; none are commands you run
 directly.
