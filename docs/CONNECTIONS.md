@@ -77,18 +77,45 @@ the bare string `prowlarr`, matching the same convention as the arr apps,
 though Prowlarr itself doesn't use it for anything (it isn't sorting content
 into genre folders the way Sonarr/Radarr/etc. are).
 
-**Known limitation:** Readarr's own qBittorrent client creation fails every
-time, against every qBittorrent version this stack has pinned since #83.
-Readarr's retired upstream (see README's Known Issues) never picked up a fix
-for qBittorrent 5.2 and later returning `204 No Content` on a successful
-login instead of the older `200 OK` with body `Ok.`; Readarr's own client
-code still checks for that exact string, so it treats a real, successful
-login as a failure and raises an authentication error on every attempt. This
-is not a race or a lockout, and re-running `make wire_connections` does not
-help; see the comment above `ensure_qbittorrent_client` in
-`scripts/wire-connections.sh` for how this was confirmed directly against
-Readarr's own source. Readarr's SABnzbd client is unaffected and gets wired
-normally.
+**Readarr's qBittorrent client has no credentials.** Readarr cannot log in to
+qBittorrent 5.2 and later (#167): its retired upstream (see README's Known
+Issues) still takes a login as successful only when the body is exactly
+`Ok.`, and qBittorrent now answers a successful one with `204 No Content` and
+an empty body. Readarr sends no login at all when its client's username and
+password are empty, so the script (#411):
+
+- Creates Readarr's qBittorrent client with an empty username and password,
+  and clears them from a client created before, which still has them.
+- Has qBittorrent skip its login for Readarr's own address,
+  `READARR_SERVICES_IP` (`172.28.0.13`, fixed in `docker-compose-servarr.yml`),
+  and nothing else: it adds `<address>/32` to qBittorrent's authentication
+  bypass list (Tools > Options > WebUI) and keeps any entries already there.
+  It sets nothing, with a warning, when another entry overlaps
+  `SERVICES_SUBNET`, nginx's or gluetun's address, or loopback, or when the
+  list is off but holds other entries, which switching it on would let in.
+  `make start` refuses a `READARR_SERVICES_IP` outside `SERVICES_SUBNET`, on
+  its network or broadcast address, inside `SERVICES_DYNAMIC_IP_RANGE` or
+  equal to another fixed address, so no other container can be handed it.
+  Neither runs while `READARR_PROFILE` is not enabled.
+- Leaves Readarr out of qBittorrent's password rotation, which would put the
+  failing login back.
+
+This is safe only because nginx overwrites `X-Forwarded-For` with the real
+client for `/qbittorrent/` (and `/sabnzbd/`) instead of appending to the one the
+browser sent. qBittorrent trusts nginx as its reverse proxy and takes the
+client from that header, so with appending, a browser sending Readarr's
+address through nginx would skip the login.
+
+**Routed through the VPN** (`VPN_ON=readarr` or `servarr`), Readarr shares
+gluetun's network namespace and has no address of its own: its requests reach
+qBittorrent from gluetun's address, as SABnzbd's, JDownloader's and every other
+routed app's do. Letting that address in would let all of them in, so the
+script sets no bypass, leaves Readarr's qBittorrent client not wired, and says
+so. A client an earlier run gave Readarr is disabled, since every request it
+made would fail, and enabled again once Readarr is back on its own address.
+Readarr's SABnzbd client is unaffected either way. If `READARR_SERVICES_IP`
+changes, the old address stays in qBittorrent's bypass list until removed there
+by hand.
 
 ### Jellyfin library updates (Sonarr, Radarr, Lidarr, Whisparr → Jellyfin)
 

@@ -1,4 +1,5 @@
 import configparser
+import re
 from pathlib import Path
 
 import pytest
@@ -330,6 +331,49 @@ def test_nginx_scopes_mylar_and_lazylibrarian_cookies():
         assert f"proxy_cookie_path            / /{app}/;" in block, (
             f"/{app}/ location is missing its proxy_cookie_path rewrite"
         )
+
+
+@pytest.mark.parametrize("app", ["qbittorrent", "sabnzbd"])
+def test_nginx_overwrites_forwarded_for_to_downloaders(app):
+    """nginx sends the real client as X-Forwarded-For, never the browser's.
+
+    qBittorrent trusts nginx and takes the client from that header, and lets
+    READARR_SERVICES_IP in without a login. Appending to what the browser sent
+    would let any browser claim Readarr's address through nginx (#411).
+    """
+    template = (REPO_ROOT / "configs/nginx/templates/default.conf.template").read_text()
+    start = template.index(f"location /{app}/ {{")
+    end = template.index("\n  }", start)
+    block = template[start:end]
+
+    assert "proxy_set_header            X-Forwarded-For $remote_addr;" in block
+    assert "$proxy_add_x_forwarded_for" not in block
+
+
+def test_env_tests_moves_every_network_address():
+    """.env.tests moves every subnet, range and fixed address .env.example sets.
+
+    The integration suite runs on subnets of its own, so an address left at
+    .env.example's value sits outside its network there, and make start
+    refuses READARR_SERVICES_IP outright (#411).
+    """
+    pattern = re.compile(r"^([A-Z_]+_(?:IP|SUBNET|IP_RANGE))=(.*)$", re.MULTILINE)
+    example = dict(pattern.findall((REPO_ROOT / ".env.example").read_text()))
+    tests = dict(pattern.findall((REPO_ROOT / ".env.tests").read_text()))
+    example.pop("LAN_IP")
+
+    unmoved = sorted(
+        key for key, value in example.items() if tests.get(key, value) == value
+    )
+    assert not unmoved, f".env.tests keeps .env.example's value for {unmoved}"
+
+
+def test_readarr_has_its_fixed_services_address():
+    """qBittorrent lets this one address in without a login, so it is pinned."""
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose-servarr.yml").read_text())
+    services = compose["services"]["readarr"]["networks"]["services"]
+
+    assert services == {"ipv4_address": "${READARR_SERVICES_IP}"}
 
 
 # The services given longer than the default ten seconds between SIGTERM and

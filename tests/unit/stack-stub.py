@@ -331,6 +331,46 @@ FILTERS = {
     'any(.fields[]; .name == "useSsl" and .value == true)': lambda d, a: [
         any(f["name"] == "useSsl" and f.get("value") is True for f in d["fields"])
     ],
+    'any(.fields[]; (.name == "username" or .name == "password") and (.value // "") != "")': lambda d, a: [
+        any(
+            f["name"] in ("username", "password") and (f.get("value") or "") != ""
+            for f in d["fields"]
+        )
+    ],
+    ".enable != true": lambda d, a: [d.get("enable") is not True],
+    '.[] | select(.implementation == "QBittorrent" and .enable == true and any(.fields[]; .name == "host" and '
+    '(.value == $host or .value == "127.0.0.1" or .value == "localhost")) and any(.fields[]; .name == "port" and '
+    "(.value | tostring) == $port)) | .enable = false": (
+        lambda d, a: [
+            set_keys(c, enable=False)
+            for c in d
+            if c.get("implementation") == "QBittorrent"
+            and c.get("enable") is True
+            and any(
+                f["name"] == "host"
+                and f.get("value") in (a["host"], "127.0.0.1", "localhost")
+                for f in c["fields"]
+            )
+            and any(
+                f["name"] == "port" and str(f.get("value")) == a["port"]
+                for f in c["fields"]
+            )
+        ]
+    ),
+    '.enable = true | .fields |= map( if .name == "host" then .value = $host elif .name == "port" then .value = '
+    '($port | tonumber) elif .name == "useSsl" then .value = true elif .name == "username" or .name == "password" '
+    'then .value = "" else . end)': lambda d, a: [
+        map_fields(
+            set_keys(d, enable=True),
+            {
+                "host": a["host"],
+                "port": int(a["port"]),
+                "useSsl": True,
+                "username": "",
+                "password": "",
+            },
+        )
+    ],
     ".username = $cred | .password = $cred | .passwordConfirmation = $cred | .certificateValidation = "
     '"disabledForLocalAddresses"': lambda d, a: [
         set_keys(

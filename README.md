@@ -474,13 +474,12 @@ services, dashboards, and alert rules.
    [docs/READARR.md](docs/READARR.md) for the comic quality profile setup
    script.
 
-   The same retirement is also why Readarr's qBittorrent download client
-   never gets created: qBittorrent 5.2 and later return an empty, successful
-   `204 No Content` response on login instead of the old `200 OK` with body
-   `Ok.`, and Readarr's own client code (unlike Sonarr/Radarr/Lidarr/
-   Whisparr's actively maintained forks) still checks for that exact string,
-   so it reports a real, successful login as an authentication failure every
-   time. See [docs/CONNECTIONS.md](docs/CONNECTIONS.md) for the details;
+   The same retirement means Readarr cannot log in to qBittorrent 5.2 and
+   later, so `make wire_connections` gives its qBittorrent client no
+   credentials and has qBittorrent let Readarr's own address in without a
+   login. That does not work while Readarr is routed through the VPN
+   (`VPN_ON`), where it has no address of its own, so its qBittorrent client
+   is then not wired. See [docs/CONNECTIONS.md](docs/CONNECTIONS.md);
    Readarr's SABnzbd client is unaffected.
 
    **Longer-term alternatives:**

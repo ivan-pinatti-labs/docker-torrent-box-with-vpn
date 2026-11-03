@@ -197,7 +197,10 @@ services:
     networks:
       apps:
         aliases: [readarr-https]
-      services: {}
+      # Fixed, because qBittorrent lets this one address in without a login
+      # (see READARR_SERVICES_IP in .env.example).
+      services:
+        ipv4_address: ${READARR_SERVICES_IP}
     env_file: ["${CONFIG_FOLDER}/readarr/.env"]
     environment:
       <<: *servarr-env

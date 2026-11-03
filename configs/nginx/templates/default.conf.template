@@ -426,7 +426,12 @@ server {
     proxy_set_header            Connection $http_connection;
     proxy_set_header            Host $host;
     proxy_set_header            X-Real-IP $remote_addr;
-    proxy_set_header            X-Forwarded-For $proxy_add_x_forwarded_for;
+    # Overwritten, never appended to. qBittorrent trusts nginx as its reverse
+    # proxy and takes the client from this header, and it lets
+    # READARR_SERVICES_IP in without a login. Appending would keep whatever
+    # the browser sent, so a browser claiming Readarr's address would skip
+    # that login (#411).
+    proxy_set_header            X-Forwarded-For $remote_addr;
     proxy_set_header            X-Forwarded-Proto $scheme;
     proxy_set_header            X-Forwarded-Protocol $scheme;
     proxy_set_header            X-Forwarded-Host $http_host;
@@ -445,7 +450,9 @@ server {
     proxy_set_header            Connection $http_connection;
     proxy_set_header            Host $host;
     proxy_set_header            X-Real-IP $remote_addr;
-    proxy_set_header            X-Forwarded-For $proxy_add_x_forwarded_for;
+    # Overwritten, as for /qbittorrent/ above: the other downloader in
+    # gluetun's namespace gets the same treatment.
+    proxy_set_header            X-Forwarded-For $remote_addr;
     proxy_set_header            X-Forwarded-Proto $scheme;
     proxy_set_header            X-Forwarded-Protocol $scheme;
     proxy_set_header            X-Forwarded-Host $http_host;

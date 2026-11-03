@@ -254,6 +254,12 @@ check "Calibre-Web's admin is found by role" 0 out "calibre-web     calibre"
 if [[ "$(sql configs/sonarr/config/sonarr.db "SELECT Settings FROM DownloadClients WHERE Id = 1")" != *"$(new_password qbittorrent)"* ]]; then
   fail "the arr apps' qBittorrent client gets the new password"
 fi
+# Readarr's client has no credentials, so qBittorrent's rotation leaves it be
+# (#411).
+if [[ "$(sql configs/readarr/config/readarr.db "SELECT Settings FROM DownloadClients WHERE Id = 1")" == *"$(new_password qbittorrent)"* ]]; then
+  fail "Readarr's qBittorrent client is not given the new password"
+fi
+refute "and its database is not edited for it" out "[Readarr DB] Updating qBittorrent password"
 if [[ "$(sql configs/audiobookshelf/config/absdatabase.sqlite "SELECT pash FROM users")" != "\$2b\$12\$hash-of-$(new_password audiobookshelf)" ]]; then
   fail "Audiobookshelf stores a bcrypt hash"
 fi
