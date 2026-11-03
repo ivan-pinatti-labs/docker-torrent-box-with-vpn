@@ -381,14 +381,6 @@ rotate_arr_password() {
 #
 # Sets the qBittorrent password in one arr app's DownloadClients table, for
 # update_arr_qbt_password. Args: db_path new_password
-# DIAGNOSTIC, not for merge (#334): what the host sees of a database's files
-# just before it writes one.
-db_diag() {
-  echo "[diag] $(id -u):$(id -g) $1"
-  ls -lan --time-style=+%T "$(dirname "$1")" 2>&1 | grep -E 'db|journal|wal|shm| \.$' || true
-  getfacl -pn "$1"* 2>&1 | grep -v '^$' || true
-}
-
 write_arr_qbt_password() {
   local db_path="$1" new_password="$2"
   python3 - <<PYEOF
@@ -421,7 +413,6 @@ update_arr_qbt_password() {
   local db_path="$2"
   local new_password="$3"
 
-  db_diag "$db_path"
   if ! write_arr_qbt_password "$db_path" "$new_password"; then
     echo "[$app_name DB] No DownloadClients table yet (app never started), skipping."
   fi
