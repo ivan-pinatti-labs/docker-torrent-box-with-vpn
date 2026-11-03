@@ -167,10 +167,10 @@ stack_containers_running() {
 # hold a database SQLite reads but never writes again. Exits 0 when the
 # upgrade works, 3 when it is refused, and anything else when the probe could
 # not get that far (the file or the shared lock failed, or Python did).
-# cspell:ignore EACCES lockprobe fcntl RDWR CREAT lockf
+# cspell:ignore EACCES EAGAIN lockprobe fcntl RDWR CREAT lockf
 lock_probe() {
   python3 -I - "$1/lockprobe" <<'PY' 2>/dev/null
-import fcntl, os, sys
+import errno, fcntl, os, sys
 try:
     f = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o664)
     fcntl.lockf(f, fcntl.LOCK_SH | fcntl.LOCK_NB, 510, 0x40000002)
@@ -178,8 +178,10 @@ except OSError:
     sys.exit(2)
 try:
     fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB, 510, 0x40000002)
-except OSError:
-    sys.exit(3)
+except OSError as e:
+    # A refusal is EACCES or EAGAIN; anything else, an I/O error say, is the
+    # probe failing rather than the share answering.
+    sys.exit(3 if e.errno in (errno.EACCES, errno.EAGAIN) else 2)
 PY
 }
 
@@ -188,6 +190,9 @@ verify_mount() {
   opts="$(findmnt --noheadings --output OPTIONS --target "$mountpoint_abs" 2>/dev/null || true)"
   case ",$opts," in
   *,noserverino,*) log "WARNING: mounted with noserverino; hardlinks will be invisible to rsync -H and to the apps." ;;
+  esac
+  case ",$opts," in
+  *,nobrl,*) log "WARNING: mounted with nobrl; byte-range locks stay on this client, so the SQLite locking check below cannot see what the server would refuse." ;;
   esac
   # The whole point of one share is that imports hardlink instead of copying.
   # Prove it here rather than discovering it after a library has doubled.

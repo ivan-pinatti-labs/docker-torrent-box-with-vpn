@@ -28,9 +28,20 @@ set -euo pipefail
 #   database already there, its first open is a normal one.
 
 # One key from .env, else from versions.env (the pin .env holds back on
-# purpose, if there is one; see the header of versions.env).
+# purpose, if there is one; see the header of versions.env), without the
+# quotes compose strips too. The program is a here document because kcov
+# counts each line of a multi line quoted argument as a command that never
+# runs.
 env_value() {
-  awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' .env versions.env 2>/dev/null || true
+  awk -F= -v key="$1" -f /dev/stdin .env versions.env 2>/dev/null <<'AWK' || true
+$1 == key {
+  sub(/^[^=]*=/, "")
+  sub(/^"/, ""); sub(/"$/, "")
+  sub(/^'/, ""); sub(/'$/, "")
+  print
+  exit
+}
+AWK
 }
 
 # The folders compose mounts, read the way compose reads them: the
@@ -67,7 +78,7 @@ container_state() {
   local out
   if out="$("$RUNTIME" container inspect -f '{{.State.Running}}' "$(env_value CONTAINER_PREFIX)$1" 2>&1)"; then
     printf '%s' "$out"
-  elif [[ "$out" == *[Nn]"o such"* ]]; then
+  elif [[ "$out" == *[Nn]"o such container"* ]]; then
     printf missing
   else
     printf '%s' "${out:-no output}"

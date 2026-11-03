@@ -213,6 +213,57 @@ check "mount reports a probe that could not run" 0 out \
   "WARNING: the SQLite locking probe could not run on the share (exit 2); skipping that check."
 refute "a probe that could not run is not a lock failure" "${__scratch}/out" "cannot upgrade a shared lock"
 
+# The same two outcomes from the real probe. mktemp hands out a fixed probe
+# directory so the test can stand in the probe's way.
+# cspell:ignore fcntl RDWR CREAT lockf lockprobe
+probe_dir() {
+  stub mktemp.fixed 'mkdir -p "${state}/probe" && echo "${state}/probe"'
+  mv "${__bin}/mktemp" "${__scratch}/mktemp.real"
+  mv "${__bin}/mktemp.fixed" "${__bin}/mktemp"
+  mkdir -p "${__state}/probe"
+}
+probe_dir_done() {
+  mv "${__scratch}/mktemp.real" "${__bin}/mktemp"
+}
+
+# Another process holding a shared lock on the range refuses the upgrade the
+# way SMB does, so the probe exits 3.
+fresh_repo
+probe_dir
+python3 -c '
+import fcntl, os, sys, time
+f = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o664)
+fcntl.lockf(f, fcntl.LOCK_SH, 510, 0x40000002)
+open(sys.argv[2], "w").close()
+time.sleep(60)
+' "${__state}/probe/lockprobe" "${__scratch}/held" &
+holder=$!
+for _ in $(seq 100); do
+  [[ -e "${__scratch}/held" ]] && break
+  sleep 0.1
+done
+run mount
+kill "${holder}" 2>/dev/null || true
+wait "${holder}" 2>/dev/null || true
+probe_dir_done
+check "the real probe reports a refused upgrade" 0 out \
+  "WARNING: the share cannot upgrade a shared lock to an exclusive one"
+
+# A probe file it cannot open, here a directory, is the probe failing: exit 2.
+fresh_repo
+probe_dir
+mkdir "${__state}/probe/lockprobe"
+run mount
+probe_dir_done
+check "the real probe reports a file it cannot open" 0 out \
+  "WARNING: the SQLite locking probe could not run on the share (exit 2); skipping that check."
+
+# nobrl keeps the locks on the client, where the probe cannot see a refusal.
+fresh_repo
+echo "rw,nobrl" >"${__state}/options"
+run mount
+check "mount warns about nobrl" 0 out "WARNING: mounted with nobrl"
+
 # No python3 to probe with is a skipped check, not a failed one.
 fresh_repo
 mv "${__bin}/python3" "${__scratch}/python3.real"

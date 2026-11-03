@@ -201,6 +201,27 @@ __status=0
 check "takes DATA_FOLDER from the environment first" 0 out \
   "Pre-creating the Calibre library at from-shell/media/calibre-library"
 
+rm -f "${__scratch}/log"
+touch "${__scratch}/log"
+__status=0
+(cd "${__scratch}/work" && PATH="${__scratch}/bin:${PATH}" CONFIG_FOLDER=./cfg-shell bash "${__script}") \
+  >"${__scratch}/out" 2>"${__scratch}/err" || __status=$?
+check "takes CONFIG_FOLDER from the environment first" 0 out "with its database in cfg-shell/calibre/library-db"
+
+# Quotes around a value are dropped, as compose drops them.
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "DATA_FOLDER=\"./quoted\"" "CONFIG_FOLDER='./single'" >"${__scratch}/work/.env"
+run
+check "drops the quotes compose drops" 0 out \
+  "Pre-creating the Calibre library at quoted/media/calibre-library, with its database in single/calibre/library-db..."
+echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
+
+# A runtime that cannot reach its socket also says "no such", about a file:
+# that is not a missing container.
+old_library
+STUB_INSPECT_ERROR="dial unix /run/podman/podman.sock: connect: no such file or directory" run
+check "an unreachable runtime is not a missing container" 1 err \
+  "ERROR: could not tell whether calibre is running (Error: dial unix /run/podman/podman.sock: connect: no such file or directory)"
+
 # A reference compose would expand is refused, not seeded literally.
 printf '%s\n' "CALIBRE_VERSION=v8.1.0" "CONFIG_FOLDER=\${HOME}/configs" >"${__scratch}/work/.env"
 run
