@@ -387,6 +387,19 @@ db_diag() {
   echo "[diag] $(id -u):$(id -g) $1"
   ls -lan --time-style=+%T "$(dirname "$1")" 2>&1 | grep -E 'db|journal|wal|shm| \.$' || true
   getfacl -pn "$1"* 2>&1 | grep -v '^$' || true
+  python3 - "$1" <<'PROBE' 2>&1 || true
+import sqlite3, sys
+try:
+    c = sqlite3.connect(sys.argv[1], isolation_level=None)
+    print("[diag] journal_mode", c.execute("PRAGMA journal_mode").fetchone())
+    c.execute("BEGIN IMMEDIATE")
+    c.execute("CREATE TABLE IF NOT EXISTS diag_probe (x)")
+    c.execute("ROLLBACK")
+    c.close()
+    print("[diag] probe write ok")
+except sqlite3.Error as e:
+    print("[diag] probe write failed:", e.sqlite_errorname, e)
+PROBE
 }
 
 write_arr_qbt_password() {
