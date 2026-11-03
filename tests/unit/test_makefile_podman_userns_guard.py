@@ -126,6 +126,12 @@ def test_running_without_a_pod_passes(tmp_path: Path, compose: str) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_the_podman_compose_fallback_is_not_guarded(tmp_path: Path) -> None:
+    """Without podman-compose, COMPOSE is `podman compose`: docker-compose, no pod."""
+    result = _run(tmp_path, "5.7.0", compose="podman compose")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_docker_is_not_guarded(tmp_path: Path) -> None:
     result = _run(tmp_path, "5.7.0", runtime="docker", compose="docker compose")
     assert result.returncode == 0, result.stdout + result.stderr

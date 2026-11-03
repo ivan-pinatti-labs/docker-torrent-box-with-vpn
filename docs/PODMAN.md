@@ -50,7 +50,8 @@ anything and list the three ways out:
 
 - Upgrade podman to 5.8.0 or later.
 - Run the stack without a pod: `make start "COMPOSE=podman-compose --in-pod false"`. Pass the same
-  `COMPOSE=` to `stop`, `down` and every other target that runs compose. Each service already has
+  `COMPOSE=` to `stop`, `restart` and every other target that runs compose (`make down` on podman
+  runs `scripts/podman-down.sh`, which does not use it). Each service already has
   its own networks, so the pod shares nothing they depend on, but anything that finds this stack's
   containers by pod name has no pod to find: the Podman dashboard's pod selector and
   `tests/test_observability.py`.

@@ -997,10 +997,12 @@ storage_guard:
 # 5.8.0 replaced that CLI check (podman#26848) with one in libpod that refuses
 # only a pod with an infra container, and podman-compose's pod has none
 # (--infra=false). Refusing here, before anything starts, names the ways out.
-# See docs/PODMAN.md.
+# Only podman-compose makes the pod: the "podman compose" fallback runs
+# docker-compose, which does not. See docs/PODMAN.md.
 podman_userns_guard:
 	@[ "$(RUNTIME)" = podman ] || exit 0; \
 	[ "$(PODMAN_EXPORTER_PROFILE)" = enabled ] || [ "$(PODMAN_LIMITS_EXPORTER_PROFILE)" = enabled ] || exit 0; \
+	case "$(COMPOSE)" in podman-compose*) ;; *) exit 0 ;; esac; \
 	case "$(COMPOSE)" in *"--in-pod false"* | *"--in-pod=false"*) exit 0 ;; esac; \
 	version="$$(podman version --format '{{.Client.Version}}' 2>/dev/null || true)"; \
 	major="$${version%%.*}"; minor="$${version#*.}"; minor="$${minor%%.*}"; \
@@ -1011,7 +1013,7 @@ podman_userns_guard:
 	echo "'Error: --userns and --pod cannot be set together'. Any one of these fixes it:"; \
 	echo "  - upgrade podman to 5.8.0 or later;"; \
 	echo "  - run the stack without a pod: make start \"COMPOSE=podman-compose --in-pod false\","; \
-	echo "    with the same COMPOSE= on stop, down and every other compose target;"; \
+	echo "    with the same COMPOSE= on stop, restart and every other target that runs compose;"; \
 	echo "  - set PODMAN_EXPORTER_PROFILE=disabled and PODMAN_LIMITS_EXPORTER_PROFILE=disabled in .env."; \
 	echo "See docs/PODMAN.md."; \
 	exit 1
