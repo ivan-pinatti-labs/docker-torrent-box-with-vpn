@@ -28,16 +28,27 @@ set -euo pipefail
 #   database already there, its first open is a normal one.
 
 # One key from .env, else from versions.env (the pin .env holds back on
-# purpose, if there is one; see the header of versions.env), without the
-# quotes compose strips too. The program is a here document because kcov
-# counts each line of a multi line quoted argument as a command that never
-# runs.
+# purpose, if there is one; see the header of versions.env), read the way
+# compose reads it: whitespace around the key and the value dropped, the
+# quotes around a quoted value dropped, and a " # comment" after an unquoted
+# one dropped. The program is a here document because kcov counts each line
+# of a multi line quoted argument as a command that never runs.
 env_value() {
   awk -F= -v key="$1" -f /dev/stdin .env versions.env 2>/dev/null <<'AWK' || true
-$1 == key {
+{
+  name = $1
+  gsub(/^[ \t]+|[ \t]+$/, "", name)
+}
+name == key {
   sub(/^[^=]*=/, "")
-  sub(/^"/, ""); sub(/"$/, "")
-  sub(/^'/, ""); sub(/'$/, "")
+  gsub(/^[ \t]+|[ \t]+$/, "")
+  if (/^"/) {
+    sub(/^"/, ""); sub(/".*$/, "")
+  } else if (/^'/) {
+    sub(/^'/, ""); sub(/'.*$/, "")
+  } else {
+    sub(/[ \t]+#.*$/, "")
+  }
   print
   exit
 }
@@ -73,10 +84,11 @@ absolute() {
 
 # Prints true or false for a container that exists, missing for one that does
 # not, and the runtime's own error otherwise: a check that failed is not a
-# container that stopped.
+# container that stopped. The name takes CONTAINER_PREFIX from the
+# environment before .env, as compose does.
 container_state() {
   local out
-  if out="$("$RUNTIME" container inspect -f '{{.State.Running}}' "$(env_value CONTAINER_PREFIX)$1" 2>&1)"; then
+  if out="$("$RUNTIME" container inspect -f '{{.State.Running}}' "${CONTAINER_PREFIX-$(env_value CONTAINER_PREFIX)}$1" 2>&1)"; then
     printf '%s' "$out"
   elif [[ "$out" == *[Nn]"o such container"* ]]; then
     printf missing

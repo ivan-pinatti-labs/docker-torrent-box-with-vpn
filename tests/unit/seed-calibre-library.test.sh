@@ -215,6 +215,26 @@ check "drops the quotes compose drops" 0 out \
   "Pre-creating the Calibre library at quoted/media/calibre-library, with its database in single/calibre/library-db..."
 echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
 
+# Spaces around the key and value, and a comment after an unquoted value,
+# are dropped, as compose drops them.
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "DATA_FOLDER = ./spaced " "CONFIG_FOLDER=./commented # local" >"${__scratch}/work/.env"
+run
+check "reads .env the way compose does" 0 out \
+  "Pre-creating the Calibre library at spaced/media/calibre-library, with its database in commented/calibre/library-db..."
+echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
+
+# The container prefix from the environment wins over .env, so a running app
+# under that prefix is the one checked.
+old_library
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "CONTAINER_PREFIX=from-file-" >"${__scratch}/work/.env"
+rm -f "${__scratch}/log"
+touch "${__scratch}/log"
+__status=0
+(cd "${__scratch}/work" && PATH="${__scratch}/bin:${PATH}" CONTAINER_PREFIX=shell- STUB_RUNNING=shell-calibre bash "${__script}") \
+  >"${__scratch}/out" 2>"${__scratch}/err" || __status=$?
+check "takes CONTAINER_PREFIX from the environment first" 1 err "ERROR: calibre is running"
+echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
+
 # A runtime that cannot reach its socket also says "no such", about a file:
 # that is not a missing container.
 old_library
