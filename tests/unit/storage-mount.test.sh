@@ -192,15 +192,26 @@ check "mount proves hardlinks work" 0 out "hardlinks: OK"
 check "mount proves a lock upgrades" 0 out "SQLite locking: OK"
 refute "the hardlink probe cleans up after itself" <(ls -A "${__repo}/data") ".storage-probe"
 
-# A share that refuses the lock upgrade, as SMB does (#402).
+# A share that refuses the lock upgrade, as SMB does (#402): the probe exits 3.
 fresh_repo
-stub python3.fail 'exit 1'
+stub python3.fail 'exit 3'
 mv "${__bin}/python3" "${__scratch}/python3.real"
 mv "${__bin}/python3.fail" "${__bin}/python3"
 run mount
 mv "${__scratch}/python3.real" "${__bin}/python3"
 check "mount warns when a lock cannot be upgraded" 0 out \
   "WARNING: the share cannot upgrade a shared lock to an exclusive one"
+
+# A probe that could not get as far as the upgrade says so instead.
+fresh_repo
+stub python3.fail 'exit 2'
+mv "${__bin}/python3" "${__scratch}/python3.real"
+mv "${__bin}/python3.fail" "${__bin}/python3"
+run mount
+mv "${__scratch}/python3.real" "${__bin}/python3"
+check "mount reports a probe that could not run" 0 out \
+  "WARNING: the SQLite locking probe could not run on the share (exit 2); skipping that check."
+refute "a probe that could not run is not a lock failure" "${__scratch}/out" "cannot upgrade a shared lock"
 
 # No python3 to probe with is a skipped check, not a failed one.
 fresh_repo

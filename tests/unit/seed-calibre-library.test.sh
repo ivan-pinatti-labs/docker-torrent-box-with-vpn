@@ -23,11 +23,19 @@ readonly LIBRARY="data/media/calibre-library"
 readonly DB_DIR="configs/calibre/library-db"
 
 mkdir "${__scratch}/bin" "${__scratch}/work"
+# container inspect answers true for STUB_RUNNING, false for STUB_STOPPED, an
+# error of its own when STUB_INSPECT_ERROR is set, and "no such container"
+# for anything else, as podman and docker do for a container that is not there.
 cat >"${__scratch}/bin/podman" <<EOF
 #!$(command -v bash)
 echo "podman \$*" >>"${__scratch}/log"
-if [[ "\$1 \$2" == "container inspect" && -n "\${STUB_RUNNING:-}" && "\${*: -1}" == "\${STUB_RUNNING}" ]]; then
-  echo true
+if [[ "\$1 \$2" == "container inspect" ]]; then
+  name="\${*: -1}"
+  if [[ "\$name" == "\${STUB_RUNNING:-}" ]]; then echo true; exit 0; fi
+  if [[ "\$name" == "\${STUB_STOPPED:-}" ]]; then echo false; exit 0; fi
+  if [[ -n "\${STUB_INSPECT_ERROR:-}" ]]; then echo "Error: \${STUB_INSPECT_ERROR}" >&2; exit 125; fi
+  echo "Error: no such container \$name" >&2
+  exit 125
 fi
 EOF
 chmod +x "${__scratch}/bin/podman"
@@ -104,9 +112,11 @@ fi
 old_library
 touch -d "2020-01-02 03:04:05" "${__scratch}/work/${LIBRARY}/metadata.db"
 cp "${__scratch}/work/${LIBRARY}/metadata.db" "${__scratch}/expected.db"
-run
+# calibre exists but is stopped, calibre-web does not exist: both are fine.
+STUB_STOPPED=calibre run
 check "moves an old library's database" 0 out "Moving the Calibre library's metadata.db to ${DB_DIR}..."
 check "says where the original went" 0 out "The original is kept as ${LIBRARY}/metadata.db.on-share-"
+check "names the step Calibre-Web needs next" 0 out "Run 'make wire_connections' once the stack is up"
 check "asks whether the containers run" 0 log "podman container inspect -f {{.State.Running}} calibre-web"
 cmp -s "${__scratch}/expected.db" "${__scratch}/work/${DB_DIR}/metadata.db" || fail "the moved database is the original"
 [[ "$(stat -c %Y "${__scratch}/work/${DB_DIR}/metadata.db")" == "$(date -d "2020-01-02 03:04:05" +%s)" ]] ||
@@ -124,6 +134,22 @@ check "says how to get past it" 1 err "Run 'make down', then 'make start' again.
 [[ -f "${__scratch}/work/${LIBRARY}/metadata.db" && ! -e "${__scratch}/work/${DB_DIR}/metadata.db" ]] ||
   fail "a refused move changes nothing"
 echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
+
+# A state check that failed is not a stopped container.
+old_library
+STUB_INSPECT_ERROR="cannot connect to the service" run
+check "refuses when it cannot tell whether an app runs" 1 err \
+  "ERROR: could not tell whether calibre is running (Error: cannot connect to the service), so ${LIBRARY}/metadata.db was not moved."
+[[ -f "${__scratch}/work/${LIBRARY}/metadata.db" && ! -e "${__scratch}/work/${DB_DIR}/metadata.db" ]] ||
+  fail "an unknown state changes nothing"
+
+# Nor an inspect that failed without saying why.
+old_library
+cp "${__scratch}/bin/podman" "${__scratch}/podman.real"
+printf '#!%s\nexit 125\n' "$(command -v bash)" >"${__scratch}/bin/podman"
+run
+cp "${__scratch}/podman.real" "${__scratch}/bin/podman"
+check "refuses on a silent inspect failure" 1 err "ERROR: could not tell whether calibre is running (no output)"
 
 # Nor with a journal or log beside it, which may hold an unfinished write.
 for sidecar in journal wal; do
@@ -163,6 +189,22 @@ __status=0
   >"${__scratch}/out" 2>"${__scratch}/err" || __status=$?
 check "creates the library with the runtime make passes" 0 log \
   "docker run --rm -v ${__scratch}/abs/media/calibre-library:/library:z -v ${__scratch}/work/configs/calibre/library-db:/calibre-db:z"
+echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
+
+# The environment wins over .env, as it does for compose.
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "DATA_FOLDER=./from-env-file" >"${__scratch}/work/.env"
+rm -f "${__scratch}/log"
+touch "${__scratch}/log"
+__status=0
+(cd "${__scratch}/work" && PATH="${__scratch}/bin:${PATH}" DATA_FOLDER=./from-shell bash "${__script}") \
+  >"${__scratch}/out" 2>"${__scratch}/err" || __status=$?
+check "takes DATA_FOLDER from the environment first" 0 out \
+  "Pre-creating the Calibre library at from-shell/media/calibre-library"
+
+# A reference compose would expand is refused, not seeded literally.
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "CONFIG_FOLDER=\${HOME}/configs" >"${__scratch}/work/.env"
+run
+check "refuses a folder holding a reference" 1 err "ERROR: \${HOME}/configs holds a \${...} reference"
 echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
 
 if [[ "${__failures}" -gt 0 ]]; then

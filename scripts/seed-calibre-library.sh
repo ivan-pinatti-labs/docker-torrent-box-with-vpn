@@ -33,12 +33,21 @@ env_value() {
   awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' .env versions.env 2>/dev/null || true
 }
 
-# The folders compose mounts, from .env as compose reads them, so a moved
-# DATA_FOLDER moves the library this looks at too. Make passes RUNTIME.
-data_folder="$(env_value DATA_FOLDER)"
-config_folder="$(env_value CONFIG_FOLDER)"
+# The folders compose mounts, read the way compose reads them: the
+# environment first, then .env. A moved DATA_FOLDER moves the library this
+# looks at too. A value holding a ${...} reference compose would expand is
+# refused rather than taken literally, which would seed a folder nothing
+# mounts. Make passes RUNTIME.
+data_folder="${DATA_FOLDER:-$(env_value DATA_FOLDER)}"
+config_folder="${CONFIG_FOLDER:-$(env_value CONFIG_FOLDER)}"
 data_folder="${data_folder:-./data}"
 config_folder="${config_folder:-./configs}"
+for folder in "$data_folder" "$config_folder"; do
+  if [[ "$folder" == *'${'* ]]; then
+    echo "ERROR: ${folder} holds a \${...} reference; set DATA_FOLDER and CONFIG_FOLDER to plain paths." >&2
+    exit 1
+  fi
+done
 readonly LIBRARY_DIR="${data_folder#./}/media/calibre-library"
 readonly DB_DIR="${config_folder#./}/calibre/library-db"
 readonly RUNTIME="${RUNTIME:-podman}"
@@ -51,8 +60,18 @@ absolute() {
   esac
 }
 
-container_running() {
-  "$RUNTIME" container inspect -f '{{.State.Running}}' "$(env_value CONTAINER_PREFIX)$1" 2>/dev/null | grep -q '^true$'
+# Prints true or false for a container that exists, missing for one that does
+# not, and the runtime's own error otherwise: a check that failed is not a
+# container that stopped.
+container_state() {
+  local out
+  if out="$("$RUNTIME" container inspect -f '{{.State.Running}}' "$(env_value CONTAINER_PREFIX)$1" 2>&1)"; then
+    printf '%s' "$out"
+  elif [[ "$out" == *[Nn]"o such"* ]]; then
+    printf missing
+  else
+    printf '%s' "${out:-no output}"
+  fi
 }
 
 integrity() {
@@ -66,11 +85,19 @@ mkdir -p "$LIBRARY_DIR" "$DB_DIR"
 
 if [[ -f "${LIBRARY_DIR}/metadata.db" ]]; then
   for app in calibre calibre-web; do
-    if container_running "$app"; then
+    state="$(container_state "$app")"
+    case "$state" in
+    false | missing) : ;;
+    true)
       echo "ERROR: ${app} is running, so ${LIBRARY_DIR}/metadata.db cannot be moved to ${DB_DIR}." >&2
       echo "Run 'make down', then 'make start' again." >&2
       exit 1
-    fi
+      ;;
+    *)
+      echo "ERROR: could not tell whether ${app} is running (${state}), so ${LIBRARY_DIR}/metadata.db was not moved." >&2
+      exit 1
+      ;;
+    esac
   done
   for sidecar in "${LIBRARY_DIR}/metadata.db-journal" "${LIBRARY_DIR}/metadata.db-wal"; do
     if [[ -e "$sidecar" ]]; then
@@ -90,6 +117,7 @@ if [[ -f "${LIBRARY_DIR}/metadata.db" ]]; then
   aside="${LIBRARY_DIR}/metadata.db.on-share-$(date +%Y%m%d%H%M%S)"
   mv "${LIBRARY_DIR}/metadata.db" "$aside"
   echo "Moved. The original is kept as ${aside}; delete it once the library looks right."
+  echo "Run 'make wire_connections' once the stack is up, so Calibre-Web looks for the database there too."
   exit 0
 fi
 

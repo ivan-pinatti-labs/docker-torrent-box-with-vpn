@@ -113,7 +113,9 @@ finds it through `CALIBRE_OVERRIDE_DATABASE_PATH`, and Calibre-Web through its
 split library settings, which `make wire_connections` writes. `make start`
 moves the database of an install from before this out of the library, with
 the stack down, and keeps the original beside it as
-`metadata.db.on-share-<date>`. Each book still has its `metadata.opf` on the
+`metadata.db.on-share-<date>`. Run `make wire_connections` once the stack is
+up so Calibre-Web looks for the database there too; `make update` already
+does. Each book still has its `metadata.opf` on the
 share, and Calibre's "Restore database" rebuilds the catalogue from those.
 
 `make storage_mount` tries that lock upgrade on a freshly mounted share and

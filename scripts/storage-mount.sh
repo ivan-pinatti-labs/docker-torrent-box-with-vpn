@@ -160,18 +160,26 @@ stack_containers_running() {
   [[ -n "$(podman ps --filter "label=com.docker.compose.project=$(basename "$repo_root")" --format '{{.Names}}' 2>/dev/null)" ]]
 }
 
-# True when a shared lock on a file in the given directory upgrades to an
-# exclusive one, on the range SQLite locks. Every SQLite commit does exactly
-# that, and SMB without the Unix extensions refuses it with EACCES, while
-# every single lock on its own works (#402). A share that fails this can hold
-# a database SQLite reads but never writes again.
+# Takes a shared lock on a file in the given directory, on the range SQLite
+# locks, and upgrades it to an exclusive one. Every SQLite commit does exactly
+# that, and SMB without the Unix extensions refuses the upgrade with EACCES,
+# while every single lock on its own works (#402). A share that refuses it can
+# hold a database SQLite reads but never writes again. Exits 0 when the
+# upgrade works, 3 when it is refused, and anything else when the probe could
+# not get that far (the file or the shared lock failed, or Python did).
 # cspell:ignore EACCES lockprobe fcntl RDWR CREAT lockf
-lock_upgrade_ok() {
+lock_probe() {
   python3 -I - "$1/lockprobe" <<'PY' 2>/dev/null
 import fcntl, os, sys
-f = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o664)
-fcntl.lockf(f, fcntl.LOCK_SH | fcntl.LOCK_NB, 510, 0x40000002)
-fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB, 510, 0x40000002)
+try:
+    f = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o664)
+    fcntl.lockf(f, fcntl.LOCK_SH | fcntl.LOCK_NB, 510, 0x40000002)
+except OSError:
+    sys.exit(2)
+try:
+    fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB, 510, 0x40000002)
+except OSError:
+    sys.exit(3)
 PY
 }
 
@@ -200,12 +208,16 @@ verify_mount() {
   else
     log "WARNING: hardlink probe failed; imports will copy instead of link."
   fi
+  local lock=0
   if ! command -v python3 >/dev/null 2>&1; then
     log "WARNING: python3 is not installed; skipping the SQLite locking check."
-  elif lock_upgrade_ok "$probe"; then
-    log "SQLite locking: OK (a shared lock upgrades to an exclusive one)"
   else
-    log "WARNING: the share cannot upgrade a shared lock to an exclusive one, so SQLite could read a database on it but never write it again. Keep every database off data/ (docs/STORAGE.md)."
+    lock_probe "$probe" || lock=$?
+    case "$lock" in
+    0) log "SQLite locking: OK (a shared lock upgrades to an exclusive one)" ;;
+    3) log "WARNING: the share cannot upgrade a shared lock to an exclusive one, so SQLite could read a database on it but never write it again. Keep every database off data/ (docs/STORAGE.md)." ;;
+    *) log "WARNING: the SQLite locking probe could not run on the share (exit ${lock}); skipping that check." ;;
+    esac
   fi
   rm -rf "$probe" 2>/dev/null || true
 }
