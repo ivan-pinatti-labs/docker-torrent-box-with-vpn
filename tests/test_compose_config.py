@@ -1,4 +1,5 @@
 import configparser
+import re
 from pathlib import Path
 
 import pytest
@@ -347,6 +348,20 @@ def test_nginx_overwrites_forwarded_for_to_downloaders(app):
 
     assert "proxy_set_header            X-Forwarded-For $remote_addr;" in block
     assert "$proxy_add_x_forwarded_for" not in block
+
+
+def test_env_tests_moves_every_network_address():
+    """.env.tests moves every subnet, range and fixed address .env.example sets.
+
+    The integration suite runs on subnets of its own, so an address left at
+    .env.example's value sits outside its network there, and make start
+    refuses READARR_SERVICES_IP outright (#411).
+    """
+    pattern = re.compile(r"^([A-Z_]+_(?:IP|SUBNET|IP_RANGE))=", re.MULTILINE)
+    example = set(pattern.findall((REPO_ROOT / ".env.example").read_text()))
+    tests = set(pattern.findall((REPO_ROOT / ".env.tests").read_text()))
+
+    assert example - {"LAN_IP"} <= tests, sorted(example - {"LAN_IP"} - tests)
 
 
 def test_readarr_has_its_fixed_services_address():
