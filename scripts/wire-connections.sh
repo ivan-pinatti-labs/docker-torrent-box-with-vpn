@@ -199,6 +199,25 @@ stop_container() {
   wait
 }
 
+# Lets the host write an app's SQLite database, which the app must already be
+# stopped for. The host reaches the app's files through the default ACL
+# permissions.yml gives every config directory, but a file the app creates
+# itself, such as its -wal and -shm or the rollback -journal a killed app
+# leaves behind, gets an ACL mask from the app's own 0644, which leaves the
+# host read only on it. SQLite then refuses the write with "attempt to write
+# a readonly database". Restores the host's rwx on the database and on
+# whichever of those files are there. Args: db_path
+host_writable_db() {
+  local file
+  for file in "$1" "$1-wal" "$1-shm" "$1-journal"; do
+    if [[ -e "$file" ]]; then
+      # A filesystem without ACLs, which permissions.py leaves alone, has none
+      # to restore; the write then says for itself whether it can go ahead.
+      podman unshare setfacl -m u:0:rwx,m::rwx "$file" 2>/dev/null || true
+    fi
+  done
+}
+
 # Retry a command every 5 seconds until it succeeds or timeout (in seconds).
 # Apps can still be warming up right after `make start`. Prints a heartbeat
 # every 30s so a long wait (Jellyfin's Startup/User retry alone can run up
@@ -592,6 +611,7 @@ ensure_calibre_web_users() {
   local scratch
   scratch=$(mktemp -d)
   podman run --rm -v "${scratch}:/scratch:z" --entrypoint python3 "docker.io/linuxserver/calibre-web:${CALIBREWEB_VERSION}" -c "$(fresh_calibre_web_db_py)" >/dev/null
+  host_writable_db "$CALIBREWEB_DB"
   python3 - <<PYEOF
 import sqlite3
 fresh = sqlite3.connect('${scratch}/fresh_app.db')
@@ -648,6 +668,7 @@ ensure_calibre_web_setup() {
   # before this file existed, so it isn't host-writable yet without this.
   ./scripts/permissions.py repair --runtime podman --recursive >/dev/null 2>&1 || true
   ensure_calibre_web_users
+  host_writable_db "$CALIBREWEB_DB"
   python3 - <<PYEOF
 import sqlite3
 conn = sqlite3.connect('$CALIBREWEB_DB')
@@ -715,6 +736,7 @@ ensure_mylar_placeholder_comic() {
 
   echo "[Mylar] Adding a placeholder comic so its Homepage widget has data..."
   stop_container mylar
+  host_writable_db "$MYLAR_DB"
   python3 - <<PYEOF
 import sqlite3
 from datetime import date

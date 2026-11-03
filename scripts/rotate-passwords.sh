@@ -264,6 +264,25 @@ stop_container() {
   wait
 }
 
+# Lets the host write an app's SQLite database, which the app must already be
+# stopped for. The host reaches the app's files through the default ACL
+# permissions.yml gives every config directory, but a file the app creates
+# itself, such as its -wal and -shm or the rollback -journal a killed app
+# leaves behind, gets an ACL mask from the app's own 0644, which leaves the
+# host read only on it. SQLite then refuses the write with "attempt to write
+# a readonly database". Restores the host's rwx on the database and on
+# whichever of those files are there. Args: db_path
+host_writable_db() {
+  local file
+  for file in "$1" "$1-wal" "$1-shm" "$1-journal"; do
+    if [[ -e "$file" ]]; then
+      # A filesystem without ACLs, which permissions.py leaves alone, has none
+      # to restore; the write then says for itself whether it can go ahead.
+      podman unshare setfacl -m u:0:rwx,m::rwx "$file" 2>/dev/null || true
+    fi
+  done
+}
+
 STOPPED_CONTAINERS=()
 stop_existing() {
   STOPPED_CONTAINERS=()
@@ -413,6 +432,7 @@ update_arr_qbt_password() {
   local db_path="$2"
   local new_password="$3"
 
+  host_writable_db "$db_path"
   if ! write_arr_qbt_password "$db_path" "$new_password"; then
     echo "[$app_name DB] No DownloadClients table yet (app never started), skipping."
   fi
@@ -452,6 +472,7 @@ update_arr_sabnzbd_credentials() {
   local new_password="$3"
   local new_api_key="$4"
 
+  host_writable_db "$db_path"
   if ! write_arr_sabnzbd_credentials "$db_path" "$new_password" "$new_api_key"; then
     echo "[$app_name DB] No DownloadClients table yet (app never started), skipping."
   fi
@@ -550,6 +571,7 @@ rotate_audiobookshelf() {
   # automates that, so skip with a note rather than silently updating zero
   # rows and reporting a password that was never actually written anywhere.
   echo "[Audiobookshelf] Writing new password hash for user '${AUDIOBOOKSHELF_USER}'..."
+  host_writable_db "$AUDIOBOOKSHELF_DB"
   if write_audiobookshelf_hash "$new_hash"; then
     podman start "$(cname audiobookshelf)" >/dev/null
     # Audiobookshelf has no other host-readable record of its own password
@@ -632,6 +654,7 @@ rotate_calibre() {
   # created through Calibre's own flow at least once: nothing in this
   # stack automates that first-run step, so skip with a note here rather
   # than crash the whole rotation over an app that hasn't been used yet.
+  host_writable_db "$CALIBRE_USERS_DB"
   if write_calibre_server_password "$new_password"; then
     echo "[Calibre] Wrote new password for content server user '${CALIBRE_USER}' to server-users.sqlite."
   else
@@ -734,6 +757,7 @@ rotate_calibre_web() {
   # available (see docs/ROTATION.md): check rowcount rather than silently
   # claiming success when the UPDATE matched nothing.
   echo "[Calibre-Web] Writing new password hash for user '${CALIBREWEB_USER}'..."
+  host_writable_db "$CALIBREWEB_DB"
   if write_calibre_web_hash "$new_password" "$CALIBREWEB_USER"; then
     podman start "$(cname calibre-web)" >/dev/null
 

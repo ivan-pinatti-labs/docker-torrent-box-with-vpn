@@ -201,6 +201,10 @@ docs/MERGE_PIPELINE.md; do not restate that reasoning here.
   even with `mode=ro`: a reader recreates `-wal`/`-shm` owned by the host
   user, and the app then fails with `CantOpen` (#305, #334). A plain
   `sqlite3.connect()` on a missing path also creates an empty database.
+- Before a host side SQLite write (the app stopped), call the script's
+  `host_writable_db`: a `-wal`, `-shm` or `-journal` the app created gets an
+  ACL mask that leaves the host read only, and the write then fails with
+  "attempt to write a readonly database".
 - Never run `git commit` (or anything that stashes the working tree) while
   the stack is running: pre-commit's stash cycle rewrote tracked runtime files
   mid-flight on 2026-07-07 and corrupted live SQLite databases.
