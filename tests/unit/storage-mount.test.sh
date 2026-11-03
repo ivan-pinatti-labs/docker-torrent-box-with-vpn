@@ -27,7 +27,7 @@ __bin="${__scratch}/bin"
 __fstab="${__scratch}/fstab"
 
 mkdir -p "${__bin}" "${__state}"
-for tool in awk basename cat cp date dirname ln ls mkdir mktemp rm stat tail; do
+for tool in awk basename cat cp date dirname ln ls mkdir mktemp python3 rm stat tail; do
   ln -s "$(command -v "${tool}")" "${__bin}/${tool}"
 done
 
@@ -189,7 +189,89 @@ run mount
 check "mount builds the options from .env" 0 log "sudo mount -t cifs -o credentials=${__repo}/configs/storage/.smbcredentials,uid=1001,gid=1000,vers=3.1.1,file_mode=0664,dir_mode=0775,noperm,context=system_u:object_r:container_file_t:s0 //server/share ${__repo}/data"
 check "mount warns about noserverino" 0 out "WARNING: mounted with noserverino"
 check "mount proves hardlinks work" 0 out "hardlinks: OK"
+check "mount proves a lock upgrades" 0 out "SQLite locking: OK"
 refute "the hardlink probe cleans up after itself" <(ls -A "${__repo}/data") ".storage-probe"
+
+# A share that refuses the lock upgrade, as SMB does (#402): the probe exits 3.
+fresh_repo
+stub python3.fail 'exit 3'
+mv "${__bin}/python3" "${__scratch}/python3.real"
+mv "${__bin}/python3.fail" "${__bin}/python3"
+run mount
+mv "${__scratch}/python3.real" "${__bin}/python3"
+check "mount warns when a lock cannot be upgraded" 0 out \
+  "WARNING: the share cannot upgrade a shared lock to an exclusive one"
+
+# A probe that could not get as far as the upgrade says so instead.
+fresh_repo
+stub python3.fail 'exit 2'
+mv "${__bin}/python3" "${__scratch}/python3.real"
+mv "${__bin}/python3.fail" "${__bin}/python3"
+run mount
+mv "${__scratch}/python3.real" "${__bin}/python3"
+check "mount reports a probe that could not run" 0 out \
+  "WARNING: the SQLite locking probe could not run on the share (exit 2); skipping that check."
+refute "a probe that could not run is not a lock failure" "${__scratch}/out" "cannot upgrade a shared lock"
+
+# The same two outcomes from the real probe. mktemp hands out a fixed probe
+# directory so the test can stand in the probe's way.
+# cspell:ignore fcntl RDWR CREAT lockf lockprobe
+probe_dir() {
+  stub mktemp.fixed 'mkdir -p "${state}/probe" && echo "${state}/probe"'
+  mv "${__bin}/mktemp" "${__scratch}/mktemp.real"
+  mv "${__bin}/mktemp.fixed" "${__bin}/mktemp"
+  mkdir -p "${__state}/probe"
+}
+probe_dir_done() {
+  mv "${__scratch}/mktemp.real" "${__bin}/mktemp"
+}
+
+# Another process holding a shared lock on the range refuses the upgrade the
+# way SMB does, so the probe exits 3.
+fresh_repo
+probe_dir
+python3 -c '
+import fcntl, os, sys, time
+f = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o664)
+fcntl.lockf(f, fcntl.LOCK_SH, 510, 0x40000002)
+open(sys.argv[2], "w").close()
+time.sleep(60)
+' "${__state}/probe/lockprobe" "${__scratch}/held" &
+holder=$!
+for _ in $(seq 100); do
+  [[ -e "${__scratch}/held" ]] && break
+  sleep 0.1
+done
+run mount
+kill "${holder}" 2>/dev/null || true
+wait "${holder}" 2>/dev/null || true
+probe_dir_done
+check "the real probe reports a refused upgrade" 0 out \
+  "WARNING: the share cannot upgrade a shared lock to an exclusive one"
+
+# A probe file it cannot open, here a directory, is the probe failing: exit 2.
+fresh_repo
+probe_dir
+mkdir "${__state}/probe/lockprobe"
+run mount
+probe_dir_done
+check "the real probe reports a file it cannot open" 0 out \
+  "WARNING: the SQLite locking probe could not run on the share (exit 2); skipping that check."
+
+# nobrl keeps the locks on the client, where the probe cannot see a refusal.
+fresh_repo
+echo "rw,nobrl" >"${__state}/options"
+run mount
+check "mount warns about nobrl" 0 out "WARNING: mounted with nobrl"
+
+# No python3 to probe with is a skipped check, not a failed one.
+fresh_repo
+mv "${__bin}/python3" "${__scratch}/python3.real"
+run mount
+mv "${__scratch}/python3.real" "${__bin}/python3"
+check "mount skips the lock check without python3" 0 out \
+  "WARNING: python3 is not installed; skipping the SQLite locking check."
+refute "a missing python3 is not a lock failure" "${__scratch}/out" "cannot upgrade a shared lock"
 
 fresh_repo
 touch "${__state}/mount-fails"

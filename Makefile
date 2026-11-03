@@ -111,7 +111,7 @@ STOP_COMPOSE_FILES := --file docker-compose.yml $(foreach route_file,$(STOP_ROUT
 # releases it, and pre-commit-checklists moves its own checkmake pin to
 # that release. Until then this form is load bearing. make treats the two
 # forms identically.
-.PHONY: all backup backup-configs backup-full backup-schedule bootstrap bootstrap_tests build_images clean clean_all check_requirements seed_all seed_flaresolverr_chromedriver
+.PHONY: all backup backup-configs backup-full backup-schedule bootstrap bootstrap_tests build_images calibre_library clean clean_all check_requirements seed_all seed_flaresolverr_chromedriver
 .PHONY: configure_jellyfin_network configure_jdownloader2_api
 .PHONY: detect_secrets_create_baseline down enable_test_profiles generate_certificate
 .PHONY: heal_vpn_dependents
@@ -292,6 +292,18 @@ seed_flaresolverr_chromedriver:
 		echo "[$(FLARESOLVERR_CHROMEDRIVER)] Seeded from the flaresolverr image."; \
 	fi
 
+# Keeps the Calibre library's metadata.db in configs/calibre/library-db rather
+# than on data/, which can be a CIFS share that SQLite cannot write (#402).
+# `make start` (and so `make update`, which runs it with the stack down) runs
+# this ahead of permissions_repair, so an install from before that change has
+# its database moved before either app opens it, and the repair then hands the
+# moved file to the calibre user. The script refuses while calibre or
+# calibre-web runs. A disabled pair of profiles skips it; enabling one later
+# seeds or moves on the next start.
+calibre_library:
+	@if [ "$(CALIBRE_PROFILE)" != "enabled" ] && [ "$(CALIBREWEB_PROFILE)" != "enabled" ]; then exit 0; fi; \
+	RUNTIME=$(RUNTIME) ./scripts/seed-calibre-library.sh
+
 # Split out of bootstrap so anything that needs a fully seeded tree without
 # the rest of bootstrap's own steps (VPN credential prompts, certificate
 # generation, starting the stack) can depend on just this. CI's own
@@ -313,6 +325,7 @@ seed_all: seed_flaresolverr_chromedriver
 		configs/audiobookshelf/metadata/backups \
 		configs/flaresolverr/config \
 		data/media \
+		configs/calibre/library-db \
 		data/media/calibre-library \
 		data/recycle \
 		data/torrents/blackhole \
@@ -322,7 +335,7 @@ seed_all: seed_flaresolverr_chromedriver
 		storage/prometheus/data \
 		storage/grafana/data
 	@touch data/torrents/blackhole/.gitkeep data/usenet/blackhole/.gitkeep
-	@./scripts/seed-calibre-library.sh
+	@RUNTIME=$(RUNTIME) ./scripts/seed-calibre-library.sh
 	@./scripts/seed-secrets.sh configs/grafana
 	@./scripts/seed-secrets.sh configs/qbittorrent
 	@./scripts/seed-secrets.sh configs/qbittorrent_exporter
@@ -1018,7 +1031,7 @@ podman_userns_guard:
 	echo "See docs/PODMAN.md."; \
 	exit 1
 
-start: storage_guard podman_userns_guard seed_flaresolverr_chromedriver permissions_repair
+start: storage_guard podman_userns_guard seed_flaresolverr_chromedriver calibre_library permissions_repair
 	@# Says so when .env still carries pins that override versions.env, the
 	@# reason a deployment that pulled would otherwise keep its old images.
 	@./scripts/migrate-versions.py --check
@@ -1067,7 +1080,7 @@ start: storage_guard podman_userns_guard seed_flaresolverr_chromedriver permissi
 	COMPOSE_UP_PID=$$up_pid ./scripts/assert-stack-started.sh $(COMPOSE_FILES)
 	@echo "$(VPN_ON)" > $(VPN_STATE_FILE)
 
-start_library: storage_guard permissions_repair
+start_library: storage_guard calibre_library permissions_repair
 	@echo "Starting Media Library containers..."
 	@./scripts/check-network-subnets.sh
 	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_apps || $(RUNTIME) network create --subnet ${APPS_SUBNET} --ip-range ${APPS_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_apps

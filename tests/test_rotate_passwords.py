@@ -1151,7 +1151,10 @@ def test_calibre_gui_holds_library_open(docker_client):
     A GUI that loaded its library keeps metadata.db open for the life of the
     process; one sitting on that modal never opens it at all. Checking the
     file descriptor is therefore a direct test for "is the dialog up", which
-    is otherwise invisible from outside the Wayland session.
+    is otherwise invisible from outside the Wayland session. The database is
+    /calibre-db/metadata.db, through CALIBRE_OVERRIDE_DATABASE_PATH, rather
+    than one among the books (#402), so finding that path open also shows
+    the GUI took the override.
     """
     # Not is_enabled("calibre"): SERVICES (conftest.py) has no "calibre"
     # entry at all (only "calibreweb", a different app), so that check
@@ -1193,7 +1196,7 @@ def test_calibre_gui_holds_library_open(docker_client):
             text=True,
             timeout=60,
         ).stdout
-        if "calibre-library" in listing:
+        if "/calibre-db/metadata.db" in listing:
             return
         time.sleep(5)
 

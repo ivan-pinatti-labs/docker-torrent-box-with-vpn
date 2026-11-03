@@ -141,6 +141,8 @@ readonly CALIBRE_PASSWORD_FILE="configs/calibre/secrets/password.txt" # pragma: 
 readonly CALIBREWEB_DB="configs/calibre-web/config/app.db"
 readonly CALIBRE_CONTENT_SERVER_USER="calibre"
 readonly CALIBRE_LIBRARY_DIR="/data/media/calibre-library"
+# Where metadata.db lives in both calibre containers (#402).
+readonly CALIBRE_DB_DIR="/calibre-db"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -539,7 +541,13 @@ ensure_calibre_content_server_user() {
 # is set. Writes straight to app.db's settings row while stopped, matching
 # this project's established stop-edit-start convention.
 #
-# This deliberately only sets config_calibre_dir. Also setting
+# The library is split (#402): config_calibre_dir is the folder holding
+# metadata.db, on local storage, and config_calibre_split_dir the books under
+# /data, which can be a CIFS share SQLite cannot write. An app.db configured
+# before that, with config_calibre_dir pointing at the books, counts as not
+# configured, so the next run moves it over.
+#
+# This deliberately only sets the library settings. Also setting
 # config_certfile/config_keyfile (Calibre-Web repurposes its single
 # config_port for HTTPS once those are set, rather than adding a second
 # port) reproducibly wiped the entire `user` table on the very next start,
@@ -558,12 +566,14 @@ calibre_web_db_ready() {
 import sys
 sys.path.insert(0, "scripts")
 from live_db import live_db
+# Ready means a settings table with the split library columns, which
+# Calibre-Web adds to an older app.db when it starts.
 try:
     with live_db('$CALIBREWEB_DB') as conn:
-        row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'").fetchone()
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(settings)")}
 except FileNotFoundError:
-    row = None
-sys.exit(0 if row else 1)
+    columns = set()
+sys.exit(0 if {"config_calibre_dir", "config_calibre_split", "config_calibre_split_dir"} <= columns else 1)
 PYEOF
 }
 
@@ -636,8 +646,10 @@ import sys
 sys.path.insert(0, "scripts")
 from live_db import live_db
 with live_db('$CALIBREWEB_DB') as conn:
-    row = conn.execute('SELECT config_calibre_dir FROM settings WHERE id = 1').fetchone()
-print('yes' if row and row[0] else 'no')
+    row = conn.execute(
+        'SELECT config_calibre_dir, config_calibre_split, config_calibre_split_dir FROM settings WHERE id = 1'
+    ).fetchone()
+print('yes' if row == ('$CALIBRE_DB_DIR', 1, '$CALIBRE_LIBRARY_DIR') else 'no')
 PYEOF
 }
 
@@ -673,8 +685,8 @@ ensure_calibre_web_setup() {
 import sqlite3
 conn = sqlite3.connect('$CALIBREWEB_DB')
 conn.execute(
-    "UPDATE settings SET config_calibre_dir = ? WHERE id = 1",
-    ('$CALIBRE_LIBRARY_DIR',),
+    "UPDATE settings SET config_calibre_dir = ?, config_calibre_split = 1, config_calibre_split_dir = ? WHERE id = 1",
+    ('$CALIBRE_DB_DIR', '$CALIBRE_LIBRARY_DIR'),
 )
 conn.commit()
 conn.close()

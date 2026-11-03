@@ -38,20 +38,26 @@ readonly ALL_CONTAINERS=(audiobookshelf calibre calibre-web jellyfin "${ARR_APPS
 readonly JELLYFIN_PLACEHOLDER=0123456789abcdef0123456789abcdef # pragma: allowlist secret
 readonly QBT_PREFERENCES='exec qbittorrent curl -sk --fail -b \S+ \S+/api/v2/app/preferences$'
 
-# calibre_web_db [<library dir>] [<users>]: Calibre-Web's app.db with its
-# settings row, or with no settings table at all when given "none".
+# calibre_web_db [<database dir>] [<users>] [<books dir>]: Calibre-Web's
+# app.db with its settings row, or with no settings table at all when given
+# "none". The library is split when the books dir is not empty, which is what
+# wire-connections.sh sets up; a pre-#402 one has the books dir as its
+# database dir and no split.
 calibre_web_db() {
   rm -f "${__repo}/configs/calibre-web/config/app.db"
   mkdir -p "${__repo}/configs/calibre-web/config"
-  python3 - "${__repo}/configs/calibre-web/config/app.db" "${1-/data/media/calibre-library}" "${2-2}" <<'EOF'
+  python3 - "${__repo}/configs/calibre-web/config/app.db" "${1-/calibre-db}" "${2-2}" "${3-/data/media/calibre-library}" <<'EOF'
 import sqlite3, sys
-path, library, users = sys.argv[1], sys.argv[2], int(sys.argv[3])
+path, library, users, books = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
 conn = sqlite3.connect(path)
 conn.execute("CREATE TABLE user (id INTEGER PRIMARY KEY, name TEXT, role INTEGER, password TEXT)")
 conn.executemany("INSERT INTO user VALUES (?, ?, ?, ?)", [(i, f"user{i}", 1, "") for i in range(1, users + 1)])
 if library != "none":
-    conn.execute("CREATE TABLE settings (id INTEGER PRIMARY KEY, config_calibre_dir TEXT)")
-    conn.execute("INSERT INTO settings VALUES (1, ?)", (library,))
+    conn.execute(
+        "CREATE TABLE settings (id INTEGER PRIMARY KEY, config_calibre_dir TEXT,"
+        " config_calibre_split BOOLEAN, config_calibre_split_dir TEXT)"
+    )
+    conn.execute("INSERT INTO settings VALUES (1, ?, ?, ?)", (library, 1 if books else 0, books or None))
 conn.commit()
 EOF
 }
@@ -213,7 +219,8 @@ EOF
 # Run A: nothing is set up yet.
 deployment
 put configs/jellyfin/secrets/api_key.txt placeholder
-calibre_web_db "" 0
+# Configured before #402: metadata.db among the books, no split.
+calibre_web_db /data/media/calibre-library 0 ""
 mylar_db 0
 rule 'wget -qO- http://127.0.0.1:13378/status$' 0 '{"isInit": false}'
 rule 'Bearer abs-token http://127.0.0.1:13378/api/api-keys$' 0 '{"apiKeys": [{"name": "someone else"}]}'
@@ -280,8 +287,8 @@ check "Calibre-Web's users come from the image" 0 log "podman run --rm -v "
 if [[ "$(query configs/calibre-web/config/app.db 'SELECT name FROM user ORDER BY id')" != "[('admin',), ('Guest',)]" ]]; then
   fail "Calibre-Web gets the image's users"
 fi
-if [[ "$(query configs/calibre-web/config/app.db 'SELECT config_calibre_dir FROM settings')" != "[('/data/media/calibre-library',)]" ]]; then
-  fail "Calibre-Web gets its library"
+if [[ "$(query configs/calibre-web/config/app.db 'SELECT config_calibre_dir, config_calibre_split, config_calibre_split_dir FROM settings')" != "[('/calibre-db', 1, '/data/media/calibre-library')]" ]]; then
+  fail "Calibre-Web gets its split library"
 fi
 if [[ "$(query configs/mylar/config/mylar/mylar.db 'SELECT ComicID, Status FROM comics')" != "[('0000000', 'Paused')]" ]]; then
   fail "Mylar gets a paused placeholder"

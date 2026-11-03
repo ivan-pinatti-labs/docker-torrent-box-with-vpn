@@ -6,7 +6,8 @@
 # script the calibre container runs at start. Every line of it has to run in
 # one of them: `make coverage` runs this file under kcov and fails below 100%.
 #
-# The library is a scratch directory (CALIBRE_LIBRARY_DIR) and chown is a
+# The library and the database folder are scratch directories
+# (CALIBRE_LIBRARY_DIR, CALIBRE_DB_DIR) and chown is a
 # stub on PATH that only records its arguments. The script's shebang is
 # /bin/sh; it runs under bash here because kcov traces bash.
 
@@ -24,7 +25,9 @@ chmod +x "${__scratch}/bin/chown"
 
 run() {
   __status=0
-  PATH="${__scratch}/bin:${PATH}" CALIBRE_LIBRARY_DIR="${1}" bash "${__script}" \
+  rm -f "${__scratch}/log"
+  PATH="${__scratch}/bin:${PATH}" CALIBRE_LIBRARY_DIR="${1}" CALIBRE_DB_DIR="${2:-${__scratch}/no-db}" \
+    bash "${__script}" \
     >"${__scratch}/out" 2>"${__scratch}/err" || __status=$?
 }
 
@@ -44,6 +47,16 @@ check "fails when the library is not mounted" 1 err "ERROR: ${__scratch}/missing
 mkdir "${__scratch}/library"
 run "${__scratch}/library"
 check "hands the library to the app user" 0 log "chown -R abc:abc ${__scratch}/library"
+if grep --quiet "no-db" "${__scratch}/log"; then
+  echo "FAIL a missing database folder is left alone" >&2
+  __failures=$((__failures + 1))
+else
+  echo "ok a missing database folder is left alone"
+fi
+
+mkdir "${__scratch}/db"
+run "${__scratch}/library" "${__scratch}/db"
+check "hands the database folder to the app user" 0 log "chown -R abc:abc ${__scratch}/db"
 
 if [[ "${__failures}" -gt 0 ]]; then
   echo "${__failures} failed" >&2

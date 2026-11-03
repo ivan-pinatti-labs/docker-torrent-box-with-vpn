@@ -7,8 +7,9 @@
 # below 100%.
 #
 # The script works in the current directory, so each case runs in a scratch
-# directory holding its own .env and data/. podman is a stub on PATH that only
-# records how it was called, so no image is pulled and no container runs.
+# directory holding its own .env, data/ and configs/. podman is a stub on PATH
+# that records how it was called and reports the container named in
+# STUB_RUNNING as running, so no image is pulled and no container runs.
 
 set -o errexit
 set -o pipefail
@@ -18,10 +19,28 @@ __script="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/seed-calib
 __scratch="$(mktemp -d)"
 trap 'rm -rf "${__scratch}"' EXIT
 __failures=0
+readonly LIBRARY="data/media/calibre-library"
+readonly DB_DIR="configs/calibre/library-db"
 
 mkdir "${__scratch}/bin" "${__scratch}/work"
-printf '#!%s\necho "podman $*" >>"%s/log"\n' "$(command -v bash)" "${__scratch}" >"${__scratch}/bin/podman"
+# container inspect answers true for STUB_RUNNING, false for STUB_STOPPED, an
+# error of its own when STUB_INSPECT_ERROR is set, and "no such container"
+# for anything else, as podman and docker do for a container that is not there.
+cat >"${__scratch}/bin/podman" <<EOF
+#!$(command -v bash)
+echo "podman \$*" >>"${__scratch}/log"
+if [[ "\$1 \$2" == "container inspect" ]]; then
+  name="\${*: -1}"
+  if [[ "\$name" == "\${STUB_RUNNING:-}" ]]; then echo true; exit 0; fi
+  if [[ "\$name" == "\${STUB_STOPPED:-}" ]]; then echo false; exit 0; fi
+  if [[ -n "\${STUB_INSPECT_ERROR:-}" ]]; then echo "Error: \${STUB_INSPECT_ERROR}" >&2; exit 125; fi
+  echo "Error: no such container \$name" >&2
+  exit 125
+fi
+EOF
 chmod +x "${__scratch}/bin/podman"
+sed 's/^echo "podman /echo "docker /' "${__scratch}/bin/podman" >"${__scratch}/bin/docker"
+chmod +x "${__scratch}/bin/docker"
 echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
 
 run() {
@@ -32,45 +51,232 @@ run() {
     >"${__scratch}/out" 2>"${__scratch}/err" || __status=$?
 }
 
+fail() {
+  echo "FAIL ${1}" >&2
+  __failures=$((__failures + 1))
+}
+
+# check <name> <status> <file> <text>
 check() {
-  local name="${1}" file="${2}" want="${3}"
-  if [[ "${__status}" -ne 0 ]]; then
-    echo "FAIL ${name}: exit ${__status}" >&2
+  local name="${1}" want_status="${2}" file="${3}" want="${4}"
+  if [[ "${__status}" -ne "${want_status}" ]]; then
+    fail "${name}: exit ${__status}, wanted ${want_status}"
     cat "${__scratch}/err" >&2
-    __failures=$((__failures + 1))
   elif ! grep --quiet --fixed-strings -- "${want}" "${__scratch}/${file}"; then
-    echo "FAIL ${name}: '${want}' not in ${file}" >&2
-    __failures=$((__failures + 1))
+    fail "${name}: '${want}' not in ${file}"
   else
     echo "ok ${name}"
   fi
 }
 
+# A library from before #402: a real, empty SQLite metadata.db among the books.
+old_library() {
+  rm -rf "${__scratch}/work/data" "${__scratch}/work/configs"
+  mkdir -p "${__scratch}/work/${LIBRARY}/Author/Book (1)"
+  python3 -c 'import sqlite3, sys; c = sqlite3.connect(sys.argv[1]); c.execute("CREATE TABLE books (id INTEGER)"); c.commit()' \
+    "${__scratch}/work/${LIBRARY}/metadata.db"
+}
+
 run
-check "announces the new library" out "Pre-creating the Calibre library at data/media/calibre-library..."
-check "creates it with calibredb in the pinned image" log \
-  "podman run --rm -v ${__scratch}/work/data/media/calibre-library:/library:z --entrypoint calibredb docker.io/linuxserver/calibre:v8.1.0 list --library-path /library"
-check "reports the library created" out "Calibre library pre-created."
+check "announces the new library" 0 out \
+  "Pre-creating the Calibre library at ${LIBRARY}, with its database in ${DB_DIR}..."
+check "creates it with calibredb in the pinned image, the database apart" 0 log \
+  "podman run --rm -v ${__scratch}/work/${LIBRARY}:/library:z -v ${__scratch}/work/${DB_DIR}:/calibre-db:z -e CALIBRE_OVERRIDE_DATABASE_PATH=/calibre-db/metadata.db --entrypoint calibredb docker.io/linuxserver/calibre:v8.1.0 list --library-path /library"
+check "reports the library created" 0 out "Calibre library pre-created."
+[[ -d "${__scratch}/work/${DB_DIR}" ]] || fail "makes the database folder"
 
 # A .env with no pin of its own takes the committed one, and a hold in .env
 # wins over it.
 echo "CALIBRE_VERSION=v9.0.0" >"${__scratch}/work/versions.env"
 echo "LAN_IP=192.168.1.20" >"${__scratch}/work/.env"
 run
-check "takes the pin from versions.env" log "docker.io/linuxserver/calibre:v9.0.0 list"
+check "takes the pin from versions.env" 0 log "docker.io/linuxserver/calibre:v9.0.0 list"
 printf '%s\n' "# hold: testing" "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
 run
-check "lets a pin in .env override versions.env" log "docker.io/linuxserver/calibre:v8.1.0 list"
+check "lets a pin in .env override versions.env" 0 log "docker.io/linuxserver/calibre:v8.1.0 list"
 
-mkdir -p "${__scratch}/work/data/media/calibre-library"
-touch "${__scratch}/work/data/media/calibre-library/metadata.db"
+# The database already where it belongs: nothing to do, whatever else is there.
+old_library
+mkdir -p "${__scratch}/work/${DB_DIR}"
+echo local >"${__scratch}/work/${DB_DIR}/metadata.db"
 run
 if [[ "${__status}" -ne 0 || -s "${__scratch}/log" || -s "${__scratch}/out" ]]; then
-  echo "FAIL an existing library is left alone: exit ${__status}" >&2
-  __failures=$((__failures + 1))
+  fail "an existing database is left alone: exit ${__status}"
+elif [[ "$(cat "${__scratch}/work/${DB_DIR}/metadata.db")" != local || ! -f "${__scratch}/work/${LIBRARY}/metadata.db" ]]; then
+  fail "an existing database is never overwritten"
 else
-  echo "ok an existing library is left alone"
+  echo "ok an existing database is left alone"
 fi
+
+# An install from before #402 has its database moved, and the original kept.
+old_library
+touch -d "2020-01-02 03:04:05" "${__scratch}/work/${LIBRARY}/metadata.db"
+cp "${__scratch}/work/${LIBRARY}/metadata.db" "${__scratch}/expected.db"
+# calibre exists but is stopped, calibre-web does not exist: both are fine.
+STUB_STOPPED=calibre run
+check "moves an old library's database" 0 out "Moving the Calibre library's metadata.db to ${DB_DIR}..."
+check "says where the original went" 0 out "The original is kept as ${LIBRARY}/metadata.db.on-share-"
+check "names the step Calibre-Web needs next" 0 out "Run 'make wire_connections' once the stack is up"
+check "asks whether the containers run" 0 log "podman container inspect -f {{.State.Running}} calibre-web"
+cmp -s "${__scratch}/expected.db" "${__scratch}/work/${DB_DIR}/metadata.db" || fail "the moved database is the original"
+[[ "$(stat -c %Y "${__scratch}/work/${DB_DIR}/metadata.db")" == "$(date -d "2020-01-02 03:04:05" +%s)" ]] ||
+  fail "the move keeps the timestamps"
+[[ ! -e "${__scratch}/work/${LIBRARY}/metadata.db" ]] || fail "the original is renamed aside"
+compgen -G "${__scratch}/work/${LIBRARY}/metadata.db.on-share-*" >/dev/null || fail "the original is kept"
+[[ ! -e "${__scratch}/work/${DB_DIR}/metadata.db.partial" ]] || fail "no partial copy is left"
+
+# Not while either app may be writing it, under the configured prefix.
+old_library
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "CONTAINER_PREFIX=dev-" >"${__scratch}/work/.env"
+STUB_RUNNING=dev-calibre run
+check "refuses while calibre runs" 1 err "ERROR: calibre is running, so ${LIBRARY}/metadata.db cannot be moved to ${DB_DIR}."
+check "says how to get past it" 1 err "Run 'make down', then 'make start' again."
+[[ -f "${__scratch}/work/${LIBRARY}/metadata.db" && ! -e "${__scratch}/work/${DB_DIR}/metadata.db" ]] ||
+  fail "a refused move changes nothing"
+echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
+
+# A state check that failed is not a stopped container.
+old_library
+STUB_INSPECT_ERROR="cannot connect to the service" run
+check "refuses when it cannot tell whether an app runs" 1 err \
+  "ERROR: could not tell whether calibre is running (Error: cannot connect to the service), so ${LIBRARY}/metadata.db was not moved."
+[[ -f "${__scratch}/work/${LIBRARY}/metadata.db" && ! -e "${__scratch}/work/${DB_DIR}/metadata.db" ]] ||
+  fail "an unknown state changes nothing"
+
+# Nor an inspect that failed without saying why.
+old_library
+cp "${__scratch}/bin/podman" "${__scratch}/podman.real"
+printf '#!%s\nexit 125\n' "$(command -v bash)" >"${__scratch}/bin/podman"
+run
+cp "${__scratch}/podman.real" "${__scratch}/bin/podman"
+check "refuses on a silent inspect failure" 1 err "ERROR: could not tell whether calibre is running (no output)"
+
+# Nor with a journal or log beside it, which may hold an unfinished write.
+for sidecar in journal wal; do
+  old_library
+  touch "${__scratch}/work/${LIBRARY}/metadata.db-${sidecar}"
+  run
+  check "refuses beside a -${sidecar}" 1 err "ERROR: ${LIBRARY}/metadata.db-${sidecar} exists"
+done
+
+# A copy that does not check out is thrown away, and the original stays.
+old_library
+echo "not a database" >"${__scratch}/work/${LIBRARY}/metadata.db"
+run
+check "refuses a database that fails its integrity check" 1 err \
+  "ERROR: the copy of ${LIBRARY}/metadata.db did not check out; nothing was changed."
+[[ -f "${__scratch}/work/${LIBRARY}/metadata.db" && ! -e "${__scratch}/work/${DB_DIR}/metadata.db" &&
+  ! -e "${__scratch}/work/${DB_DIR}/metadata.db.partial" ]] || fail "a failed check changes nothing"
+
+# The folders come from .env, as compose reads them: a library under another
+# DATA_FOLDER is the one moved, into the database folder under CONFIG_FOLDER.
+old_library
+mkdir -p "${__scratch}/work/elsewhere/media"
+mv "${__scratch}/work/data/media/calibre-library" "${__scratch}/work/elsewhere/media/"
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "DATA_FOLDER=./elsewhere" "CONFIG_FOLDER=./cfg" >"${__scratch}/work/.env"
+run
+check "moves the library under DATA_FOLDER" 0 out \
+  "Moving the Calibre library's metadata.db to cfg/calibre/library-db..."
+[[ -f "${__scratch}/work/cfg/calibre/library-db/metadata.db" ]] || fail "the database lands under CONFIG_FOLDER"
+rm -rf "${__scratch}/work/elsewhere" "${__scratch}/work/cfg"
+
+# The runtime make passes, and an absolute DATA_FOLDER mounted as it is.
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "DATA_FOLDER=${__scratch}/abs" >"${__scratch}/work/.env"
+rm -f "${__scratch}/log"
+touch "${__scratch}/log"
+__status=0
+(cd "${__scratch}/work" && PATH="${__scratch}/bin:${PATH}" RUNTIME=docker bash "${__script}") \
+  >"${__scratch}/out" 2>"${__scratch}/err" || __status=$?
+check "creates the library with the runtime make passes" 0 log \
+  "docker run --rm -v ${__scratch}/abs/media/calibre-library:/library:z -v ${__scratch}/work/configs/calibre/library-db:/calibre-db:z"
+echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
+
+# The environment wins over .env, as it does for compose.
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "DATA_FOLDER=./from-env-file" >"${__scratch}/work/.env"
+rm -f "${__scratch}/log"
+touch "${__scratch}/log"
+__status=0
+(cd "${__scratch}/work" && PATH="${__scratch}/bin:${PATH}" DATA_FOLDER=./from-shell bash "${__script}") \
+  >"${__scratch}/out" 2>"${__scratch}/err" || __status=$?
+check "takes DATA_FOLDER from the environment first" 0 out \
+  "Pre-creating the Calibre library at from-shell/media/calibre-library"
+
+rm -f "${__scratch}/log"
+touch "${__scratch}/log"
+__status=0
+(cd "${__scratch}/work" && PATH="${__scratch}/bin:${PATH}" CONFIG_FOLDER=./cfg-shell bash "${__script}") \
+  >"${__scratch}/out" 2>"${__scratch}/err" || __status=$?
+check "takes CONFIG_FOLDER from the environment first" 0 out "with its database in cfg-shell/calibre/library-db"
+
+# Quotes around a value are dropped, as compose drops them.
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "DATA_FOLDER=\"./quoted\"" "CONFIG_FOLDER='./single'" >"${__scratch}/work/.env"
+run
+check "drops the quotes compose drops" 0 out \
+  "Pre-creating the Calibre library at quoted/media/calibre-library, with its database in single/calibre/library-db..."
+echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
+
+# Spaces around the key and value, and a comment after an unquoted value,
+# are dropped, as compose drops them.
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "DATA_FOLDER = ./spaced " "CONFIG_FOLDER=./commented # local" >"${__scratch}/work/.env"
+run
+check "reads .env the way compose does" 0 out \
+  "Pre-creating the Calibre library at spaced/media/calibre-library, with its database in commented/calibre/library-db..."
+echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
+
+# The container prefix from the environment wins over .env, so a running app
+# under that prefix is the one checked.
+old_library
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "CONTAINER_PREFIX=from-file-" >"${__scratch}/work/.env"
+rm -f "${__scratch}/log"
+touch "${__scratch}/log"
+__status=0
+(cd "${__scratch}/work" && PATH="${__scratch}/bin:${PATH}" CONTAINER_PREFIX=shell- STUB_RUNNING=shell-calibre bash "${__script}") \
+  >"${__scratch}/out" 2>"${__scratch}/err" || __status=$?
+check "takes CONTAINER_PREFIX from the environment first" 1 err "ERROR: calibre is running"
+echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
+
+# A runtime that cannot reach its socket also says "no such", about a file:
+# that is not a missing container.
+old_library
+STUB_INSPECT_ERROR="dial unix /run/podman/podman.sock: connect: no such file or directory" run
+check "an unreachable runtime is not a missing container" 1 err \
+  "ERROR: could not tell whether calibre is running (Error: dial unix /run/podman/podman.sock: connect: no such file or directory)"
+
+# A reference compose would expand is refused, not seeded literally.
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "CONFIG_FOLDER=\${HOME}/configs" >"${__scratch}/work/.env"
+run
+check "refuses a folder holding a reference" 1 err "ERROR: \${HOME}/configs holds a \$ reference"
+
+# Nor a backslash escape, which compose would read differently.
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" 'DATA_FOLDER=./a\b' >"${__scratch}/work/.env"
+run
+check "refuses a folder holding a backslash" 1 err 'ERROR: ./a\b holds a $ reference or a backslash escape'
+
+# The last assignment in .env wins, as it does for compose, and versions.env
+# only fills in a key .env lacks.
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "DATA_FOLDER=./first" "DATA_FOLDER=./last" >"${__scratch}/work/.env"
+run
+check "takes the last assignment in .env" 0 out "Pre-creating the Calibre library at last/media/calibre-library"
+
+# An unbraced reference is refused too.
+printf '%s\n' "CALIBRE_VERSION=v8.1.0" "DATA_FOLDER=\$LIB_ROOT/books" >"${__scratch}/work/.env"
+run
+check "refuses an unbraced reference" 1 err "ERROR: \$LIB_ROOT/books holds a \$ reference"
+
+# A CRLF .env reads as compose reads it, carriage returns dropped.
+printf '%s\r\n' "CALIBRE_VERSION=v8.2.0" "DATA_FOLDER=./crlf" >"${__scratch}/work/.env"
+run
+check "drops a CRLF file's carriage returns" 0 out "Pre-creating the Calibre library at crlf/media/calibre-library,"
+check "and from the image tag" 0 log "docker.io/linuxserver/calibre:v8.2.0 list"
+
+# The last pin in versions.env wins, as it does for make, which hands it to
+# compose. From an empty tree, so it seeds rather than moves.
+rm -rf "${__scratch}/work/data" "${__scratch}/work/configs"
+printf '%s\n' "CALIBRE_VERSION=v9.0.0" "CALIBRE_VERSION=v9.1.0" >"${__scratch}/work/versions.env"
+echo "LAN_IP=192.168.1.20" >"${__scratch}/work/.env"
+run
+check "takes the last pin in versions.env" 0 log "docker.io/linuxserver/calibre:v9.1.0 list"
+echo "CALIBRE_VERSION=v8.1.0" >"${__scratch}/work/.env"
 
 if [[ "${__failures}" -gt 0 ]]; then
   echo "${__failures} failed" >&2
