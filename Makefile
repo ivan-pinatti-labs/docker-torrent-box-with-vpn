@@ -117,7 +117,7 @@ STOP_COMPOSE_FILES := --file docker-compose.yml $(foreach route_file,$(STOP_ROUT
 .PHONY: heal_vpn_dependents
 .PHONY: rotate_all rotate_api_keys rotate_certificate rotate_passwords wire_connections
 .PHONY: disk_status korsync_users permissions_check permissions_repair permissions_smoke permissions_host_smoke prune_cache rotate_nginx_logs
-.PHONY: storage_mount storage_unmount storage_status storage_install_boot storage_uninstall_boot storage_guard
+.PHONY: storage_mount storage_unmount storage_status storage_install_boot storage_uninstall_boot storage_guard podman_userns_guard
 .PHONY: install_requirements pull_docker_images pre_commit
 .PHONY: restore-configs restore-full
 .PHONY: restart sanity_fast sanity_full start start_library start_observability
@@ -989,7 +989,34 @@ storage_guard:
 		fi; \
 	}
 
-start: storage_guard seed_flaresolverr_chromedriver permissions_repair
+# podman_exporter and podman_limits_exporter set userns_mode, and podman-compose
+# runs every service in a pod unless told not to (--in-pod false). podman before
+# 5.8.0 refuses a container with its own user namespace in a pod when it creates
+# it, "Error: --userns and --pod cannot be set together", so make start used to
+# fail on those two containers alone, after everything else was up (#399, #127).
+# 5.8.0 replaced that CLI check (podman#26848) with one in libpod that refuses
+# only a pod with an infra container, and podman-compose's pod has none
+# (--infra=false). Refusing here, before anything starts, names the ways out.
+# See docs/PODMAN.md.
+podman_userns_guard:
+	@[ "$(RUNTIME)" = podman ] || exit 0; \
+	[ "$(PODMAN_EXPORTER_PROFILE)" = enabled ] || [ "$(PODMAN_LIMITS_EXPORTER_PROFILE)" = enabled ] || exit 0; \
+	case "$(COMPOSE)" in *"--in-pod false"* | *"--in-pod=false"*) exit 0 ;; esac; \
+	version="$$(podman version --format '{{.Client.Version}}' 2>/dev/null || true)"; \
+	major="$${version%%.*}"; minor="$${version#*.}"; minor="$${minor%%.*}"; \
+	case "$$major.$$minor" in *[!0-9.]* | .* | *.) exit 0 ;; esac; \
+	if [ "$$major" -gt 5 ] || { [ "$$major" -eq 5 ] && [ "$$minor" -ge 8 ]; }; then exit 0; fi; \
+	echo "ERROR: podman $$version cannot create podman_exporter or podman_limits_exporter in a pod."; \
+	echo "Both set userns_mode, and podman before 5.8.0 refuses that inside a pod with"; \
+	echo "'Error: --userns and --pod cannot be set together'. Any one of these fixes it:"; \
+	echo "  - upgrade podman to 5.8.0 or later;"; \
+	echo "  - run the stack without a pod: make start \"COMPOSE=podman-compose --in-pod false\","; \
+	echo "    with the same COMPOSE= on stop, down and every other compose target;"; \
+	echo "  - set PODMAN_EXPORTER_PROFILE=disabled and PODMAN_LIMITS_EXPORTER_PROFILE=disabled in .env."; \
+	echo "See docs/PODMAN.md."; \
+	exit 1
+
+start: storage_guard podman_userns_guard seed_flaresolverr_chromedriver permissions_repair
 	@# Says so when .env still carries pins that override versions.env, the
 	@# reason a deployment that pulled would otherwise keep its old images.
 	@./scripts/migrate-versions.py --check
@@ -1046,7 +1073,7 @@ start_library: storage_guard permissions_repair
 	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_media || $(RUNTIME) network create --subnet ${MEDIA_SUBNET} --ip-range ${MEDIA_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_media
 	@$(COMPOSE) --file docker-compose.yml --file docker-compose-media-library.yml --profile enabled up --detach --no-recreate
 
-start_observability: storage_guard permissions_repair
+start_observability: storage_guard podman_userns_guard permissions_repair
 	@echo "Starting Observability containers..."
 	@./scripts/check-network-subnets.sh
 	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_apps || $(RUNTIME) network create --subnet ${APPS_SUBNET} --ip-range ${APPS_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_apps

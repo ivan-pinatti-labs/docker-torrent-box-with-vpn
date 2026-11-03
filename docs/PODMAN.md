@@ -32,6 +32,36 @@ refuses anything but mikefarah/yq v4.
 Set `CONTAINER_RUNTIME=podman` (or `docker`) in your `.env` file to make your choice explicit. If
 left unset, the `Makefile` auto-detects: Podman wins when both are installed.
 
+## The Podman exporters need podman 5.8.0 or later
+
+`podman_exporter` and `podman_limits_exporter` (both off by default) set `userns_mode`, and
+podman-compose runs every service in a pod. Podman before 5.8.0 refuses that combination when it
+creates the container:
+
+```text
+Error: --userns and --pod cannot be set together
+```
+
+That includes podman 5.7.0, the version Ubuntu 26.04 ships. Podman 5.8.0 dropped this check
+([containers/podman#26848](https://github.com/containers/podman/issues/26848)) in favor of one that
+refuses only a pod with an infra container, and podman-compose's pod has none. With either exporter
+enabled on an older podman, `make start` and `make start_observability` stop before starting
+anything and list the three ways out:
+
+- Upgrade podman to 5.8.0 or later.
+- Run the stack without a pod: `make start "COMPOSE=podman-compose --in-pod false"`. Pass the same
+  `COMPOSE=` to `stop`, `down` and every other target that runs compose. Each service already has
+  its own networks, so the pod shares nothing they depend on, but anything that finds this stack's
+  containers by pod name has no pod to find: the Podman dashboard's pod selector and
+  `tests/test_observability.py`.
+- Disable both exporters: `PODMAN_EXPORTER_PROFILE=disabled` and
+  `PODMAN_LIMITS_EXPORTER_PROFILE=disabled` in `.env`. `make enable_test_profiles` does this by
+  itself on podman before 5.8.0.
+
+To check that a container's `userns_mode` took effect, look at `.HostConfig.IDMappings` or run
+`id` inside the container. `podman inspect --format '{{.HostConfig.UsernsMode}}'` reports `private`
+even when `keep-id` is applied, so it cannot tell.
+
 ## Using ports 80 and 443 with rootless Podman or rootless Docker
 
 Both runtimes in rootless mode run as your regular user, and the Linux kernel blocks unprivileged

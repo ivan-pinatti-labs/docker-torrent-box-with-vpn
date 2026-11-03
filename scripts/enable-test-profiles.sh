@@ -58,22 +58,28 @@ for var_line in "UID=$(id -u)" "GID=$(id -g)"; do
 done
 
 # podman_exporter and podman_limits_exporter both set userns_mode, podman-compose
-# puts every service in a pod, and podman refuses that combination before version
-# 5 with "--userns and --pod cannot be set together". Disabled on those runtimes
+# puts every service in a pod, and podman before 5.8.0 refuses that combination
+# with "--userns and --pod cannot be set together" (#127, #399). 5.8.0 replaced
+# that CLI check (podman#26848) with one that refuses only a pod with an infra
+# container, and podman-compose's pod has none. Disabled on older runtimes
 # rather than left to fail, since a service that cannot be created is not a test
-# result. Both are verified working on podman 5.8.4, so a bench keeps the
-# coverage and `make bootstrap_tests` remains the release gate.
+# result. Both run in a pod on podman 5.8.4 and 5.8.9 (the nested CI image), so
+# a bench keeps the coverage and `make bootstrap_tests` remains the release gate.
 #
 # Gated on the runtime rather than on a CI environment variable: the limitation
-# belongs to podman's version, and anyone on a 4.x runtime hits it identically.
+# belongs to podman's version, and anyone on an older runtime hits it identically.
 #
 # `|| true` because under pipefail a host without podman (a Docker runtime)
 # failed this assignment, and errexit ended the script before seed-vpn-mock.sh.
-podman_major="$(podman version --format '{{.Client.Version}}' 2>/dev/null | cut -d. -f1 || true)"
-if [[ -n "$podman_major" ]] && ((podman_major < 5)); then
+podman_version="$(podman version --format '{{.Client.Version}}' 2>/dev/null || true)"
+podman_major="${podman_version%%.*}"
+podman_minor="${podman_version#*.}"
+podman_minor="${podman_minor%%.*}"
+if [[ "$podman_major" =~ ^[0-9]+$ && "$podman_minor" =~ ^[0-9]+$ ]] &&
+  ((podman_major < 5 || (podman_major == 5 && podman_minor < 8))); then
   for key in PODMAN_EXPORTER_PROFILE PODMAN_LIMITS_EXPORTER_PROFILE; do
     sed -i "s|^${key}=.*|${key}=disabled|" "$ENV_FILE"
-    echo "[${ENV_FILE}] ${key}=disabled (podman ${podman_major}.x cannot set --userns inside a pod)"
+    echo "[${ENV_FILE}] ${key}=disabled (podman ${podman_version} cannot set --userns inside a pod before 5.8.0)"
   done
 fi
 
