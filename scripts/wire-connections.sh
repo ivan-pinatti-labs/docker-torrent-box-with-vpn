@@ -1055,12 +1055,14 @@ readarr_holds_services_ip() {
 # which is never let in, so a qBittorrent client an earlier run gave it
 # fails every request and would still be picked for downloads. Every enabled
 # one pointing at this stack's qBittorrent is disabled, not deleted, and the
-# next run with Readarr on its own address enables it again. One pointing at
-# another server is left alone.
+# next run with Readarr on its own address enables it again. That includes one
+# on loopback, which from gluetun's namespace reaches the same qBittorrent and
+# still needs a login there (LocalHostAuth). One pointing at another server is
+# left alone.
 stack_qbittorrent_clients_disabled_jq() {
   cat <<'JQ'
 .[] | select(.implementation == "QBittorrent" and .enable == true
-  and any(.fields[]; .name == "host" and .value == $host)
+  and any(.fields[]; .name == "host" and (.value == $host or .value == "127.0.0.1" or .value == "localhost"))
   and any(.fields[]; .name == "port" and (.value | tostring) == $port))
 | .enable = false
 JQ

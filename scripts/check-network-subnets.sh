@@ -70,12 +70,12 @@ project="$(env_value COMPOSE_PROJECT_NAME)"
 problems=()
 address_problem=0
 
-# A setting from .env, else from the environment, where the Makefile puts
-# .env.example's value for one an older .env lacks.
+# A setting from the environment, else from .env, the order compose and make
+# use: make exports a command line override, and .env.example's value for one
+# an older .env lacks.
 setting() {
-  local value
-  value="$(env_value "$1")"
-  [[ -n "$value" ]] || value="${!1:-}"
+  local value="${!1:-}"
+  [[ -n "$value" ]] || value="$(env_value "$1")"
   printf '%s' "$value"
 }
 

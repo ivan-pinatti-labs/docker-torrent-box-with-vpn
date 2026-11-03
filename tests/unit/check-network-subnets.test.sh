@@ -182,6 +182,12 @@ readarr_env
 READARR_SERVICES_IP=10.5.0.12 NGINX_SERVICES_IP=10.5.0.12 run "${__scratch}/readarr" "${docker_bin}"
 check "refuses nginx's address, both from the environment" 1 "ERROR: READARR_SERVICES_IP 10.5.0.12 is also NGINX_SERVICES_IP."
 
+# Another fixed address set in the environment, as a make command line sets
+# it, is the one compared, not .env's.
+readarr_env READARR_SERVICES_IP=10.5.0.13 NGINX_SERVICES_IP=10.5.0.12
+NGINX_SERVICES_IP=10.5.0.13 run "${__scratch}/readarr" "${docker_bin}"
+check "compares with nginx's address from the environment over .env's" 1 "ERROR: READARR_SERVICES_IP 10.5.0.13 is also NGINX_SERVICES_IP."
+
 for malformed in 10.5.0 10.5.0.13.1 10.5.0.256 10.5.0.x; do
   readarr_env "READARR_SERVICES_IP=${malformed}"
   run "${__scratch}/readarr" "${docker_bin}"

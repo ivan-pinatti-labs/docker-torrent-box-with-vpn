@@ -814,11 +814,15 @@ rule 'exec readarr curl -sk --fail -H X-Api-Key: \S+ \S+/downloadclient$' 0 '[
   {"id": 2, "implementation": "QBittorrent", "enable": true, "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 8443}]},
   {"id": 3, "implementation": "QBittorrent", "enable": true, "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": "8443"}]},
   {"id": 4, "implementation": "QBittorrent", "enable": true, "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 9999}]},
-  {"id": 5, "implementation": "Sabnzbd", "enable": true, "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 8443}]}]'
+  {"id": 5, "implementation": "Sabnzbd", "enable": true, "fields": [{"name": "host", "value": "10.0.0.2"}, {"name": "port", "value": 8443}]},
+  {"id": 6, "implementation": "QBittorrent", "enable": true, "fields": [{"name": "host", "value": "localhost"}, {"name": "port", "value": 8443}]},
+  {"id": 7, "implementation": "QBittorrent", "enable": true, "fields": [{"name": "host", "value": "127.0.0.1"}, {"name": "port", "value": 8443}]}]'
 run
 check "every client for this stack is disabled" 0 out \
   "[readarr] Disabled its qBittorrent client 2, which cannot reach qBittorrent from there." \
-  "[readarr] Disabled its qBittorrent client 3, which cannot reach qBittorrent from there."
+  "[readarr] Disabled its qBittorrent client 3, which cannot reach qBittorrent from there." \
+  "[readarr] Disabled its qBittorrent client 6, which cannot reach qBittorrent from there." \
+  "[readarr] Disabled its qBittorrent client 7, which cannot reach qBittorrent from there."
 for other in 1 4 5; do
   refute "client ${other}, not this stack's qBittorrent, is left alone" log "/downloadclient/${other}?forceSave=true"
 done
