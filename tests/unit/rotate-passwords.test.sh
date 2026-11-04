@@ -505,4 +505,12 @@ check "a failed stop ends the rotation" 125 log "podman stop --time 60 bazarr"
 check "before Bazarr's config is edited" 125 configs/bazarr/config/config/config.yaml '"password": "old"' # pragma: allowlist secret
 refute "nor is Bazarr started again" log "podman start bazarr"
 
+# The same when Mylar's own stop, the last one waited on, succeeds: `wait`
+# given both PIDs returned only Mylar's status.
+deployment
+rule '^podman stop --time 60 .*sonarr' 125 ""
+run qbittorrent
+check "a failed stop beside Mylar's ends the rotation" 125 log "podman stop mylar"
+refute "before any arr database is edited" out "[Sonarr DB] Updating"
+
 finish
