@@ -841,15 +841,13 @@
       //
       // The native `pre-commit` manager enabled above updates the `rev:` of a
       // hosted hook repository and nothing else, so these pins are invisible
-      // to it: the `additional_dependencies` entries (gitleaks, checkov, zizmor) and
-      // the container image tags inside a `repo: local` hook's `entry:`
+      // to it: the container image tags inside a `repo: local` hook's `entry:`
       // (trivy, dotenv-linter, hadolint, lychee). Dependabot's own
       // pre-commit ecosystem had the identical blind spot before it managed
       // this file at all. Before the MegaLinter removal they were all
       // carried by one single pinned image, and Dependabot did keep that one
       // current. Without this manager they would silently rot, which for a
-      // secret scanner and two security scanners is the worst place to have
-      // a stale pin.
+      // security scanner like trivy is the worst place to have a stale pin.
       //
       // The image patterns tolerate lines between the annotation and the tag,
       // because `entry:` is a folded block scalar and a comment cannot live
