@@ -103,6 +103,7 @@ QBITTORRENT_HTTPS_PORT="$(env_value QBITTORRENT_HTTPS_PORT)"
 SABNZBD_HTTP_PORT="$(env_value SABNZBD_HTTP_PORT)"
 SABNZBD_HTTPS_PORT="$(env_value SABNZBD_HTTPS_PORT)"
 SONARR_HTTP_PORT="$(env_value SONARR_HTTP_PORT)"
+SONARR_HTTPS_PORT="$(env_value SONARR_HTTPS_PORT)"
 RADARR_HTTPS_PORT="$(env_value RADARR_HTTPS_PORT)"
 LIDARR_HTTPS_PORT="$(env_value LIDARR_HTTPS_PORT)"
 READARR_HTTPS_PORT="$(env_value READARR_HTTPS_PORT)"
@@ -130,7 +131,7 @@ SERVICES_SUBNET="${SERVICES_SUBNET-$(env_value SERVICES_SUBNET)}"
 readonly READARR_SERVICES_IP READARR_PROFILE SERVICES_SUBNET
 CLEANUPARR_HTTP_PORT="$(env_value CLEANUPARR_HTTP_PORT)"
 readonly LAN_IP GLUETUN_SERVICES_IP QBITTORRENT_HTTPS_PORT SABNZBD_HTTP_PORT \
-  SABNZBD_HTTPS_PORT SONARR_HTTP_PORT RADARR_HTTPS_PORT LIDARR_HTTPS_PORT READARR_HTTPS_PORT \
+  SABNZBD_HTTPS_PORT SONARR_HTTP_PORT SONARR_HTTPS_PORT RADARR_HTTPS_PORT LIDARR_HTTPS_PORT READARR_HTTPS_PORT \
   WHISPARR_HTTPS_PORT PROWLARR_HTTPS_PORT LAZYLIBRARIAN_HTTP_PORT MYLAR_HTTPS_PORT \
   JELLYFIN_BASE_URL CALIBREWEB_VERSION \
   JELLYFIN_HTTP_PORT AUDIOBOOKSHELF_HTTP_PORT FLARESOLVERR_HTTP_PORT CLEANUPARR_HTTP_PORT
@@ -2446,9 +2447,11 @@ ensure_cleanuparr_qbittorrent() {
     configuration/download_client/test configuration/download_client password clientId "$payload"
 }
 
-# An arr app, at the address Prowlarr registers it on, with the key its
-# config.xml holds. Skipped when its profile is off. Cleanuparr only reads
-# the version to tell Whisparr 2 from 3. Args: app name url version
+# An arr app, over HTTPS by its service name, with the key its config.xml
+# holds. Skipped when its profile is off. Sonarr too, on its HTTPS port,
+# although Prowlarr reaches it over plain HTTP: every app serves the stack's
+# certificate, which Cleanuparr accepts on local addresses. Cleanuparr only
+# reads the version to tell Whisparr 2 from 3. Args: app name url version
 ensure_cleanuparr_arr() {
   local app="$1" name="$2" url="$3" version="$4" payload
   if ! podman container exists "$(cname "$app")" 2>/dev/null; then
@@ -2517,7 +2520,7 @@ wire_cleanuparr() {
   ensure_cleanuparr_arr lidarr Lidarr "https://lidarr:${LIDARR_HTTPS_PORT}/lidarr" 3 || failed=1
   ensure_cleanuparr_arr radarr Radarr "https://radarr:${RADARR_HTTPS_PORT}/radarr" 6 || failed=1
   ensure_cleanuparr_arr readarr Readarr "https://readarr:${READARR_HTTPS_PORT}/readarr" 0.4 || failed=1
-  ensure_cleanuparr_arr sonarr Sonarr "http://sonarr:${SONARR_HTTP_PORT}/sonarr" 4 || failed=1
+  ensure_cleanuparr_arr sonarr Sonarr "https://sonarr:${SONARR_HTTPS_PORT}/sonarr" 4 || failed=1
   ensure_cleanuparr_arr whisparr Whisparr "https://whisparr:${WHISPARR_HTTPS_PORT}/whisparr" 3 || failed=1
   ensure_cleanuparr_queue_cleaner || failed=1
   if [[ "$failed" -ne 0 ]]; then

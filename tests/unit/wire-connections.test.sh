@@ -40,7 +40,7 @@ readonly CLEANUPARR_API='\S+/cleanuparr/api'
 # What Cleanuparr calls each arr app, and where it reaches it.
 declare -A CLEANUPARR_NAME=([lidarr]=Lidarr [radarr]=Radarr [readarr]=Readarr [sonarr]=Sonarr [whisparr]=Whisparr)
 declare -A CLEANUPARR_URL=([lidarr]=https://lidarr:8687/lidarr [radarr]=https://radarr:7879/radarr
-  [readarr]=https://readarr:8788/readarr [sonarr]=http://sonarr:8989/sonarr [whisparr]=https://whisparr:6970/whisparr)
+  [readarr]=https://readarr:8788/readarr [sonarr]=https://sonarr:9899/sonarr [whisparr]=https://whisparr:6970/whisparr)
 readonly CLEANUPARR_NAME CLEANUPARR_URL
 # The queue cleaner as wire-connections.sh leaves it.
 readonly QUEUE_CLEANER_WIRED='{"enabled":true,"cronExpression":"0 0/5 * * * ?","failedImport":{"maxStrikes":3,"patternMode":"Include","patterns":[".exe",".scr",".bat",".cmd",".pif",".msi",".lnk",".vbs",".ps1"]}}'
@@ -129,6 +129,7 @@ QBITTORRENT_HTTPS_PORT=8443
 SABNZBD_HTTP_PORT=8080
 SABNZBD_HTTPS_PORT=8090
 SONARR_HTTP_PORT=8989
+SONARR_HTTPS_PORT=9899
 RADARR_HTTPS_PORT=7879
 LIDARR_HTTPS_PORT=8687
 READARR_HTTPS_PORT=8788
@@ -332,11 +333,11 @@ check "Cleanuparr accepts the stack's certificate" 0 log '"httpCertificateValida
 check "Cleanuparr logs in to qBittorrent on the services address" 0 log \
   '{"enabled":true,"name":"qBittorrent","typeName":"qBittorrent","host":"https://10.0.0.2:8443","username":"qbittorrent","password":"qbittorrent-password","urlBase":""}' # pragma: allowlist secret
 instances=(
-  '"name":"Sonarr","url":"http://sonarr:8989/sonarr","apiKey":"key-sonarr","version":4'          # pragma: allowlist secret
+  '"name":"Sonarr","url":"https://sonarr:9899/sonarr","apiKey":"key-sonarr","version":4'         # pragma: allowlist secret
   '"name":"Readarr","url":"https://readarr:8788/readarr","apiKey":"key-readarr","version":0.4'   # pragma: allowlist secret
   '"name":"Whisparr","url":"https://whisparr:6970/whisparr","apiKey":"key-whisparr","version":3' # pragma: allowlist secret
 )
-check "Cleanuparr reaches each arr app where Prowlarr does" 0 log "${instances[@]}"
+check "Cleanuparr reaches each arr app over HTTPS" 0 log "${instances[@]}"
 check "its queue cleaner strikes the excluded file types, keeping the pattern it had" 0 log \
   '"enabled":true' '"maxStrikes":3,"patternMode":"Include","patterns":[".exe",".scr",".bat",".cmd",".pif",".msi",".lnk",".vbs",".ps1"]'
 check "qBittorrent trusts only nginx" 0 out \

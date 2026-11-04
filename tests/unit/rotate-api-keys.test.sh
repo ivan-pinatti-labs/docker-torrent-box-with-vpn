@@ -149,7 +149,7 @@ EOF
   # answers are the body, then the status curl's -w appends.
   put configs/cleanuparr/secrets/api_key.txt old-cleanuparr
   rule 'cleanuparr curl -sS -X GET .*/cleanuparr/api/configuration/[a-z]+$' 0 $'{"instances": [
-    {"id": "sonarr-id", "name": "Sonarr", "url": "http://sonarr:8989/sonarr", "apiKey": "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", "version": 4},
+    {"id": "sonarr-id", "name": "Sonarr", "url": "https://sonarr:9899/sonarr", "apiKey": "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", "version": 4},
     {"id": "radarr-id", "name": "Radarr"}, {"id": "readarr-id", "name": "Readarr"}, {"id": "whisparr-id", "name": "Whisparr"}]}\n200'
   rule 'cleanuparr curl -sS -X PUT .*/cleanuparr/api/configuration/[a-z]+/instances/[a-z]+-id$' 0 $'{}\n200'
   rule 'cleanuparr curl -sS -X POST .*X-Api-Key: old-cleanuparr .*/cleanuparr/api/account/api-key/regenerate$' 0 \
@@ -186,7 +186,7 @@ check "Cleanuparr's arr instances get the new keys" 0 out \
   "[Cleanuparr] Updating Sonarr's API key..." "[Cleanuparr] Updating Whisparr's API key..." \
   "[Cleanuparr] No Lidarr instance to update, skipping."
 check "sent back as read, with the new key" 0 log \
-  "{\"id\":\"sonarr-id\",\"name\":\"Sonarr\",\"url\":\"http://sonarr:8989/sonarr\",\"apiKey\":\"$(key 1)\",\"version\":4}" \
+  "{\"id\":\"sonarr-id\",\"name\":\"Sonarr\",\"url\":\"https://sonarr:9899/sonarr\",\"apiKey\":\"$(key 1)\",\"version\":4}" \
   "/cleanuparr/api/configuration/sonarr/instances/sonarr-id"
 check "the new ApiKey is in config.xml" 0 configs/sonarr/config/config.xml "<ApiKey>$(key 1)</ApiKey>"
 check "the new key is the homepage secret" 0 configs/sonarr/secrets/api_key.txt "$(key 1)"

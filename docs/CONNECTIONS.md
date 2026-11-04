@@ -276,8 +276,9 @@ in its own database, so `wire_cleanuparr` makes them through its API, at
 - **qBittorrent**: its WebUI on gluetun's services address, logged in as
   `qbittorrent`, since qBittorrent lets only Readarr in without a login.
 - **Arr apps**: one instance per enabled app (Sonarr, Radarr, Lidarr,
-  Readarr, Whisparr), at the address Prowlarr reaches it on, with the key its
-  `config.xml` holds.
+  Readarr, Whisparr), over HTTPS by its service name, with the key its
+  `config.xml` holds. Sonarr included: Prowlarr reaches it over plain HTTP,
+  but it serves HTTPS on `SONARR_HTTPS_PORT` like the others.
 - **Queue cleaner**: on, failed import strikes `3`, pattern mode `Include`,
   and these patterns:
 
