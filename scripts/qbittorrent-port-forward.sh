@@ -110,6 +110,20 @@ exec 9>"$lock_file"
 # up in a process list.
 login_body >"${work_dir}/login"
 
+# 4 is a network failure (qBittorrent not up yet) and 8 with a 5xx a server
+# error: both are worth another attempt. Anything else is an answer from
+# qBittorrent (a refused login, a ban, a refused setting) and stops the run,
+# since every retried login would count towards its failed login ban.
+retryable() {
+  [ "$1" -eq 4 ] || { [ "$1" -eq 8 ] && server_error; }
+}
+
+logout() {
+  qbt --post-data='' "${base_url}/auth/logout" || true
+}
+
+# One attempt is login, setPreferences and logout, under the lock. A failure
+# worth retrying at either step waits and starts the attempt over.
 i=1
 while :; do
   flock 9
@@ -120,12 +134,27 @@ while :; do
   : >"${work_dir}/cookies"
   status=0
   qbt --post-file="${work_dir}/login" "${base_url}/auth/login" || status=$?
-  [ "$status" -eq 0 ] && break
-  # 4 is a network failure (qBittorrent not up yet) and 8 with a 5xx a server
-  # error: wait and retry. Anything else is an answer from qBittorrent (a
-  # refused login, a ban) and stops here, since every retry would count
-  # towards its failed login ban.
-  if [ "$status" -ne 4 ] && { [ "$status" -ne 8 ] || ! server_error; }; then
+  if [ "$status" -eq 0 ]; then
+    # qBittorrent before 5.2 answers a wrong password with 200 "Fails." and
+    # no session cookie.
+    if ! grep -q SID "${work_dir}/cookies"; then
+      echo "[PORTFWD] ERROR: qBittorrent login gave no session ($(head -c 40 "${work_dir}/reply")), port ${port} not applied"
+      exit 1
+    fi
+    qbt --post-data="json=%7B%22listen_port%22%3A${port}%7D" "${base_url}/app/setPreferences" || status=$?
+    # Decided before the logout, which replaces the saved status line.
+    if [ "$status" -eq 0 ]; then
+      logout
+      echo "[PORTFWD] qBittorrent listen port set to ${port}"
+      exit 0
+    fi
+    if ! retryable "$status"; then
+      logout
+      echo "[PORTFWD] ERROR: qBittorrent did not accept listen port ${port} (wget exit ${status})"
+      exit 1
+    fi
+    logout
+  elif ! retryable "$status"; then
     echo "[PORTFWD] ERROR: qBittorrent refused the login (wget exit ${status}), port ${port} not applied"
     exit 1
   fi
@@ -137,19 +166,3 @@ while :; do
   flock -u 9
   sleep "$delay"
 done
-
-# qBittorrent before 5.2 answers a wrong password with 200 "Fails." and no
-# session cookie.
-if ! grep -q SID "${work_dir}/cookies"; then
-  echo "[PORTFWD] ERROR: qBittorrent login gave no session ($(head -c 40 "${work_dir}/reply")), port ${port} not applied"
-  exit 1
-fi
-
-if ! qbt --post-data="json=%7B%22listen_port%22%3A${port}%7D" "${base_url}/app/setPreferences"; then
-  echo "[PORTFWD] ERROR: qBittorrent did not accept listen port ${port}"
-  qbt --post-data='' "${base_url}/auth/logout" || true
-  exit 1
-fi
-
-qbt --post-data='' "${base_url}/auth/logout" || true
-echo "[PORTFWD] qBittorrent listen port set to ${port}"

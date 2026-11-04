@@ -33,7 +33,9 @@ mkdir -p "${__bin}" "${__secrets}"
 # standard error as wget --server-response prints it), STUB_LOGIN_FAILURES how
 # many logins fail with it before one succeeds (default: all of them), and
 # STUB_LOGIN_DELAY seconds every login takes. STUB_SID=no answers a login with
-# no session cookie, STUB_SET_EXIT and STUB_LOGOUT_EXIT fail those two calls.
+# no session cookie. STUB_SET_EXIT fails setPreferences (with STUB_SET_HTTP as
+# its status line, for STUB_SET_FAILURES calls, default all), and
+# STUB_LOGOUT_EXIT fails the logout.
 cat >"${__bin}/wget" <<'STUB'
 #!/usr/bin/env bash
 cookies="" reply="" body="" url=""
@@ -64,7 +66,13 @@ case "${path}" in
     printf 'Fails.' >"${reply}"
   fi
   ;;
-/app/setPreferences) exit "${STUB_SET_EXIT:-0}" ;;
+/app/setPreferences)
+  sets="$(grep --count '^/app/setPreferences' "${STUB_REQUESTS}")"
+  if [[ -n "${STUB_SET_EXIT:-}" && "${sets}" -le "${STUB_SET_FAILURES:-1000}" ]]; then
+    [[ -n "${STUB_SET_HTTP:-}" ]] && echo "  HTTP/1.1 ${STUB_SET_HTTP}" >&2
+    exit "${STUB_SET_EXIT}"
+  fi
+  ;;
 /auth/logout) exit "${STUB_LOGOUT_EXIT:-0}" ;;
 esac
 STUB
@@ -188,11 +196,25 @@ worker STUB_SID=no
 [[ "${__status}" -eq 1 ]] && ok="$(said "login gave no session (Fails.)")" || ok=no
 result "stops when the login gives no session cookie" "${ok}"
 
-worker STUB_SET_EXIT=8
-[[ "${__status}" -eq 1 ]] && ok="$(said "did not accept listen port 51413")" || ok=no
+worker STUB_SET_EXIT=8 STUB_SET_HTTP="400 Bad Request"
+[[ "${__status}" -eq 1 ]] && ok="$(said "did not accept listen port 51413 (wget exit 8)")" || ok=no
 result "reports a refused setPreferences" "${ok}"
 [[ "$(requests)" == "/auth/login /app/setPreferences /auth/logout" ]] && ok=yes || ok=no
 result "logs out after a refused setPreferences too" "${ok}"
+
+worker STUB_SET_EXIT=8 STUB_SET_HTTP="503 Service Unavailable" STUB_SET_FAILURES=1
+[[ "${__status}" -eq 0 && "$(requests)" == "/auth/login /app/setPreferences /auth/logout /auth/login /app/setPreferences /auth/logout" ]] &&
+  ok="$(said "listen port set to 51413")" || ok=no
+result "starts the attempt over after a setPreferences answered with a 5xx" "${ok}"
+
+worker STUB_SET_EXIT=4 STUB_SET_FAILURES=1
+[[ "${__status}" -eq 0 && "$(requests)" == "/auth/login /app/setPreferences /auth/logout /auth/login /app/setPreferences /auth/logout" ]] &&
+  ok=yes || ok=no
+result "starts the attempt over after a network failure on setPreferences" "${ok}"
+
+worker STUB_SET_EXIT=4
+[[ "${__status}" -eq 1 ]] && ok="$(said "WARN: qBittorrent unreachable after 0 seconds")" || ok=no
+result "gives up after the last attempt when setPreferences keeps failing" "${ok}"
 
 # Another copy holds the lock while gluetun moves to a new port: this one
 # waits, then sees the new port and stops without a request.
