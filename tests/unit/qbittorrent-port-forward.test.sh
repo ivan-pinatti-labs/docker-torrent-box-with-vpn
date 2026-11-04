@@ -172,7 +172,7 @@ worker STUB_LOGIN_EXIT=4 STUB_LOGIN_FAILURES=2
 result "retries while qBittorrent is unreachable, then sets the port" "${ok}"
 
 worker STUB_LOGIN_EXIT=4
-[[ "${__status}" -eq 1 ]] && ok="$(said "WARN: qBittorrent unreachable after 0 seconds, port 51413 not applied")" || ok=no
+[[ "${__status}" -eq 1 ]] && ok="$(said "WARN: qBittorrent login (wget exit 4) still failing after 3 attempts, 0 seconds, port 51413 not applied")" || ok=no
 result "gives up after the last attempt" "${ok}"
 [[ "$(requests)" == "/auth/login /auth/login /auth/login" ]] && ok=yes || ok=no
 result "tries exactly QBITTORRENT_PORT_FORWARD_ATTEMPTS times" "${ok}"
@@ -212,9 +212,15 @@ worker STUB_SET_EXIT=4 STUB_SET_FAILURES=1
   ok=yes || ok=no
 result "starts the attempt over after a network failure on setPreferences" "${ok}"
 
-worker STUB_SET_EXIT=4
-[[ "${__status}" -eq 1 ]] && ok="$(said "WARN: qBittorrent unreachable after 0 seconds")" || ok=no
-result "gives up after the last attempt when setPreferences keeps failing" "${ok}"
+worker STUB_SET_EXIT=8 STUB_SET_HTTP="503 Service Unavailable"
+[[ "${__status}" -eq 1 ]] && ok="$(said "WARN: qBittorrent setPreferences (wget exit 8) still failing after 3 attempts")" || ok=no
+result "gives up after the last attempt when setPreferences keeps failing, naming that step" "${ok}"
+
+for setting in QBITTORRENT_PORT_FORWARD_DELAY=1.5 QBITTORRENT_PORT_FORWARD_DELAY=soon QBITTORRENT_PORT_FORWARD_ATTEMPTS=many; do
+  worker "${setting}"
+  [[ "${__status}" -eq 1 && ! -s "${__requests}" ]] && ok="$(said "must be whole numbers")" || ok=no
+  result "rejects ${setting} before any request" "${ok}"
+done
 
 # Another copy holds the lock while gluetun moves to a new port: this one
 # waits, then sees the new port and stops without a request.

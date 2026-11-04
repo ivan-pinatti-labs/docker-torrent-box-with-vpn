@@ -72,15 +72,19 @@ server_error() {
   awk '$1 ~ /^HTTP\// { code = $2 } END { exit !(code ~ /^5/) }' "${work_dir}/headers"
 }
 
+whole_number() {
+  case "$1" in
+  '' | *[!0-9]*) return 1 ;;
+  esac
+}
+
 dispatch() {
   port="${1:-}"
   port="${port%%,*}"
-  case "$port" in
-  '' | *[!0-9]*)
+  if ! whole_number "$port"; then
     echo "[PORTFWD] ERROR: no forwarded port given (got '${1:-}')"
     exit 1
-    ;;
-  esac
+  fi
   /bin/sh "$0" --worker "$port" </dev/null >>"$log_target" 2>&1 &
   echo "[PORTFWD] setting qBittorrent's listen port to ${port} in the background"
   exit 0
@@ -89,6 +93,12 @@ dispatch() {
 [ "${1:-}" = "--worker" ] || dispatch "$@"
 
 port="$2"
+
+# sleep and the shell's arithmetic take whole seconds only.
+if ! whole_number "$attempts" || ! whole_number "$delay"; then
+  echo "[PORTFWD] ERROR: QBITTORRENT_PORT_FORWARD_ATTEMPTS and QBITTORRENT_PORT_FORWARD_DELAY must be whole numbers (got '${attempts}' and '${delay}'), port ${port} not applied"
+  exit 1
+fi
 
 if [ -z "$services_ip" ] || [ -z "$https_port" ]; then
   echo "[PORTFWD] ERROR: GLUETUN_SERVICES_IP or QBITTORRENT_HTTPS_PORT unset, port ${port} not applied"
@@ -154,12 +164,15 @@ while :; do
       exit 1
     fi
     logout
+    failed="setPreferences (wget exit ${status})"
   elif ! retryable "$status"; then
     echo "[PORTFWD] ERROR: qBittorrent refused the login (wget exit ${status}), port ${port} not applied"
     exit 1
+  else
+    failed="login (wget exit ${status})"
   fi
   if [ "$i" -ge "$attempts" ]; then
-    echo "[PORTFWD] WARN: qBittorrent unreachable after $((attempts * delay)) seconds, port ${port} not applied"
+    echo "[PORTFWD] WARN: qBittorrent ${failed} still failing after ${attempts} attempts, $((attempts * delay)) seconds, port ${port} not applied"
     exit 1
   fi
   i=$((i + 1))
