@@ -2593,8 +2593,16 @@ start_job whisparr wire_arr_app whisparr whisparr https "$WHISPARR_HTTPS_PORT" v
 start_job prowlarr wire_prowlarr_apps
 start_job qbittorrent wire_qbittorrent
 
+# A job that died is named in the summary, like an arr job below, rather than
+# swallowed: a failed `podman stop` ends Calibre-Web's before its database is
+# written (#405), and nothing else would say so.
+SETUP_JOB_FAILED=()
 for name in audiobookshelf calibre calibre-web jellyfin prowlarr qbittorrent; do
-  wait_job "$name" || true
+  setup_status=0
+  wait_job "$name" || setup_status=$?
+  if [[ "$setup_status" -ne 0 ]]; then
+    SETUP_JOB_FAILED+=("$name (exit ${setup_status})")
+  fi
 done
 
 # Each of these five ran wire_arr_app, which reports whether its own download
@@ -2649,6 +2657,14 @@ if [[ ${#DOWNLOAD_CLIENT_FAILED[@]} -gt 0 ]]; then
     echo "[arr]   - ${failed}"
   done
   echo "[arr] Check the output above for the first error each one printed."
+fi
+
+if [[ ${#SETUP_JOB_FAILED[@]} -gt 0 ]]; then
+  echo "[setup] WARNING: these jobs stopped before they finished:"
+  for failed in "${SETUP_JOB_FAILED[@]}"; do
+    echo "[setup]   - ${failed}"
+  done
+  echo "[setup] Check the output above for the first error each one printed."
 fi
 
 if [[ ${#ARR_JOB_FAILED[@]} -gt 0 ]]; then

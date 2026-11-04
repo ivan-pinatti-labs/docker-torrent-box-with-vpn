@@ -1166,4 +1166,18 @@ if [[ "$(query configs/mylar/config/mylar/mylar.db 'SELECT COUNT(*) FROM comics'
 fi
 refute "nor is Mylar started again" log "podman start mylar"
 
+# The same for an app stopped with the timeout. Calibre-Web runs as a
+# background job, so its stop failing ends that job, named in the summary, and
+# leaves its database as it was.
+deployment
+calibre_web_db /data/media/calibre-library 0 ""
+rule '^podman stop --time 60 calibre-web$' 125 ""
+run
+check "a failed timed stop ends its job" 0 out "[Calibre-Web] Configuring library path..." \
+  "[setup] WARNING: these jobs stopped before they finished:" "[setup]   - calibre-web (exit 125)"
+if [[ "$(query configs/calibre-web/config/app.db 'SELECT config_calibre_dir, config_calibre_split FROM settings')" != "[('/data/media/calibre-library', 0)]" ]]; then
+  fail "before Calibre-Web's database is written"
+fi
+refute "nor is Calibre-Web started again" log "podman start calibre-web"
+
 finish
