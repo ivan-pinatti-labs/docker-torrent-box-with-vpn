@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from dotenv import dotenv_values
 
 from conftest import (
     QBITTORRENT_EXCLUDED_FILE_NAMES,
@@ -487,3 +488,105 @@ def test_stop_grace_period(compose_file, service, grace):
     """
     compose = yaml.safe_load((REPO_ROOT / compose_file).read_text())
     assert compose["services"][service].get("stop_grace_period") == grace
+
+
+# The error pages for an app that is switched off or not answering (#415).
+NGINX_TEMPLATE = REPO_ROOT / "configs/nginx/templates/default.conf.template"
+
+
+def _nginx_map(name: str) -> dict[str, str]:
+    """A `map $request_uri $<name>` of the template, key to value, quotes dropped."""
+    block = re.search(
+        rf"^map \$request_uri \${name} \{{\n(.*?)^\}}",
+        NGINX_TEMPLATE.read_text(),
+        re.M | re.S,
+    )
+    assert block, f"no ${name} map in {NGINX_TEMPLATE.name}"
+    entries = {}
+    for line in block.group(1).splitlines():
+        key, value = line.split(None, 1)
+        entries[key] = value.rstrip(";").strip('"')
+    return entries
+
+
+def _main_https_locations() -> list[str]:
+    """Every live `location` path of the HTTPS server Homepage is served from."""
+    text = NGINX_TEMPLATE.read_text()
+    start = text.index("## Homepage")
+    end = text.index("server_name ${JELLYFIN_PROXY_DOMAIN};")
+    return re.findall(r"^  location (?:= |\^~ )?(\S+) \{", text[start:end], re.M)
+
+
+def _keys_matching(path: str) -> list[str]:
+    """The $app_profile keys whose regex matches a request for `path`."""
+    return [
+        key
+        for key in _nginx_map("app_profile")
+        if key != "default" and re.search(key.removeprefix("~"), path)
+    ]
+
+
+def test_nginx_names_the_app_and_profile_of_the_same_paths():
+    names, profiles = _nginx_map("app_name"), _nginx_map("app_profile")
+    assert names.keys() == profiles.keys()
+    assert names["default"] == "Homepage"
+    assert profiles["default"] == "HOMEPAGE_PROFILE"
+
+
+def test_nginx_maps_every_proxied_path_to_one_app():
+    """Each location, and a request under it, matches exactly one key.
+
+    `location /` is the default (Homepage), and the error pages' own location
+    is internal. A path matching no key would be named as Homepage, and one
+    matching two would take whichever comes first.
+    """
+    locations = [
+        path for path in _main_https_locations() if path not in ("/", "/_errors/")
+    ]
+    assert "/nzbhydra2/" in locations
+    for path in locations:
+        # /stub_status is an exact location, with nothing under it.
+        under = [] if path == "/stub_status" else [path.rstrip("/") + "/login?next=1"]
+        for request in (path, *under):
+            assert len(_keys_matching(request)) == 1, (request, _keys_matching(request))
+    # A longer app name sharing a prefix is its own app.
+    assert _keys_matching("/calibre_web/") == ["~^/calibre_web(?:[/?]|$)"]
+    assert _keys_matching("/sonarr_extra/") == []
+
+
+def test_nginx_maps_only_real_profiles():
+    example = dotenv_values(REPO_ROOT / ".env.example")
+    for profile in _nginx_map("app_profile").values():
+        assert profile == "" or profile in example, profile
+
+
+def test_nginx_serves_the_error_pages_with_their_status():
+    text = NGINX_TEMPLATE.read_text()
+    assert "include /etc/nginx/generated/*.conf;" in text
+    assert "if ($app_refused) {\n    return 503;\n  }" in text
+    assert "error_page 503     /_errors/disabled.html;" in text
+    assert "error_page 502 504 /_errors/unavailable.html;" in text
+    # Off, so an app's own error statuses reach the browser unchanged.
+    assert not re.search(r"^\s*proxy_intercept_errors\s", text, re.M)
+    for page, words in (
+        ("disabled", "is disabled"),
+        ("unavailable", "is not answering"),
+    ):
+        html = (REPO_ROOT / f"configs/nginx/errors/{page}.html").read_text()
+        assert f'<!--# echo var="app_name" --> {words}' in html
+        assert '<!--# echo var="app_profile" -->' in html
+        # The head both share is written once (configs/nginx/errors/head.html).
+        assert '<!--# include file="head.html" -->' in html
+
+
+def test_nginx_mounts_the_error_pages_and_the_disabled_list():
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose-proxy.yml").read_text())
+    volumes = compose["services"]["nginx"]["volumes"]
+    assert "${CONFIG_FOLDER}/nginx/errors:/etc/nginx/errors:ro,z" in volumes
+    assert "${CONFIG_FOLDER}/nginx/generated:/etc/nginx/generated:ro,z" in volumes
+    # Tracked, so the directory exists for the mount in every clone.
+    assert (REPO_ROOT / "configs/nginx/generated/.gitignore").is_file()
+
+
+def test_nginx_hides_its_version():
+    assert "server_tokens off;" in (REPO_ROOT / "configs/nginx/nginx.conf").read_text()

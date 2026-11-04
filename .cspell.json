@@ -419,6 +419,7 @@
     "gethomepage",
     "getlftp",
     "getpeercert",
+    "getpid",
     "getpipe",
     "getuid",
     "gitblame",

@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- Served by nginx, with server side includes, when it cannot reach an app
+     (502 or 504; configs/nginx/templates/default.conf.template, #415). -->
+<html lang="en">
+<head>
+<!--# include file="head.html" -->
+  <title><!--# echo var="app_name" --> is not answering</title>
+</head>
+<body>
+  <main>
+    <h1><!--# echo var="app_name" --> is not answering</h1>
+    <p>The proxy could not reach it. It may be stopped, restarting or still
+      starting; wait a minute and reload.</p>
+    <p>If it stays like this, check its container with <code>podman ps</code>
+      (<code>docker ps</code> on Docker) and its log with
+      <code>podman logs</code> (<code>docker logs</code>). If it was switched off since
+      the proxy last started (<code><!--# echo var="app_profile" --></code>
+      in <code>.env</code>), run <code>make start</code>.</p>
+  </main>
+</body>
+</html>

@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- Served by nginx, with server side includes, for the path of an app whose
+     profile is off (configs/nginx/templates/default.conf.template, #415). -->
+<html lang="en">
+<head>
+<!--# include file="head.html" -->
+  <title><!--# echo var="app_name" --> is disabled</title>
+</head>
+<body>
+  <main>
+    <h1><!--# echo var="app_name" --> is disabled</h1>
+    <p>This app is switched off in this stack, so nothing answers at this
+      address.</p>
+    <p>To turn it on, set <code><!--# echo var="app_profile" -->=enabled</code>
+      in <code>.env</code>, then run <code>make start</code>.</p>
+  </main>
+</body>
+</html>
