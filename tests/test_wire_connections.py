@@ -34,9 +34,15 @@ import urllib3
 from dotenv import dotenv_values
 
 from conftest import (
+    CLEANUPARR_ARR_NAMES,
     ENV,
     REPO_ROOT,
     base_url,
+    cleanuparr_api,
+    cleanuparr_connection,
+    cleanuparr_failed_import_patterns,
+    cleanuparr_instance_test,
+    cleanuparr_qbittorrent_test,
     container_http,
     container_name,
     is_enabled,
@@ -545,6 +551,14 @@ def test_wiring_is_idempotent(running_containers):
                 f"[{app}] expected exactly one {implementation} client after "
                 f"re-running, found {len(matches)}"
             )
+    # cleanuparr_connection refuses a second entry of the same name.
+    if is_enabled("cleanuparr") and "cleanuparr" in running_containers:
+        assert cleanuparr_connection(
+            "configuration/download_client", "clients", "qBittorrent"
+        )
+        for app, name in CLEANUPARR_ARR_NAMES.items():
+            if is_enabled(app):
+                assert cleanuparr_connection(f"configuration/{app}", "instances", name)
 
 
 def _put_download_client(app: str, client: dict) -> tuple[int, str]:
@@ -967,3 +981,92 @@ def test_nginx_does_not_let_a_browser_claim_the_readarr_address(
         f"X-Forwarded-For {headers.get('X-Forwarded-For')!r} through nginx got "
         f"{response.status_code} {response.text[:200]!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Cleanuparr (#398)
+# ---------------------------------------------------------------------------
+
+
+def _skip_unless_cleanuparr(running_containers) -> None:
+    if not is_enabled("cleanuparr"):
+        pytest.skip("cleanuparr profile is disabled")
+    skip_if_not_running("cleanuparr", running_containers)
+
+
+@pytest.mark.wiring_readonly
+def test_cleanuparr_key_is_saved(running_containers):
+    """The key wire-connections.sh saved is the one Cleanuparr accepts."""
+    _skip_unless_cleanuparr(running_containers)
+    status, body = cleanuparr_api("account")
+    assert status == 200, f"Cleanuparr refused the saved key: {status} {body[:200]}"
+
+
+@pytest.mark.wiring_readonly
+def test_cleanuparr_accepts_the_stacks_certificate(running_containers):
+    _skip_unless_cleanuparr(running_containers)
+    status, body = cleanuparr_api("configuration/general")
+    assert status == 200, f"GET configuration/general failed: {status} {body[:200]}"
+    general = json.loads(body)
+    assert general["httpCertificateValidation"] == "DisabledForLocalAddresses"
+
+
+@pytest.mark.wiring_readonly
+def test_cleanuparr_qbittorrent_passes_its_own_test(running_containers):
+    """Logged in, on gluetun's services address, with the password it stores."""
+    _skip_unless_cleanuparr(running_containers)
+    client = cleanuparr_connection(
+        "configuration/download_client", "clients", "qBittorrent"
+    )
+    assert client is not None, "Cleanuparr has no qBittorrent download client"
+    host = f"https://{_env('GLUETUN_SERVICES_IP')}:{_env('QBITTORRENT_HTTPS_PORT')}"
+    assert client["host"].rstrip("/") == host
+    assert client["username"] == "qbittorrent"
+    status, body = cleanuparr_qbittorrent_test(client)
+    assert status == 200, f"Cleanuparr cannot reach qBittorrent: {status} {body[:300]}"
+
+
+@pytest.mark.wiring_readonly
+@pytest.mark.parametrize("app", sorted(CLEANUPARR_ARR_NAMES))
+def test_cleanuparr_arr_instance_passes_its_own_test(app, running_containers):
+    """One instance per enabled arr app, reaching it with the key it stores."""
+    _skip_unless_cleanuparr(running_containers)
+    if not is_enabled(app):
+        pytest.skip(f"{app} profile is disabled")
+    skip_if_not_running(app, running_containers)
+    instance = cleanuparr_connection(
+        f"configuration/{app}", "instances", CLEANUPARR_ARR_NAMES[app]
+    )
+    assert instance is not None, f"Cleanuparr has no {app} instance"
+    status, body = cleanuparr_instance_test(app, instance)
+    assert status == 200, f"Cleanuparr cannot reach {app}: {status} {body[:300]}"
+
+
+@pytest.mark.wiring_readonly
+def test_cleanuparr_queue_cleaner_strikes_the_excluded_types(running_containers):
+    """Three strikes on a failed import naming an excluded extension, nothing else.
+
+    The other strikes stay at Cleanuparr's defaults, which are off, and so does
+    the Malware Blocker: qBittorrent's excluded file names already keep those
+    files off disk.
+    """
+    _skip_unless_cleanuparr(running_containers)
+    status, body = cleanuparr_api("configuration/queue_cleaner")
+    assert status == 200, (
+        f"GET configuration/queue_cleaner failed: {status} {body[:200]}"
+    )
+    queue_cleaner = json.loads(body)
+    failed_import = queue_cleaner["failedImport"]
+
+    assert queue_cleaner["enabled"] is True
+    assert failed_import["maxStrikes"] >= 3
+    assert failed_import["patternMode"] == "Include"
+    assert set(cleanuparr_failed_import_patterns()) <= set(failed_import["patterns"])
+    assert queue_cleaner["downloadingMetadataMaxStrikes"] == 0
+    assert queue_cleaner["errored"]["maxStrikes"] == 0
+
+    status, body = cleanuparr_api("configuration/malware_blocker")
+    assert status == 200, (
+        f"GET configuration/malware_blocker failed: {status} {body[:200]}"
+    )
+    assert json.loads(body)["enabled"] is False

@@ -78,6 +78,12 @@
           url: http://bazarr:6767/bazarr
           key: "{{HOMEPAGE_FILE_BAZARR_API_KEY}}"
 
+    # No widget: Homepage has none for Cleanuparr.
+    - Cleanuparr:
+        icon: cleanuparr.png
+        href: /cleanuparr/
+        description: Queue Cleaner
+
 - Indexers & Downloaders:
     - qBittorrent:
         icon: qbittorrent.png

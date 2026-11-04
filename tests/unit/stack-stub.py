@@ -232,6 +232,17 @@ def arr_password(doc: dict, a: dict) -> list:
     ]
 
 
+def cleanuparr_queue_cleaner(doc: dict, a: dict) -> list:
+    """The queue cleaner wire-connections.sh wants: on, Include, >= 3 strikes."""
+    failed = dict(doc["failedImport"])
+    failed["patternMode"] = "Include"
+    failed["maxStrikes"] = max(failed["maxStrikes"], 3)
+    failed["patterns"] = failed["patterns"] + [
+        p for p in a["patterns"] if p not in failed["patterns"]
+    ]
+    return [set_keys(doc, enabled=True, failedImport=failed)]
+
+
 def index_of(doc: dict, a: dict) -> list:
     tags = doc["tags"]
     return [tags.index(a["t"]) if a["t"] in tags else None]
@@ -445,6 +456,57 @@ FILTERS = {
     '.[] | select(.fields[]? | .name == "baseUrl" and (.value | test("://prowlarr[:/]")))': prowlarr_indexers,
     '.username = (if ((.username // "") | length) == 0 then $user else .username end) | .password = $pw | '
     ".passwordConfirmation = $pw": arr_password,
+    # Cleanuparr (wire-connections.sh, rotate-*.sh).
+    ".setupCompleted": lambda d, a: [d.get("setupCompleted")],
+    ".tokens.accessToken": lambda d, a: [d["tokens"]["accessToken"]],
+    ".apiKey": lambda d, a: [d.get("apiKey")],
+    ".apiKey // empty": lambda d, a: (
+        [d["apiKey"]] if d.get("apiKey") not in (None, False) else []
+    ),
+    ".httpCertificateValidation": lambda d, a: [d.get("httpCertificateValidation")],
+    '.httpCertificateValidation = "DisabledForLocalAddresses"': lambda d, a: [
+        set_keys(d, httpCertificateValidation="DisabledForLocalAddresses")
+    ],
+    "{username: $username, password: $password}": lambda d, a: [
+        {"username": a["username"], "password": a["password"]}
+    ],
+    ".[$key] | map(select(.name == $name)) | first": lambda d, a: first_where(
+        "name", a["name"]
+    )(d[a["key"]], a),
+    ".[$field]": lambda d, a: [d.get(a["field"])],
+    ".[$secret] = $placeholder | .[$idField] = $id": lambda d, a: [
+        set_keys(d, **{a["secret"]: a["placeholder"], a["idField"]: a["id"]})
+    ],
+    '{enabled: true, name: "qBittorrent", typeName: "qBittorrent", host: $host, username: $username, '
+    'password: $password, urlBase: ""}': lambda d, a: [
+        {
+            "enabled": True,
+            "name": "qBittorrent",
+            "typeName": "qBittorrent",
+            "host": a["host"],
+            "username": a["username"],
+            "password": a["password"],
+            "urlBase": "",
+        }
+    ],
+    "{enabled: true, name: $name, url: $url, apiKey: $apiKey, version: $version}": lambda d, a: [
+        {
+            "enabled": True,
+            "name": a["name"],
+            "url": a["url"],
+            "apiKey": a["apiKey"],
+            "version": a["version"],
+        }
+    ],
+    "{currentPassword: $current, newPassword: $new}": lambda d, a: [
+        {"currentPassword": a["current"], "newPassword": a["new"]}
+    ],
+    ".password = $pw": lambda d, a: [set_keys(d, password=a["pw"])],
+    ".apiKey = $key": lambda d, a: [set_keys(d, apiKey=a["key"])],
+    '.enabled = true | .failedImport.patternMode = "Include" | .failedImport.maxStrikes = '
+    "([.failedImport.maxStrikes, 3] | max) | .failedImport.patterns += ($patterns - .failedImport.patterns)": (
+        cleanuparr_queue_cleaner
+    ),
 }
 
 

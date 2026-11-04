@@ -305,6 +305,52 @@ services:
       <<: *healthcheck-defaults
       test: curl --fail http://127.0.0.1:${FLARESOLVERR_HTTP_PORT}/ || exit 1
 
+  # Clears the downloads qBittorrent's excluded file names leave stuck in the
+  # arr queues: removed, blocklisted and searched again after three strikes.
+  # Its settings live in its own database and are made by
+  # scripts/wire-connections.sh (wire_cleanuparr). No VPN route: what it works
+  # with, the arr apps and qBittorrent's WebUI on gluetun's services address,
+  # is inside the stack, and its egress on apps is direct like the other
+  # direct apps'. See docs/CONNECTIONS.md, "Cleanuparr".
+  cleanuparr:
+    <<: *limit-servarr
+    image: ghcr.io/cleanuparr/cleanuparr:${CLEANUPARR_VERSION}
+    container_name: ${CONTAINER_PREFIX}cleanuparr
+    profiles: ["${CLEANUPARR_PROFILE}"]
+    networks:
+      apps:
+        aliases: [cleanuparr-http]
+      services: {}
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+      - net.ipv6.conf.default.disable_ipv6=1
+      - net.ipv6.conf.lo.disable_ipv6=1
+    restart: unless-stopped
+    # The image's entrypoint drops to PUID/PGID when started as root and
+    # skips that step entirely when started as anyone else, so the user is
+    # set here instead and it writes nowhere but /config.
+    user: "${CLEANUPARR_UID}:${CLEANUPARR_GID}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    environment:
+      BASE_PATH: /cleanuparr
+      # Unused when started as `user:`, but the image's own defaults say
+      # 1000, so they are set to the user it does run as.
+      PGID: "${CLEANUPARR_GID}"
+      PORT: "${CLEANUPARR_HTTP_PORT}"
+      PUID: "${CLEANUPARR_UID}"
+      TZ: "${TIMEZONE}"
+      UMASK: "027"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${CONFIG_FOLDER}/cleanuparr/config:/config:z
+    healthcheck:
+      <<: *healthcheck-defaults
+      # Under BASE_PATH like every other route; /health at the root is a 404.
+      test: curl --fail --silent --output /dev/null http://127.0.0.1:${CLEANUPARR_HTTP_PORT}/cleanuparr/health || exit 1
+
   whisparr:
     <<: [*servarr-common, *limit-servarr]
     image: ghcr.io/hotio/whisparr:${WHISPARR_VERSION}

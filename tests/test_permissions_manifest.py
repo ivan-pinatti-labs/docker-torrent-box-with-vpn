@@ -108,6 +108,7 @@ def test_jdownloader2_uses_manifest_identity():
     [
         ("docker-compose-servarr.yml", "recyclarr", "recyclarr"),
         ("docker-compose-servarr.yml", "flaresolverr", "flaresolverr"),
+        ("docker-compose-servarr.yml", "cleanuparr", "cleanuparr"),
         ("docker-compose-media-library.yml", "audiobookshelf", "audiobookshelf"),
         ("docker-compose-proxy.yml", "homepage", "homepage"),
         ("docker-compose-observability.yml", "alloy", "alloy"),

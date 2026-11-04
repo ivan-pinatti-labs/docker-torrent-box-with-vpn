@@ -89,6 +89,7 @@ EXPECTED_PODMAN_DASHBOARD_STACKS = {
     "Homepage": {"homepage"},
     "Servarr": {
         "bazarr",
+        "cleanuparr",
         "flaresolverr",
         "lidarr",
         "radarr",

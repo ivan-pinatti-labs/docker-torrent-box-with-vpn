@@ -40,6 +40,11 @@ can include state and images from `/metadata/items` and `/metadata/authors`.
 The full `/metadata` tree is bind mounted on the host at
 `configs/audiobookshelf/metadata` and included in the config backup.
 
+Cleanuparr keeps everything it knows, its settings, strikes and the keys of the
+apps it connects to, in SQLite databases under `configs/cleanuparr/config`, and
+its own login and API key in `configs/cleanuparr/secrets`. Both are in the
+config backup like any other app's; nothing of its lives anywhere else.
+
 Use this when you want the smallest practical backup that can restore service
 settings, secrets, certificates, and primary app databases.
 

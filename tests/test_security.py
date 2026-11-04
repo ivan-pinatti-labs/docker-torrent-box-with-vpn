@@ -34,6 +34,7 @@ HARDENED_SERVICES = [
         "whisparr",
         "recyclarr",
         "flaresolverr",
+        "cleanuparr",
         "qbittorrent",
         "sabnzbd",
         "jellyfin",
@@ -88,6 +89,7 @@ SERVICES_WITH_CONFIG = [
         "readarr",
         "whisparr",
         "recyclarr",
+        "cleanuparr",
         "qbittorrent",
         "sabnzbd",
     ]

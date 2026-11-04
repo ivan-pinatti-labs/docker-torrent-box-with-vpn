@@ -6,6 +6,7 @@ import urllib3
 
 import conftest
 from conftest import (
+    QBITTORRENT_EXCLUDED_FILE_NAMES,
     QBITTORRENT_QUEUEING,
     SERVICES,
     classify_arr_health_response,
@@ -283,3 +284,22 @@ def test_qbittorrent_queueing(running_containers):
     expected = {name: value for _, name, value in QBITTORRENT_QUEUEING}
     actual = {name: preferences.get(name) for name in expected}
     assert actual == expected, "qBittorrent's queue settings differ from its seed"
+
+
+def test_qbittorrent_excludes_executables(running_containers):
+    """qBittorrent runs with the excluded file names its seed holds (#125).
+
+    Read live, as test_qbittorrent_queueing is, since qBittorrent writes its
+    running state over qBittorrent.conf on shutdown.
+    test_qbittorrent_seed_excludes_executables checks the seed itself.
+    """
+    if not is_enabled("qbittorrent"):
+        pytest.skip("qbittorrent profile is disabled")
+    skip_if_not_running("qbittorrent", running_containers)
+
+    preferences = qbittorrent_preferences()
+    assert preferences.get("excluded_file_names_enabled") is True
+    assert (
+        preferences.get("excluded_file_names", "").split("\n")
+        == QBITTORRENT_EXCLUDED_FILE_NAMES
+    )

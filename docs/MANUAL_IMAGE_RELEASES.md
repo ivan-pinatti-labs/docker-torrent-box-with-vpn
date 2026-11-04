@@ -20,6 +20,7 @@ becomes eligible on a given day.
 | Pin | Image | Where the push date is recorded | Notes |
 | --- | --- | --- | --- |
 | `WHISPARR_VERSION` | `ghcr.io/hotio/whisparr` | [GHCR package page](https://github.com/users/hotio/packages/container/package/whisparr) | hotio rebuilds `v3` every few days, so release [one build back](#one-build-back). Pinned as `v3@<digest>`; Renovate cannot order hotio's release tags |
+| `CLEANUPARR_VERSION` | `ghcr.io/cleanuparr/cleanuparr` | [GHCR package page](https://github.com/Cleanuparr/Cleanuparr/pkgs/container/cleanuparr) | GHCR only |
 | `KORSYNC_VERSION` | `ghcr.io/nperez0111/koreader-sync` | [GHCR package page](https://github.com/users/nperez0111/packages/container/package/koreader-sync) | GHCR only |
 | `QBITTORRENT_EXPORTER_VERSION` | `ghcr.io/esanchezm/prometheus-qbittorrent-exporter` | [GHCR package page](https://github.com/users/esanchezm/packages/container/package/prometheus-qbittorrent-exporter) | also on Docker Hub, but as a separate build, so it stays on GHCR |
 | `PODMAN_EXPORTER_VERSION` | `quay.io/navidys/prometheus-podman-exporter` | [quay.io tag API](#quayio) | quay.io only. A major (`v2`) is also offered; that one needs a person regardless |
@@ -147,6 +148,7 @@ check its output the first time.
 
 | Date | Image | Version and build | Digest | Pull request | Notes |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-03 | cleanuparr | `2.10.12` | `sha256:d0212e4c...` | #398 | First pin, added with the service. Built 2026-10-18 |
 | 2026-10-21 | whisparr | `3.6.5-release.1886`, build `v3-7fb9b23` | `sha256:ddc89f9a...` | #323 | First release by hand, one build back: `v3` itself was a day old. Needed the setup and healthcheck changes above |
 
 ---

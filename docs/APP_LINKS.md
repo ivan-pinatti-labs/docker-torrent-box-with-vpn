@@ -75,6 +75,7 @@ canonical URL.
 | Bazarr             | <https://localhost:8443/bazarr/>                | bazarr        | rotated       |
 | Calibre            | <https://localhost:8443/calibre/>               | calibre       | rotated       |
 | Calibre-Web        | <https://localhost:8443/calibre_web/>           | admin         | rotated       |
+| Cleanuparr         | <https://localhost:8443/cleanuparr/>            | cleanuparr    | rotated       |
 | FlareSolverr       | <https://localhost:8443/flaresolverr/>          | -             | -             |
 | Gluetun VPN status | <https://localhost:8443/gluetun/v1/vpn/status>  | -             | -             |
 | Gluetun port       | <https://localhost:8443/gluetun/v1/portforward> | -             | -             |

@@ -3,7 +3,7 @@
 # Copyright 2022 Ivan Pinatti
 set -euo pipefail
 
-# Usage: ./scripts/rotate-passwords.sh [audiobookshelf|bazarr|calibre|calibre-web|grafana|jdownloader2|jellyfin|lazylibrarian|lidarr|mylar|nzbhydra2|prowlarr|qbittorrent|radarr|readarr|sabnzbd|sonarr|whisparr|all]
+# Usage: ./scripts/rotate-passwords.sh [audiobookshelf|bazarr|calibre|calibre-web|cleanuparr|grafana|jdownloader2|jellyfin|lazylibrarian|lidarr|mylar|nzbhydra2|prowlarr|qbittorrent|radarr|readarr|sabnzbd|sonarr|whisparr|all]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
@@ -11,7 +11,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 readonly REPO_ROOT
 cd "$REPO_ROOT"
 
-readonly USAGE="Usage: $0 [audiobookshelf|bazarr|calibre|calibre-web|grafana|jdownloader2|jellyfin|lazylibrarian|lidarr|mylar|nzbhydra2|prowlarr|qbittorrent|radarr|readarr|sabnzbd|sonarr|whisparr|all]"
+readonly USAGE="Usage: $0 [audiobookshelf|bazarr|calibre|calibre-web|cleanuparr|grafana|jdownloader2|jellyfin|lazylibrarian|lidarr|mylar|nzbhydra2|prowlarr|qbittorrent|radarr|readarr|sabnzbd|sonarr|whisparr|all]"
 
 if [[ $# -ne 1 ]]; then
   echo "$USAGE" >&2
@@ -74,6 +74,7 @@ CALIBRE_GUI_WEB_HTTP_PORT="$(env_value CALIBRE_GUI_WEB_HTTP_PORT)"
 CALIBRE_DESKTOP_HTTPS_PORT="$(env_value CALIBRE_DESKTOP_HTTPS_PORT)"
 CALIBRE_WEB_CONTAINER_HTTPS_PORT="$(env_value CALIBRE_WEB_CONTAINER_HTTPS_PORT)"
 CALIBRE_WEB_CONTAINER_HTTP_PORT="$(env_value CALIBRE_WEB_CONTAINER_HTTP_PORT)"
+CLEANUPARR_HTTP_PORT="$(env_value CLEANUPARR_HTTP_PORT)"
 JDOWNLOADER2_HTTP_PORT="$(env_value JDOWNLOADER2_HTTP_PORT)"
 JELLYFIN_HTTP_PORT="$(env_value JELLYFIN_HTTP_PORT)"
 # BaseUrl is a server-wide Jellyfin setting (see wire-connections.sh), not an
@@ -97,7 +98,7 @@ SONARR_HTTP_PORT="$(env_value SONARR_HTTP_PORT)"
 WHISPARR_HTTPS_PORT="$(env_value WHISPARR_HTTPS_PORT)"
 readonly AUDIOBOOKSHELF_HTTP_PORT BAZARR_HTTP_PORT CALIBRE_GUI_WEB_HTTP_PORT \
   CALIBRE_DESKTOP_HTTPS_PORT CALIBRE_WEB_CONTAINER_HTTPS_PORT \
-  CALIBRE_WEB_CONTAINER_HTTP_PORT JDOWNLOADER2_HTTP_PORT \
+  CALIBRE_WEB_CONTAINER_HTTP_PORT CLEANUPARR_HTTP_PORT JDOWNLOADER2_HTTP_PORT \
   JELLYFIN_HTTP_PORT JELLYFIN_BASE_URL LAZYLIBRARIAN_HTTP_PORT \
   LIDARR_HTTPS_PORT MYLAR_HTTPS_PORT NZBHYDRA2_HTTPS_PORT PROWLARR_HTTPS_PORT \
   QBITTORRENT_HTTPS_PORT GLUETUN_SERVICES_IP RADARR_HTTPS_PORT \
@@ -151,6 +152,10 @@ readonly CALIBRE_USER="calibre"
 # Single source of truth for the desktop GUI's password, consumed via
 # compose `secrets:` by calibre itself. See docs/COMPOSE_CONVENTIONS.md.
 readonly CALIBRE_PASSWORD_SECRET="configs/calibre/secrets/password.txt" # pragma: allowlist secret
+readonly CLEANUPARR_USER="cleanuparr"
+# Read by scripts alone, never by a container: Cleanuparr keeps its own hash.
+readonly CLEANUPARR_PASSWORD_SECRET="configs/cleanuparr/secrets/password.txt" # pragma: allowlist secret
+readonly CLEANUPARR_API_KEY_SECRET="configs/cleanuparr/secrets/api_key.txt"   # pragma: allowlist secret
 readonly NZBHYDRA_YML="configs/nzbhydra2/config/nzbhydra.yml"
 readonly AUDIOBOOKSHELF_DB="configs/audiobookshelf/config/absdatabase.sqlite"
 readonly AUDIOBOOKSHELF_USER="root"
@@ -490,6 +495,8 @@ SUMMARY_CALIBRE_USER=""
 SUMMARY_CALIBRE_NEW=""
 SUMMARY_CALIBRE_WEB_USER=""
 SUMMARY_CALIBRE_WEB_NEW=""
+SUMMARY_CLEANUPARR_USER=""
+SUMMARY_CLEANUPARR_NEW=""
 SUMMARY_GRAFANA_USER=""
 SUMMARY_GRAFANA_NEW=""
 SUMMARY_JDOWNLOADER2_USER=""
@@ -783,6 +790,87 @@ PYEOF
   else
     podman start "$(cname calibre-web)" >/dev/null
     echo "[Calibre-Web] No user '${CALIBREWEB_USER}' in app.db, skipping."
+  fi
+}
+
+# Cleanuparr's API, as its own saved key, from inside its own container.
+# Prints the body and succeeds only on a 2xx. Mirrors wire-connections.sh's
+# cleanuparr_keyed. Bounded by CLEANUPARR_MAX_TIME seconds when a caller sets
+# it. Args: method path [body]
+cleanuparr_keyed() {
+  local key out code
+  key=$(cat "$CLEANUPARR_API_KEY_SECRET" 2>/dev/null) || key=""
+  out=$(container_curl cleanuparr -sS -X "$1" -w '\n%{http_code}' ${CLEANUPARR_MAX_TIME:+--max-time "$CLEANUPARR_MAX_TIME"} -H "X-Api-Key: ${key}" -H "Content-Type: application/json" ${3+-d "$3"} "http://127.0.0.1:${CLEANUPARR_HTTP_PORT}/cleanuparr/api/$2" 2>&1) || true
+  code=${out##*$'\n'}
+  printf '%s' "${out%$'\n'*}"
+  [[ "$code" == 2?? ]]
+}
+
+# Through Cleanuparr's live API, which needs the current password and its API
+# key (wire-connections.sh saves both). Nothing else logs in to Cleanuparr,
+# so there is no consumer to update.
+#
+# The new password is staged beside the saved one before the change, and
+# renamed over it only once Cleanuparr has accepted it, so a write that fails
+# leaves the saved password as it was. The change itself has no time limit: a
+# deadline could give up on a change Cleanuparr then applies. When it is not
+# accepted the staged file stays, in case Cleanuparr applied it anyway, and
+# the error names it. A staged file left by an earlier run stops this one,
+# since it may be the password Cleanuparr now holds and a new one would
+# overwrite it.
+rotate_cleanuparr() {
+  local new_password body response staged="${CLEANUPARR_PASSWORD_SECRET}.new"
+  if [[ -e "$staged" ]]; then
+    echo "[Cleanuparr] An earlier rotation left ${staged}, which may be the password Cleanuparr holds now." >&2
+    echo "[Cleanuparr] If it logs in, move it over ${CLEANUPARR_PASSWORD_SECRET}; if not, delete it. Then rotate again." >&2
+    exit 1
+  fi
+  new_password=$(gen_password)
+  body=$(jq -cn --arg current "$(cat "$CLEANUPARR_PASSWORD_SECRET")" --arg new "$new_password" '{currentPassword: $current, newPassword: $new}')
+  # Only the scripts read it, as the host user.
+  (umask 077 && printf '%s' "$new_password" >"$staged")
+  echo "[Cleanuparr] Setting new password..."
+  if ! response=$(cleanuparr_keyed PUT account/password "$body"); then
+    echo "[Cleanuparr] Password change refused: ${response:0:300}" >&2
+    echo "[Cleanuparr] The password tried is in ${staged}, in case Cleanuparr took it anyway." >&2
+    echo "[Cleanuparr] Run 'make wire_connections' if its API key or password file is out of date." >&2
+    exit 1
+  fi
+  if ! mv "$staged" "$CLEANUPARR_PASSWORD_SECRET"; then
+    echo "[Cleanuparr] Cleanuparr took the new password, but it could not be moved over ${CLEANUPARR_PASSWORD_SECRET}: it is in ${staged}." >&2
+    exit 1
+  fi
+  SUMMARY_CLEANUPARR_USER="$CLEANUPARR_USER"
+  SUMMARY_CLEANUPARR_NEW="$new_password"
+}
+
+# Cleanuparr logs in to qBittorrent too. Its download client is updated through
+# its live API, so Cleanuparr is not stopped; a stored password it never
+# returns is replaced while the rest of the client is sent back as read. A
+# Cleanuparr that is not there, or not wired yet, has nothing to update.
+#
+# Both calls have a deadline: rotate_qbittorrent has the arr apps stopped
+# while this runs, and a Cleanuparr that took the connection and never
+# answered would keep them down. A late PUT only ever applies the password
+# meant. Args: new_password
+update_cleanuparr_qbittorrent() {
+  local listing client CLEANUPARR_MAX_TIME=30
+  if ! podman container exists "$(cname cleanuparr)" 2>/dev/null; then
+    return 0
+  fi
+  if ! listing=$(cleanuparr_keyed GET configuration/download_client); then
+    echo "[Cleanuparr] WARNING: could not list its download clients, so its qBittorrent password was not updated; run 'make wire_connections' to save it." >&2
+    return 0
+  fi
+  client=$(jq --arg key clients --arg name qBittorrent '.[$key] | map(select(.name == $name)) | first' <<<"$listing")
+  if [[ "$client" == null ]]; then
+    echo "[Cleanuparr] No qBittorrent download client to update, skipping."
+    return 0
+  fi
+  echo "[Cleanuparr] Updating qBittorrent's password..."
+  if ! cleanuparr_keyed PUT "configuration/download_client/$(jq -r '.id' <<<"$client")" \
+    "$(jq -c --arg pw "$1" '.password = $pw' <<<"$client")" >/dev/null; then
+    echo "[Cleanuparr] WARNING: could not update qBittorrent's password; run 'make wire_connections' to save it." >&2
   fi
 }
 
@@ -1107,6 +1195,8 @@ set_ini_line('$LAZYLIBRARIAN_CONFIG', 'qbittorrent_pass', new_password)
 set_ini_line('$MYLAR_CONFIG', 'qbittorrent_password', new_password)
 PYEOF
 
+  update_cleanuparr_qbittorrent "$new_password"
+
   start_stopped
 
   SUMMARY_QBITTORRENT_USER="qbittorrent"
@@ -1363,7 +1453,7 @@ rotate_if_enabled() {
 # below, serializing waits that could otherwise happen concurrently.
 prestart_api_containers() {
   local svc container to_start=() to_wait=()
-  for svc in sonarr radarr lidarr readarr whisparr prowlarr qbittorrent grafana jellyfin; do
+  for svc in sonarr radarr lidarr readarr whisparr prowlarr qbittorrent grafana jellyfin cleanuparr; do
     if [[ "$TARGET" != "all" && "$TARGET" != "$svc" ]]; then
       continue
     fi
@@ -1468,10 +1558,11 @@ parallel_rotation() {
 
 run_parallel_group() {
   PARALLEL_TMPDIR="$(mktemp -d)"
-  local services=(audiobookshelf bazarr calibre-web grafana jdownloader2 jellyfin nzbhydra2 prowlarr)
+  local services=(audiobookshelf bazarr calibre-web cleanuparr grafana jdownloader2 jellyfin nzbhydra2 prowlarr)
   run_parallel_service audiobookshelf rotate_audiobookshelf &
   run_parallel_service bazarr rotate_bazarr &
   run_parallel_service calibre-web rotate_calibre_web &
+  run_parallel_service cleanuparr rotate_cleanuparr cleanuparr &
   run_parallel_service grafana rotate_grafana grafana &
   run_parallel_service jdownloader2 rotate_jdownloader2 &
   run_parallel_service jellyfin rotate_jellyfin jellyfin &
@@ -1507,6 +1598,7 @@ audiobookshelf) rotate_if_enabled audiobookshelf rotate_audiobookshelf ;;
 bazarr) rotate_if_enabled bazarr rotate_bazarr ;;
 calibre) rotate_if_enabled calibre rotate_calibre ;;
 calibre-web) rotate_if_enabled calibre-web rotate_calibre_web ;;
+cleanuparr) rotate_if_enabled cleanuparr rotate_cleanuparr cleanuparr ;;
 grafana) rotate_if_enabled grafana rotate_grafana grafana ;;
 jdownloader2) rotate_if_enabled jdownloader2 rotate_jdownloader2 ;;
 jellyfin) rotate_if_enabled jellyfin rotate_jellyfin jellyfin ;;
@@ -1646,6 +1738,7 @@ print_row "audiobookshelf" "$SUMMARY_AUDIOBOOKSHELF_USER" "$SUMMARY_AUDIOBOOKSHE
 print_row "bazarr" "$SUMMARY_BAZARR_USER" "$SUMMARY_BAZARR_NEW"
 print_row "calibre" "$SUMMARY_CALIBRE_USER" "$SUMMARY_CALIBRE_NEW"
 print_row "calibre-web" "$SUMMARY_CALIBRE_WEB_USER" "$SUMMARY_CALIBRE_WEB_NEW"
+print_row "cleanuparr" "$SUMMARY_CLEANUPARR_USER" "$SUMMARY_CLEANUPARR_NEW"
 print_row "grafana" "$SUMMARY_GRAFANA_USER" "$SUMMARY_GRAFANA_NEW"
 print_row "jdownloader2" "$SUMMARY_JDOWNLOADER2_USER" "$SUMMARY_JDOWNLOADER2_NEW"
 print_row "jellyfin" "$SUMMARY_JELLYFIN_USER" "$SUMMARY_JELLYFIN_NEW"
@@ -1711,6 +1804,13 @@ audiobookshelf_login_ok() {
 # Bazarr's /bazarr/login route only accepts GET (POST returns 405); the real
 # credential check is the account API, which returns 204 on success and 403
 # on a wrong password.
+# A refused login is a 401, so the status is enough here.
+cleanuparr_login_ok() {
+  container_curl cleanuparr -s --fail -o /dev/null -H "Content-Type: application/json" \
+    -d "$(jq -cn --arg username "$CLEANUPARR_USER" --arg password "$1" '{username: $username, password: $password}')" \
+    "http://127.0.0.1:${CLEANUPARR_HTTP_PORT}/cleanuparr/api/auth/login"
+}
+
 bazarr_login_ok() {
   local code
   code=$(container_curl bazarr -s -o /dev/null -w '%{http_code}' -X POST -d "username=bazarr&password=$1" "http://127.0.0.1:${BAZARR_HTTP_PORT}/bazarr/api/system/account?action=login")
@@ -1932,6 +2032,7 @@ VALIDATE_TMPDIR="$(mktemp -d)"
 [[ -n "$SUMMARY_BAZARR_NEW" ]] && queue_validation bazarr validate bazarr 180 bazarr_login_ok "$SUMMARY_BAZARR_NEW"
 [[ -n "$SUMMARY_CALIBRE_NEW" ]] && queue_validation calibre validate_calibre "$SUMMARY_CALIBRE_NEW"
 [[ -n "$SUMMARY_CALIBRE_WEB_NEW" ]] && queue_validation calibre-web validate_calibre_web "$SUMMARY_CALIBRE_WEB_NEW"
+[[ -n "$SUMMARY_CLEANUPARR_NEW" ]] && queue_validation cleanuparr validate cleanuparr 180 cleanuparr_login_ok "$SUMMARY_CLEANUPARR_NEW"
 [[ -n "$SUMMARY_GRAFANA_NEW" ]] && queue_validation grafana validate grafana 180 grafana_login_ok "$SUMMARY_GRAFANA_NEW"
 [[ -n "$SUMMARY_JDOWNLOADER2_NEW" ]] && queue_validation jdownloader2 validate jdownloader2 180 jdownloader2_login_ok "$SUMMARY_JDOWNLOADER2_NEW"
 [[ -n "$SUMMARY_JELLYFIN_NEW" ]] && queue_validation jellyfin validate jellyfin 180 jellyfin_login_ok "$SUMMARY_JELLYFIN_NEW"

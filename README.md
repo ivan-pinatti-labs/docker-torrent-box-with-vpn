@@ -93,6 +93,7 @@ tools, and never touches a stack or a Python on the host. See
 | KOReader Sync  | <https://github.com/nperez0111/koreader-sync>        | KOReader reading progress sync server                             | enabled     |
 | Calibre        | <https://hub.docker.com/r/linuxserver/calibre>       | eBooks Library Manager                                            | enabled     |
 | Calibre-web    | <https://hub.docker.com/r/linuxserver/calibre-web>   | eBooks Library Manager                                            | enabled     |
+| Cleanuparr     | <https://github.com/Cleanuparr/Cleanuparr>           | Clears fake releases the excluded file names leave stuck          | enabled     |
 | Flaresolverr   | <https://hub.docker.com/r/flaresolverr/flaresolverr> | Bypass to Cloudflare and DDoS-GUARD                               | enabled     |
 | Jellyfin       | <https://hub.docker.com/r/linuxserver/jellyfin>      | Movie/TV Shows/Music Library Manager and Player                   | enabled     |
 | LazyLibrarian  | <https://hub.docker.com/r/linuxserver/lazylibrarian> | Books Tracker/Manager                                             | enabled     |
@@ -298,6 +299,7 @@ It will look like this;
 ```dotenv
 # Core (enabled by default)
 BAZARR_PROFILE=enabled
+CLEANUPARR_PROFILE=enabled
 FLARESOLVERR_PROFILE=enabled
 GLUETUN_PROFILE=enabled
 JELLYFIN_PROFILE=enabled

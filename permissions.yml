@@ -26,6 +26,7 @@ identities:
   prowlarr: {uid: 1210, gid: 1210}
   recyclarr: {uid: 1211, gid: 1211}
   flaresolverr: {uid: 1212, gid: 1212}
+  cleanuparr: {uid: 1213, gid: 1213}
   jellyfin: {uid: 1301, gid: 1301}
   audiobookshelf: {uid: 1302, gid: 1302}
   calibre: {uid: 1303, gid: 1303}
@@ -466,6 +467,10 @@ paths:
     chown_files: true
   - path: configs/flaresolverr/config
     owner: flaresolverr
+    mode: "0750"
+    chown_files: true
+  - path: configs/cleanuparr/config
+    owner: cleanuparr
     mode: "0750"
     chown_files: true
   - path: configs/whisparr/config

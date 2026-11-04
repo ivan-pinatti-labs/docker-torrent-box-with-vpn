@@ -55,7 +55,7 @@ def hashpw(password, salt):
 EOF
 export PYTHONPATH="${__scratch}/python"
 
-readonly SERVICES=(audiobookshelf bazarr calibre calibre-web grafana jdownloader2 jellyfin lazylibrarian lidarr mylar nzbhydra2 prowlarr qbittorrent radarr readarr sabnzbd sonarr whisparr)
+readonly SERVICES=(audiobookshelf bazarr calibre calibre-web cleanuparr grafana jdownloader2 jellyfin lazylibrarian lidarr mylar nzbhydra2 prowlarr qbittorrent radarr readarr sabnzbd sonarr whisparr)
 
 # sql <file> <statement>...: runs statements against a database under the
 # scratch repository, printing the rows of the last.
@@ -90,6 +90,7 @@ CALIBRE_GUI_WEB_HTTP_PORT=8081
 CALIBRE_DESKTOP_HTTPS_PORT=8181
 CALIBRE_WEB_CONTAINER_HTTPS_PORT=8483
 CALIBRE_WEB_CONTAINER_HTTP_PORT=8083
+CLEANUPARR_HTTP_PORT=11011
 JDOWNLOADER2_HTTP_PORT=5800
 JELLYFIN_HTTP_PORT=8096
 JELLYFIN_BASE_URL=/jellyfin
@@ -109,6 +110,7 @@ AUDIOBOOKSHELF_PROFILE=enabled
 BAZARR_PROFILE=enabled
 CALIBRE_PROFILE=enabled
 CALIBREWEB_PROFILE=enabled
+CLEANUPARR_PROFILE=enabled
 GRAFANA_PROFILE=enabled
 JDOWNLOADER2_PROFILE=enabled
 JELLYFIN_PROFILE=enabled
@@ -176,6 +178,14 @@ EOF
   rule 'qbittorrent curl -sk -o /dev/null -D -' 0 $'HTTP/2 200\r\nset-cookie: QBT_SID_8443=abc; path=/\r\n\r\n\n200'
   rule 'sabnzbd curl -sk https://127.0.0.1:9090/sabnzbd/api\?mode=queue' 0 '{"queue": {"slots": []}}'
   rule 'curl -sk -o /dev/null -w %\{http_code\} https://127.0.0.1:\d+/(lazylibrarian|mylar)/auth/login$' 0 200
+  # Cleanuparr, wired, with qBittorrent as its download client. Its answers
+  # are the body, then the status curl's -w appends.
+  put configs/cleanuparr/secrets/password.txt cleanuparr-old # pragma: allowlist secret
+  put configs/cleanuparr/secrets/api_key.txt key-cleanuparr
+  rule 'cleanuparr curl -sS -X PUT .*X-Api-Key: key-cleanuparr .*/cleanuparr/api/account/password$' 0 $'{}\n200'
+  rule 'cleanuparr curl -sS -X GET .*/cleanuparr/api/configuration/download_client$' 0 \
+    $'{"clients": [{"id": "qbt-id", "name": "qBittorrent", "host": "https://10.0.0.2:8443/", "username": "qbittorrent"}]}\n200'
+  rule 'cleanuparr curl -sS -X PUT .*/cleanuparr/api/configuration/download_client/qbt-id$' 0 $'{}\n200'
 }
 
 # The new password the summary reports for a service.
@@ -250,6 +260,15 @@ check "SABnzbd's own config" 0 configs/sabnzbd/config/sabnzbd.ini "username = sa
 check "SABnzbd's key reaches notifiarr" 0 configs/notifiarr/config/notifiarr.conf 'api_key  = "'
 check "the secret files" 0 configs/qbittorrent/secrets/password.txt "$(new_password qbittorrent)"
 check "Jellyfin's password is kept" 0 configs/jellyfin/secrets/password.txt "$(new_password jellyfin)"
+check "Cleanuparr's password is kept" 0 configs/cleanuparr/secrets/password.txt "$(new_password cleanuparr)"
+check "Cleanuparr is asked with its old password" 0 log \
+  "{\"currentPassword\":\"cleanuparr-old\",\"newPassword\":\"$(new_password cleanuparr)\"}"
+check "Cleanuparr's qBittorrent client gets the new password" 0 out "[Cleanuparr] Updating qBittorrent's password..."
+check "sent back as read, with the new password" 0 log \
+  "{\"id\":\"qbt-id\",\"name\":\"qBittorrent\",\"host\":\"https://10.0.0.2:8443/\",\"username\":\"qbittorrent\",\"password\":\"$(new_password qbittorrent)\"}" \
+  "/cleanuparr/api/configuration/download_client/qbt-id"
+check "Cleanuparr's login is checked with its new password" 0 log \
+  "{\"username\":\"cleanuparr\",\"password\":\"$(new_password cleanuparr)\"} http://127.0.0.1:11011/cleanuparr/api/auth/login"
 check "Calibre-Web's admin is found by role" 0 out "calibre-web     calibre"
 if [[ "$(sql configs/sonarr/config/sonarr.db "SELECT Settings FROM DownloadClients WHERE Id = 1")" != *"$(new_password qbittorrent)"* ]]; then
   fail "the arr apps' qBittorrent client gets the new password"
@@ -375,6 +394,58 @@ deployment
 rule 'qbittorrent curl -sk -b /tmp/qbt_cookies.txt -o /dev/null -w' 0 403
 run qbittorrent
 check "a refused new qBittorrent password stops the rotation" 1 err "[qBittorrent] setPreferences answered HTTP 403, so the new password was not applied. Aborting rotation."
+
+# Cleanuparr that refuses the change, and a qBittorrent rotation it cannot
+# follow.
+deployment
+rule 'cleanuparr curl -sS -X PUT .*/cleanuparr/api/account/password$' 0 $'{"title": "Current password is incorrect"}\n400'
+run cleanuparr
+check "a refused Cleanuparr password stops its rotation" 1 err \
+  "[Cleanuparr] Password change refused: {\"title\": \"Current password is incorrect\"}"
+check "and the password file is left as it was" 1 configs/cleanuparr/secrets/password.txt cleanuparr-old
+check "the password tried is kept, and named" 1 err \
+  "[Cleanuparr] The password tried is in configs/cleanuparr/secrets/password.txt.new, in case Cleanuparr took it anyway."
+check "in a file of its own" 1 configs/cleanuparr/secrets/password.txt.new "Pw0"
+staged="$(cat "${__repo}/configs/cleanuparr/secrets/password.txt.new")"
+# Run again with that file still there: it may be the password Cleanuparr
+# holds now, so it is not overwritten.
+rule 'cleanuparr curl -sS -X PUT .*/cleanuparr/api/account/password$' 0 $'{}\n200'
+run cleanuparr
+check "a staged password left behind stops the next rotation" 1 err \
+  "[Cleanuparr] An earlier rotation left configs/cleanuparr/secrets/password.txt.new, which may be the password Cleanuparr holds now."
+check "and is kept as it was" 1 configs/cleanuparr/secrets/password.txt.new "${staged}"
+
+# Cleanuparr takes the new password, but it cannot be moved into place.
+deployment
+cat >"${__bin}/mv" <<'EOF'
+#!/usr/bin/env bash
+[[ "${1}" == *password.txt.new ]] && exit 1
+exec /bin/mv "$@"
+EOF
+chmod +x "${__bin}/mv"
+run cleanuparr
+rm "${__bin}/mv"
+check "a password Cleanuparr took but that could not be saved is named" 1 err \
+  "[Cleanuparr] Cleanuparr took the new password, but it could not be moved over configs/cleanuparr/secrets/password.txt: it is in configs/cleanuparr/secrets/password.txt.new."
+
+deployment
+rule 'cleanuparr curl -sS -X GET .*/cleanuparr/api/configuration/download_client$' 0 $'{"clients": []}\n200'
+run qbittorrent
+check "a Cleanuparr without a qBittorrent client is left alone" 0 out \
+  "[Cleanuparr] No qBittorrent download client to update, skipping."
+
+deployment
+rule 'cleanuparr curl -sS -X GET .*/cleanuparr/api/configuration/download_client$' 0 $'{"title": "Unauthorized"}\n401'
+run qbittorrent
+check "a client list Cleanuparr will not give is reported" 0 err \
+  "[Cleanuparr] WARNING: could not list its download clients, so its qBittorrent password was not updated; run 'make wire_connections' to save it."
+check "and each call has a deadline" 0 log "cleanuparr curl -sS -X GET -w \n%{http_code} --max-time 30 "
+
+deployment
+rule 'cleanuparr curl -sS -X PUT .*/cleanuparr/api/configuration/download_client/qbt-id$' 0 $'{"title": "refused"}\n500'
+run qbittorrent
+check "a client that will not take the password is reported" 0 err \
+  "[Cleanuparr] WARNING: could not update qBittorrent's password; run 'make wire_connections' to save it."
 
 # homepage that will not recreate.
 deployment

@@ -294,6 +294,7 @@
       matchUpdateTypes: ["patch", "minor", "digest", "pin", "pinDigest"],
       matchPackageNames: [
         "!gcr.io/cadvisor/cadvisor",
+        "!ghcr.io/cleanuparr/cleanuparr",
         "!ghcr.io/esanchezm/prometheus-qbittorrent-exporter",
         "!ghcr.io/hotio/whisparr",
         "!ghcr.io/nperez0111/koreader-sync",

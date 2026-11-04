@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from conftest import QBITTORRENT_QUEUEING
+from conftest import (
+    QBITTORRENT_EXCLUDED_FILE_NAMES,
+    QBITTORRENT_QUEUEING,
+    cleanuparr_failed_import_patterns,
+)
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -168,6 +172,90 @@ def test_qbittorrent_seed_queueing(key, expected):
     parser.read_string(text)
 
     assert parser.get("BitTorrent", key) == str(expected).lower()
+
+
+def test_qbittorrent_seed_excludes_executables():
+    """The seed turns qBittorrent's excluded file names on, with the list (#125).
+
+    The list does nothing without the switch, which sits in [BitTorrent]
+    itself rather than under Session\\ like the list.
+    """
+    parser = configparser.ConfigParser(strict=False, interpolation=None)
+    parser.read_string(
+        (
+            REPO_ROOT
+            / "configs/qbittorrent/config/qBittorrent/qBittorrent.conf.example"
+        ).read_text()
+    )
+
+    assert parser.get("BitTorrent", "ExcludedFileNamesEnabled") == "true"
+    assert (
+        parser.get("BitTorrent", "Session\\ExcludedFileNames").split(", ")
+        == QBITTORRENT_EXCLUDED_FILE_NAMES
+    )
+
+
+def test_cleanuparr_strikes_what_qbittorrent_excludes():
+    """Cleanuparr's patterns are the excluded extensions, less two.
+
+    .com and .js also turn up in legitimate status messages, in release titles
+    and URLs and as part of .json, so striking on them would remove downloads
+    that are fine.
+    """
+    excluded = {name.removeprefix("*") for name in QBITTORRENT_EXCLUDED_FILE_NAMES}
+
+    assert set(cleanuparr_failed_import_patterns()) == excluded - {".com", ".js"}
+
+
+def test_cleanuparr_runs_locked_down():
+    """Its own user, no capabilities, nothing writable but /config (#398)."""
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose-servarr.yml").read_text())
+    service = compose["services"]["cleanuparr"]
+
+    assert service["profiles"] == ["${CLEANUPARR_PROFILE}"]
+    assert service["user"] == "${CLEANUPARR_UID}:${CLEANUPARR_GID}"
+    assert service["read_only"] is True
+    assert service["cap_drop"] == ["ALL"]
+    assert "no-new-privileges:true" in service["security_opt"]
+    assert service["volumes"] == [
+        "/etc/localtime:/etc/localtime:ro",
+        "${CONFIG_FOLDER}/cleanuparr/config:/config:z",
+    ]
+
+
+def test_cleanuparr_serves_under_its_base_path():
+    """nginx proxies /cleanuparr/ unchanged, so the app serves under it."""
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose-servarr.yml").read_text())
+    service = compose["services"]["cleanuparr"]
+
+    assert service["environment"]["BASE_PATH"] == "/cleanuparr"
+    assert "/cleanuparr/health" in service["healthcheck"]["test"]
+    assert service["networks"] == {
+        "apps": {"aliases": ["cleanuparr-http"]},
+        "services": {},
+    }
+
+
+def test_nginx_refuses_the_cleanuparr_setup():
+    """Nobody but the wiring may create Cleanuparr's first account.
+
+    Its setup endpoints answer anyone until an account exists, and the
+    wiring reaches them from inside the container, never through nginx.
+    """
+    template = (REPO_ROOT / "configs/nginx/templates/default.conf.template").read_text()
+    # Case-insensitive: Cleanuparr routes /api/auth/SETUP/ the same way.
+    assert (
+        "  location ~* ^/cleanuparr/api/auth/setup(?:/|$) {\n    return 403;\n  }"
+        in template
+    )
+
+
+def test_nginx_variables_hash_fits_every_upstream():
+    """One `set` per upstream outgrew nginx's default, which warns on reload."""
+    assert (
+        "variables_hash_max_size 2048;"
+        in (REPO_ROOT / "configs/nginx/nginx.conf").read_text()
+    )
 
 
 def test_mylar_seed_torznab_disabled_ddl_enabled():
@@ -333,13 +421,14 @@ def test_nginx_scopes_mylar_and_lazylibrarian_cookies():
         )
 
 
-@pytest.mark.parametrize("app", ["qbittorrent", "sabnzbd"])
+@pytest.mark.parametrize("app", ["qbittorrent", "sabnzbd", "cleanuparr"])
 def test_nginx_overwrites_forwarded_for_to_downloaders(app):
     """nginx sends the real client as X-Forwarded-For, never the browser's.
 
     qBittorrent trusts nginx and takes the client from that header, and lets
     READARR_SERVICES_IP in without a login. Appending to what the browser sent
     would let any browser claim Readarr's address through nginx (#411).
+    Cleanuparr trusts no forwarded header, and gets the same header anyway.
     """
     template = (REPO_ROOT / "configs/nginx/templates/default.conf.template").read_text()
     start = template.index(f"location /{app}/ {{")

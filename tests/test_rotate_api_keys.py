@@ -22,8 +22,12 @@ import pytest
 import yaml
 
 from conftest import (
+    CLEANUPARR_ARR_NAMES,
     ENV,
     REPO_ROOT,
+    cleanuparr_api,
+    cleanuparr_connection,
+    cleanuparr_instance_test,
     container_http,
     homepage_widget_failures,
     is_enabled,
@@ -444,6 +448,19 @@ def test_rotate_api_key_propagates(
             f"Prowlarr application '{app}' has a stale key, expected the rotated one"
         )
 
+    # Cleanuparr's instance of the app was given the new key (skipped when
+    # Cleanuparr is off or holds no instance of it)
+    cleanuparr_instance = None
+    if is_enabled("cleanuparr") and "cleanuparr" in running_containers:
+        cleanuparr_instance = cleanuparr_connection(
+            f"configuration/{app}", "instances", CLEANUPARR_ARR_NAMES[app]
+        )
+    if cleanuparr_instance is not None:
+        status, body = cleanuparr_instance_test(app, cleanuparr_instance)
+        assert status == 200, (
+            f"Cleanuparr's {app} instance does not work with the new key: {body[:300]}"
+        )
+
     # Sonarr and Radarr also propagate to Bazarr and recyclarr
     if app in ("sonarr", "radarr"):
         # The script restarted Bazarr, which rewrites config.yaml as it
@@ -490,6 +507,14 @@ def test_rotate_api_key_propagates(
     if prowlarr_entry is not None:
         _set_prowlarr_key_for_app(prowlarr_key, app.capitalize(), old_key)
 
+    if cleanuparr_instance is not None:
+        status, body = cleanuparr_api(
+            f"configuration/{app}/instances/{cleanuparr_instance['id']}",
+            method="PUT",
+            body={**cleanuparr_instance, "apiKey": old_key},
+        )
+        assert status == 200, f"could not restore Cleanuparr's {app} key: {body[:300]}"
+
     if app in ("sonarr", "radarr"):
         _restore_yaml_consumers(app, old_key)
     _restore_api_key_secret(app, old_key)
@@ -499,6 +524,29 @@ def test_rotate_api_key_propagates(
     if "homepage" in running_containers:
         restart_container("homepage")
         _assert_homepage_widget_ok(app, "restoring")
+
+
+def test_rotate_cleanuparr_api_key(running_containers):
+    """Cleanuparr's own key: the new one is saved and let in, the old one not.
+
+    Nothing but the scripts holds it, so there is nothing to restore.
+    """
+    if not is_enabled("cleanuparr"):
+        pytest.skip("cleanuparr profile is disabled")
+    skip_if_not_running("cleanuparr", running_containers)
+
+    old_key = read_secret("cleanuparr", "api_key.txt")
+    result = _run_script("rotate-api-keys.sh", "cleanuparr")
+    assert result.returncode == 0, (
+        f"rotate-api-keys.sh cleanuparr exited {result.returncode}:\n{result.stderr}"
+    )
+    new_key = read_secret("cleanuparr", "api_key.txt")
+
+    assert new_key and new_key != old_key, "Cleanuparr's key file was not updated"
+    status, _ = cleanuparr_api("account", key=new_key)
+    assert status == 200, f"Cleanuparr refused its new key: {status}"
+    status, _ = cleanuparr_api("account", key=old_key)
+    assert status == 401, f"Cleanuparr still accepts its old key: {status}"
 
 
 def test_rotate_prowlarr_api_key(running_containers):
