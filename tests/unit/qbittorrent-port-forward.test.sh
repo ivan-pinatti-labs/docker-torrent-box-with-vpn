@@ -216,6 +216,11 @@ worker STUB_SET_EXIT=8 STUB_SET_HTTP="503 Service Unavailable"
 [[ "${__status}" -eq 1 ]] && ok="$(said "WARN: qBittorrent setPreferences (wget exit 8) still failing after 3 attempts")" || ok=no
 result "gives up after the last attempt when setPreferences keeps failing, naming that step" "${ok}"
 
+worker STUB_LOGIN_EXIT=4 QBITTORRENT_PORT_FORWARD_ATTEMPTS=08 QBITTORRENT_PORT_FORWARD_DELAY=00
+[[ "${__status}" -eq 1 && "$(grep --count '^/auth/login' "${__requests}")" -eq 8 ]] &&
+  ok="$(said "still failing after 8 attempts, 0 seconds")" || ok=no
+result "reads retry settings with a leading zero as decimal" "${ok}"
+
 for setting in QBITTORRENT_PORT_FORWARD_DELAY=1.5 QBITTORRENT_PORT_FORWARD_DELAY=soon QBITTORRENT_PORT_FORWARD_ATTEMPTS=many; do
   worker "${setting}"
   [[ "${__status}" -eq 1 && ! -s "${__requests}" ]] && ok="$(said "must be whole numbers")" || ok=no

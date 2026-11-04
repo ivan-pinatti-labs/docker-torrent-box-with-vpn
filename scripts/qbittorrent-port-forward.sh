@@ -99,6 +99,11 @@ if ! whole_number "$attempts" || ! whole_number "$delay"; then
   echo "[PORTFWD] ERROR: QBITTORRENT_PORT_FORWARD_ATTEMPTS and QBITTORRENT_PORT_FORWARD_DELAY must be whole numbers (got '${attempts}' and '${delay}'), port ${port} not applied"
   exit 1
 fi
+# Shell arithmetic reads a leading zero as octal, so 08 would be an error.
+attempts="${attempts#"${attempts%%[!0]*}"}"
+delay="${delay#"${delay%%[!0]*}"}"
+attempts="${attempts:-0}"
+delay="${delay:-0}"
 
 if [ -z "$services_ip" ] || [ -z "$https_port" ]; then
   echo "[PORTFWD] ERROR: GLUETUN_SERVICES_IP or QBITTORRENT_HTTPS_PORT unset, port ${port} not applied"
