@@ -1,0 +1,12 @@
+# Ignore everything in this directory: config/ holds Cleanuparr's SQLite
+# databases, its JWT signing key and every API key it was given.
+*
+
+# Except .gitignore itself
+!.gitignore
+
+# Secret files written by scripts/wire-connections.sh. Real values stay
+# ignored by the blanket `*` above; only the .example templates are committed.
+!secrets/
+secrets/*
+!secrets/*.example

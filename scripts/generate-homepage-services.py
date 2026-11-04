@@ -45,6 +45,7 @@ SERVICE_PROFILE = {
     "Mylar": "MYLAR_PROFILE",
     "Whisparr": "WHISPARR_PROFILE",
     "Bazarr": "BAZARR_PROFILE",
+    "Cleanuparr": "CLEANUPARR_PROFILE",
     "qBittorrent": "QBITTORRENT_PROFILE",
     "SABnzbd": "SABNZBD_PROFILE",
     "Prowlarr": "PROWLARR_PROFILE",

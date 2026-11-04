@@ -241,3 +241,38 @@ def test_jellyfin_health_endpoint(running_containers):
     jellyfin_base = service_base_url("jellyfin")
     resp = requests.get(f"{jellyfin_base}/health", verify=False, timeout=TIMEOUT)
     assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Cleanuparr: the UI through nginx, its API only with its key
+# ---------------------------------------------------------------------------
+
+
+def test_cleanuparr_through_nginx(running_containers):
+    """nginx serves Cleanuparr's UI, whose API refuses a request without its key.
+
+    test_cleanuparr_key_is_saved, in test_wire_connections.py, checks that the
+    saved key is let in.
+    """
+    if not is_enabled("cleanuparr"):
+        pytest.skip("cleanuparr profile is disabled")
+    skip_if_not_running("cleanuparr", running_containers)
+    skip_if_not_running("nginx", running_containers)
+
+    resp = requests.get(f"{BASE}/cleanuparr/", verify=False, timeout=TIMEOUT)
+    assert resp.status_code == 200, f"Cleanuparr's UI: {resp.status_code}"
+
+    url = f"{BASE}/cleanuparr/api/configuration/general"
+    resp = requests.get(url, verify=False, timeout=TIMEOUT)
+    assert resp.status_code == 401, (
+        f"Cleanuparr's API without a key: {resp.status_code}"
+    )
+    resp = requests.get(
+        url,
+        headers={"X-Api-Key": "invalid_key_00000000000000000"},
+        verify=False,
+        timeout=TIMEOUT,
+    )
+    assert resp.status_code == 401, (
+        f"Cleanuparr's API with a wrong key: {resp.status_code}"
+    )

@@ -33,7 +33,17 @@ APPLICATIONS_SCHEMA="$(
   done | python3 -c 'import json, sys; print(json.dumps([json.loads(line) for line in sys.stdin]))'
 )"
 readonly APPLICATIONS_SCHEMA
-readonly ALL_CONTAINERS=(audiobookshelf calibre calibre-web jellyfin "${ARR_APPS[@]}" prowlarr flaresolverr lazylibrarian mylar qbittorrent)
+readonly ALL_CONTAINERS=(audiobookshelf calibre calibre-web jellyfin "${ARR_APPS[@]}" prowlarr flaresolverr lazylibrarian mylar qbittorrent cleanuparr)
+# Cleanuparr's API, as its curl asks for it: the method, then the path.
+readonly CLEANUPARR='cleanuparr curl -sS -X'
+readonly CLEANUPARR_API='\S+/cleanuparr/api'
+# What Cleanuparr calls each arr app, and where it reaches it.
+declare -A CLEANUPARR_NAME=([lidarr]=Lidarr [radarr]=Radarr [readarr]=Readarr [sonarr]=Sonarr [whisparr]=Whisparr)
+declare -A CLEANUPARR_URL=([lidarr]=https://lidarr:8687/lidarr [radarr]=https://radarr:7879/radarr
+  [readarr]=https://readarr:8788/readarr [sonarr]=http://sonarr:8989/sonarr [whisparr]=https://whisparr:6970/whisparr)
+readonly CLEANUPARR_NAME CLEANUPARR_URL
+# The queue cleaner as wire-connections.sh leaves it.
+readonly QUEUE_CLEANER_WIRED='{"enabled":true,"cronExpression":"0 0/5 * * * ?","failedImport":{"maxStrikes":3,"patternMode":"Include","patterns":[".exe",".scr",".bat",".cmd",".pif",".msi",".lnk",".vbs",".ps1"]}}'
 # What bootstrap seeds Jellyfin's key file with, a key Jellyfin never issued.
 readonly JELLYFIN_PLACEHOLDER=0123456789abcdef0123456789abcdef # pragma: allowlist secret
 readonly QBT_PREFERENCES='exec qbittorrent curl -sk --fail -b \S+ \S+/api/v2/app/preferences$'
@@ -135,6 +145,7 @@ NGINX_SERVICES_IP=10.0.0.5
 READARR_SERVICES_IP=10.0.0.13
 READARR_PROFILE=enabled
 SERVICES_SUBNET=10.0.0.0/24
+CLEANUPARR_HTTP_PORT=11011
 EOF
   containers "${ALL_CONTAINERS[@]}"
   local app k
@@ -220,6 +231,24 @@ EOF
   # letting Readarr in without a login.
   rule "${QBT_PREFERENCES}" 0 '{"web_ui_reverse_proxy_enabled": true, "web_ui_reverse_proxies_list": "10.0.0.5",
     "bypass_auth_subnet_whitelist_enabled": true, "bypass_auth_subnet_whitelist": "10.0.0.13/32"}'
+  # Cleanuparr, set up, with its key saved, qBittorrent and every arr app
+  # connected, and its queue cleaner on. Requests carry no --fail, so each
+  # answer is the body, then the status curl's -w appends.
+  put configs/cleanuparr/secrets/password.txt cleanuparr-password # pragma: allowlist secret
+  put configs/cleanuparr/secrets/api_key.txt key-cleanuparr
+  rule 'exec cleanuparr curl -sf -o /dev/null http://127.0.0.1:11011/cleanuparr/health$' 0 ""
+  rule "${CLEANUPARR} (POST|PUT) .*${CLEANUPARR_API}/configuration/" 0 $'{}\n200'
+  rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/auth/status$" 0 $'{"setupCompleted": true}\n200'
+  rule "${CLEANUPARR} GET .*X-Api-Key: key-cleanuparr ${CLEANUPARR_API}/account$" 0 $'{"username": "cleanuparr"}\n200'
+  rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/general$" 0 \
+    $'{"dryRun": false, "httpCertificateValidation": "DisabledForLocalAddresses"}\n200'
+  rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/download_client$" 0 \
+    $'{"clients": [{"id": "qbt-id", "name": "qBittorrent", "host": "https://10.0.0.2:8443/"}]}\n200'
+  for app in "${ARR_APPS[@]}"; do
+    rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/${app}$" 0 \
+      "{\"instances\": [{\"id\": \"${app}-id\", \"name\": \"${CLEANUPARR_NAME[${app}]}\", \"url\": \"${CLEANUPARR_URL[${app}]}\"}]}"$'\n200'
+  done
+  rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/queue_cleaner$" 0 "${QUEUE_CLEANER_WIRED}"$'\n200'
   # Readarr, on its fixed services address and on apps.
   readarr_addresses '10.0.0.13 10.0.1.4 '
 }
@@ -271,7 +300,45 @@ rule '/prowlarr/api/v1/indexerstatus$' 0 '[{"id": 3}]' 6
 rule 'exec sonarr curl -sk --fail -H X-Api-Key: \S+ \S+/api/v3/indexer$' 0 '[]' 1
 rule 'mylar curl -sk --max-time 10 -o /dev/null' 0 000 7
 rule "${QBT_PREFERENCES}" 0 '{"web_ui_reverse_proxy_enabled": false, "web_ui_reverse_proxies_list": ""}'
+# Cleanuparr never set up, on a deployment updated to it rather than
+# bootstrapped, so its secret files were never seeded. Its queue cleaner holds
+# one pattern of its own already. The arr rule comes first so the general
+# settings rule, newer, wins over it.
+rm "${__repo}/configs/cleanuparr/secrets/password.txt" "${__repo}/configs/cleanuparr/secrets/api_key.txt"
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/[a-z]+$" 0 $'{"instances": []}\n200'
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/auth/status$" 0 $'{"setupCompleted": false}\n200'
+rule "${CLEANUPARR} POST .*${CLEANUPARR_API}/auth/setup/(account|complete)$" 0 $'{}\n201'
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/account$" 0 $'{"title": "Unauthorized"}\n401'
+rule "${CLEANUPARR} POST .*${CLEANUPARR_API}/auth/login$" 0 \
+  $'{"requiresTwoFactor": false, "tokens": {"accessToken": "cleanuparr-token"}}\n200'
+rule "${CLEANUPARR} GET .*Bearer cleanuparr-token ${CLEANUPARR_API}/account/api-key$" 0 $'{"apiKey": "new-cleanuparr-key"}\n200' # pragma: allowlist secret
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/general$" 0 \
+  $'{"dryRun": false, "httpCertificateValidation": "Enabled"}\n200'
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/download_client$" 0 $'{"clients": []}\n200'
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/queue_cleaner$" 0 \
+  $'{"enabled": false, "cronExpression": "0 0/5 * * * ?", "failedImport": {"maxStrikes": 0, "patternMode": "Exclude", "patterns": [".exe"]}}\n200'
 run
+check "Cleanuparr is set up from nothing" 0 out \
+  "[Cleanuparr] Creating its login..." "[Cleanuparr] Saving its API key..." \
+  "[Cleanuparr] Accepting self-signed certificates on local addresses..." \
+  "[Cleanuparr] Connecting qBittorrent..." "[Cleanuparr] Connecting Lidarr..." "[Cleanuparr] Connecting Radarr..." \
+  "[Cleanuparr] Connecting Readarr..." "[Cleanuparr] Connecting Sonarr..." "[Cleanuparr] Connecting Whisparr..." \
+  "[Cleanuparr] Striking failed imports of the excluded file types..." "[Cleanuparr] Done."
+check "a deployment that never ran the seed gets the placeholder password" 0 \
+  configs/cleanuparr/secrets/password.txt cleanuparr
+check "Cleanuparr's login is that placeholder" 0 log '{"username":"cleanuparr","password":"cleanuparr"}' # pragma: allowlist secret
+check "and its key is saved" 0 configs/cleanuparr/secrets/api_key.txt new-cleanuparr-key
+check "Cleanuparr accepts the stack's certificate" 0 log '"httpCertificateValidation":"DisabledForLocalAddresses"'
+check "Cleanuparr logs in to qBittorrent on the services address" 0 log \
+  '{"enabled":true,"name":"qBittorrent","typeName":"qBittorrent","host":"https://10.0.0.2:8443","username":"qbittorrent","password":"qbittorrent-password","urlBase":""}' # pragma: allowlist secret
+instances=(
+  '"name":"Sonarr","url":"http://sonarr:8989/sonarr","apiKey":"key-sonarr","version":4'          # pragma: allowlist secret
+  '"name":"Readarr","url":"https://readarr:8788/readarr","apiKey":"key-readarr","version":0.4'   # pragma: allowlist secret
+  '"name":"Whisparr","url":"https://whisparr:6970/whisparr","apiKey":"key-whisparr","version":3' # pragma: allowlist secret
+)
+check "Cleanuparr reaches each arr app where Prowlarr does" 0 log "${instances[@]}"
+check "its queue cleaner strikes the excluded file types, keeping the pattern it had" 0 log \
+  '"enabled":true' '"maxStrikes":3,"patternMode":"Include","patterns":[".exe",".scr",".bat",".cmd",".pif",".msi",".lnk",".vbs",".ps1"]'
 check "qBittorrent trusts only nginx" 0 out \
   "[qBittorrent] Trusting only nginx (10.0.0.5) as its reverse proxy..." "[qBittorrent] Done."
 check "qBittorrent is given nginx's address" 0 log \
@@ -351,7 +418,11 @@ check "a wired stack is left alone" 0 out \
   "[qBittorrent] Already lets Readarr (10.0.0.13) in without a login, skipping." \
   "[readarr] qBittorrent download client already exists, skipping." \
   "[Mylar] qBittorrent/SABnzbd addresses already match GLUETUN_SERVICES_IP, skipping." \
-  "[LazyLibrarian] qBittorrent/SABnzbd addresses already match GLUETUN_SERVICES_IP, skipping."
+  "[LazyLibrarian] qBittorrent/SABnzbd addresses already match GLUETUN_SERVICES_IP, skipping." \
+  "[Cleanuparr] qBittorrent already connected, skipping." "[Cleanuparr] Sonarr already connected, skipping." \
+  "[Cleanuparr] Whisparr already connected, skipping." "[Cleanuparr] Done."
+check "a wired Cleanuparr still has its stored secrets tested" 0 log \
+  '"password":"••••••••","urlBase":"","clientId":"qbt-id"' '"apiKey":"••••••••","version":4,"instanceId":"sonarr-id"'
 check "a wired Readarr is still proven let in" 0 log "podman exec readarr curl -sk --fail -o /dev/null https://10.0.0.2:8443/api/v2/app/version"
 refute "nothing is stopped" log "podman stop"
 refute "nothing is created" out "Creating"
@@ -440,6 +511,7 @@ check "missing containers are skipped" 0 out \
   "[sonarr] Container does not exist, skipping." \
   "[Prowlarr] Container doesn't exist (PROWLARR_PROFILE=disabled), skipping." \
   "[Mylar] Container doesn't exist, skipping." "[qBittorrent] Container doesn't exist, skipping." \
+  "[Cleanuparr] Container doesn't exist, skipping." \
   "[Mylar] qBittorrent/SABnzbd addresses already match GLUETUN_SERVICES_IP, skipping."
 refute "a missing config is left to the seed" out "[LazyLibrarian] qBittorrent/SABnzbd"
 
@@ -950,5 +1022,76 @@ rule 'exec qbittorrent curl .*/api/v2/app/setPreferences$' 22 ""
 run
 check "a refused bypass is reported" 0 out \
   "[qBittorrent] WARNING: setPreferences failed, so Readarr's login bypass was not applied."
+
+# Run M: Cleanuparr (#398). A connection whose address moved, or whose stored
+# secret no longer works, is saved again in place; settings someone raised or
+# added in its UI survive.
+deployment
+containers cleanuparr qbittorrent sonarr
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/download_client$" 0 \
+  $'{"clients": [{"id": "qbt-id", "name": "qBittorrent", "host": "https://10.9.9.9:8443/"}]}\n200'
+rule "${CLEANUPARR} POST .*\"instanceId\":\"sonarr-id\".*${CLEANUPARR_API}/configuration/sonarr/instances/test$" 0 \
+  $'{"title": "Connection failed: 401"}\n400'
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/queue_cleaner$" 0 \
+  $'{"enabled": true, "failedImport": {"maxStrikes": 5, "patternMode": "Include", "patterns": [".exe", "custom"]}}\n200'
+run
+check "drifted connections are saved again" 0 out \
+  "[Cleanuparr] Connecting qBittorrent..." "[Cleanuparr] Connecting Sonarr..." "[Cleanuparr] Done."
+check "in place" 0 log "/cleanuparr/api/configuration/download_client/qbt-id" "/cleanuparr/api/configuration/sonarr/instances/sonarr-id"
+check "with what the files hold now" 0 log '"host":"https://10.0.0.2:8443"' '"apiKey":"key-sonarr"' # pragma: allowlist secret
+check "raised strikes and added patterns survive" 0 log '"maxStrikes":5,"patternMode":"Include","patterns":[".exe","custom",".scr"'
+
+# Cleanuparr not answering.
+deployment
+containers cleanuparr
+rule 'exec cleanuparr curl -sf -o /dev/null http://127.0.0.1:11011/cleanuparr/health$' 7 ""
+run
+check "an unreachable Cleanuparr is skipped" 0 out "[Cleanuparr] Not reachable, skipping."
+
+# Its setup status cannot be read, then its login is refused.
+deployment
+containers cleanuparr
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/auth/status$" 0 $'\n503'
+run
+check "no status, no wiring" 0 out "[Cleanuparr] WARNING: no usable login, nothing else was wired."
+deployment
+containers cleanuparr
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/account$" 0 $'{"title": "Unauthorized"}\n401'
+rule "${CLEANUPARR} POST .*${CLEANUPARR_API}/auth/login$" 0 $'{"title": "Invalid credentials"}\n401'
+run
+check "a refused login is reported" 0 out \
+  "[Cleanuparr] WARNING: could not log in as 'cleanuparr' with configs/cleanuparr/secrets/password.txt: {\"title\": \"Invalid credentials\"}" \
+  "[Cleanuparr] WARNING: no usable login, nothing else was wired."
+refute "and nothing else is tried" log "/cleanuparr/api/configuration/"
+
+# Every other part failing, in two runs, each failure reported and none
+# stopping the rest.
+deployment
+containers cleanuparr qbittorrent sonarr
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/general$" 0 $'{"httpCertificateValidation": "Enabled"}\n200'
+rule "${CLEANUPARR} PUT .*${CLEANUPARR_API}/configuration/general$" 0 $'{"title": "general refused"}\n500'
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/download_client$" 0 $'\n500'
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/sonarr$" 0 $'{"instances": []}\n200'
+rule "${CLEANUPARR} POST .*${CLEANUPARR_API}/configuration/sonarr/instances/test$" 0 $'{"title": "Connection refused"}\n400'
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/queue_cleaner$" 0 \
+  $'{"enabled": false, "failedImport": {"maxStrikes": 0, "patternMode": "Include", "patterns": []}}\n200'
+rule "${CLEANUPARR} PUT .*${CLEANUPARR_API}/configuration/queue_cleaner$" 0 $'{"title": "queue refused"}\n500'
+run
+check "each failure is reported" 0 out \
+  "[Cleanuparr] WARNING: could not save its general settings: {\"title\": \"general refused\"}" \
+  "[Cleanuparr] WARNING: Sonarr failed its connection test: {\"title\": \"Connection refused\"}" \
+  "[Cleanuparr] WARNING: could not save the queue cleaner: {\"title\": \"queue refused\"}" \
+  "[Cleanuparr] WARNING: not everything was wired, see above. Re-run 'make wire_connections'."
+refute "a failed part is not reported done" out "[Cleanuparr] Done."
+deployment
+containers cleanuparr qbittorrent sonarr
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/general$" 0 $'\n500'
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/sonarr$" 0 $'{"instances": []}\n200'
+rule "${CLEANUPARR} POST .*${CLEANUPARR_API}/configuration/sonarr/instances$" 0 $'{"title": "save refused"}\n500'
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/queue_cleaner$" 0 $'\n500'
+run
+check "a refused save is reported" 0 out \
+  "[Cleanuparr] WARNING: could not save Sonarr: {\"title\": \"save refused\"}" \
+  "[Cleanuparr] WARNING: not everything was wired, see above. Re-run 'make wire_connections'."
 
 finish

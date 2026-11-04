@@ -27,11 +27,15 @@ import pytest
 from conftest import (
     ENV,
     REPO_ROOT,
+    cleanuparr_api,
+    cleanuparr_connection,
+    cleanuparr_qbittorrent_test,
     container_http,
     homepage_widget_failures,
     is_enabled,
     live_db,
     read_api_key,
+    read_secret,
     recreate_container,
     skip_if_not_running,
     skip_if_not_running_fresh,
@@ -327,8 +331,28 @@ def test_rotate_qbittorrent_password_propagates(running_containers):
             "Homepage qBittorrent widget broken after rotation:\n" + "\n".join(failures)
         )
 
+    # Cleanuparr's qBittorrent client was given the new password through its
+    # API (skipped when Cleanuparr is off or not wired)
+    cleanuparr_client = None
+    if is_enabled("cleanuparr") and "cleanuparr" in running_containers:
+        cleanuparr_client = cleanuparr_connection(
+            "configuration/download_client", "clients", "qBittorrent"
+        )
+    if cleanuparr_client is not None:
+        status, body = cleanuparr_qbittorrent_test(cleanuparr_client)
+        assert status == 200, (
+            f"Cleanuparr cannot log in to qBittorrent after rotation: {body[:300]}"
+        )
+
     # Restore the original password everywhere
     _qbt_set_password(new_password, old_password)
+    if cleanuparr_client is not None:
+        status, body = cleanuparr_api(
+            f"configuration/download_client/{cleanuparr_client['id']}",
+            method="PUT",
+            body={**cleanuparr_client, "password": old_password},
+        )
+        assert status == 200, f"could not restore Cleanuparr's password: {body[:300]}"
     for svc in ARR_APPS_WITH_QBT:
         # is_enabled, not db_path.exists(): a disabled app's DB file exists
         # as an empty 0-byte placeholder (never started to create its own
@@ -1047,6 +1071,33 @@ def _abs_password_hash() -> str:
         row = conn.execute("SELECT pash FROM users WHERE username = 'root'").fetchone()
     assert row is not None, "No root user in absdatabase.sqlite"
     return row[0]
+
+
+def test_rotate_cleanuparr_password(running_containers):
+    """Cleanuparr's login takes the new password, kept in its secret file.
+
+    Nothing but a person logs in with it, so there is nothing to restore.
+    """
+    if not is_enabled("cleanuparr"):
+        pytest.skip("cleanuparr profile is disabled")
+    skip_if_not_running("cleanuparr", running_containers)
+
+    old_password = read_secret("cleanuparr", "password.txt")
+    result = _run_script("rotate-passwords.sh", "cleanuparr")
+    assert result.returncode == 0, (
+        f"rotate-passwords.sh cleanuparr exited {result.returncode}:\n{result.stderr}"
+    )
+    new_password = _summary_password(result.stdout, "cleanuparr")
+
+    assert new_password and new_password != old_password
+    assert read_secret("cleanuparr", "password.txt") == new_password
+    for password, expected in ((new_password, 200), (old_password, 401)):
+        status, body = cleanuparr_api(
+            "auth/login",
+            method="POST",
+            body={"username": "cleanuparr", "password": password},
+        )
+        assert status == expected, f"login answered {status}: {body[:200]}"
 
 
 def test_rotate_audiobookshelf_password(running_containers):

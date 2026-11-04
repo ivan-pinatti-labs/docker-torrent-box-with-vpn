@@ -80,8 +80,10 @@ LAZYLIBRARIAN_PROFILE=enabled
 MYLAR_PROFILE=enabled
 NZBHYDRA2_PROFILE=enabled
 JELLYFIN_PROFILE=enabled
+CLEANUPARR_PROFILE=enabled
+CLEANUPARR_HTTP_PORT=11011
 EOF
-  containers sonarr radarr lidarr readarr whisparr prowlarr bazarr lazylibrarian mylar nzbhydra2 jellyfin homepage
+  containers sonarr radarr lidarr readarr whisparr prowlarr bazarr lazylibrarian mylar nzbhydra2 jellyfin homepage cleanuparr
   arr_xml sonarr False 8989 9898 ""
   arr_xml radarr True 7878 7879 /radarr/
   arr_xml lidarr True 8686 8687 lidarr
@@ -143,6 +145,16 @@ EOF
   rule 'lazylibrarian/api\?cmd=getVersion' 0 '{"Success": true}'
   rule 'mylar curl -sk https://127.0.0.1:8090/mylar/api\?cmd=getVersion' 0 '{"success": true}'
   rule 'nzbhydra2 curl -sk https://127.0.0.1:5076/nzbhydra2/api\?t=caps' 0 '<caps/>'
+  # Cleanuparr, wired, with an instance of every arr app but Lidarr. Its
+  # answers are the body, then the status curl's -w appends.
+  put configs/cleanuparr/secrets/api_key.txt old-cleanuparr
+  rule 'cleanuparr curl -sS -X GET .*/cleanuparr/api/configuration/[a-z]+$' 0 $'{"instances": [
+    {"id": "sonarr-id", "name": "Sonarr", "url": "http://sonarr:8989/sonarr", "apiKey": "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", "version": 4},
+    {"id": "radarr-id", "name": "Radarr"}, {"id": "readarr-id", "name": "Readarr"}, {"id": "whisparr-id", "name": "Whisparr"}]}\n200'
+  rule 'cleanuparr curl -sS -X PUT .*/cleanuparr/api/configuration/[a-z]+/instances/[a-z]+-id$' 0 $'{}\n200'
+  rule 'cleanuparr curl -sS -X POST .*X-Api-Key: old-cleanuparr .*/cleanuparr/api/account/api-key/regenerate$' 0 \
+    $'{"apiKey": "new-cleanuparr"}\n200' # pragma: allowlist secret
+  rule 'cleanuparr curl -sS -X GET .*X-Api-Key: new-cleanuparr .*/cleanuparr/api/account$' 0 $'{"username": "cleanuparr"}\n200'
 }
 
 # Arguments.
@@ -165,10 +177,17 @@ check "all rotates every service" 0 out \
   "$(row sonarr old- 0001)" "$(row radarr old- 0002)" "$(row lidarr old- 0003)" \
   "$(row readarr old- 0004)" "$(row whisparr old- 0005)" "$(row prowlarr old- 0006)" \
   "$(row bazarr old- 0007)" "$(row lazylibrarian old- 0008)" "$(row mylar old- 0009)" \
-  "$(row nzbhydra2 0006 0010)" "$(row jellyfin old- new-)"
+  "$(row nzbhydra2 0006 0010)" "$(row jellyfin old- new-)" "$(row cleanuparr old- new-)"
 check "all validates every new key" 0 out \
   "$(ok sonarr)" "$(ok radarr)" "$(ok lidarr)" "$(ok readarr)" "$(ok whisparr)" "$(ok prowlarr)" \
-  "$(ok bazarr)" "$(ok lazylibrarian)" "$(ok mylar)" "$(ok nzbhydra2)" "$(ok jellyfin)"
+  "$(ok bazarr)" "$(ok lazylibrarian)" "$(ok mylar)" "$(ok nzbhydra2)" "$(ok jellyfin)" "$(ok cleanuparr)"
+check "Cleanuparr's new key is saved" 0 configs/cleanuparr/secrets/api_key.txt new-cleanuparr
+check "Cleanuparr's arr instances get the new keys" 0 out \
+  "[Cleanuparr] Updating Sonarr's API key..." "[Cleanuparr] Updating Whisparr's API key..." \
+  "[Cleanuparr] No Lidarr instance to update, skipping."
+check "sent back as read, with the new key" 0 log \
+  "{\"id\":\"sonarr-id\",\"name\":\"Sonarr\",\"url\":\"http://sonarr:8989/sonarr\",\"apiKey\":\"$(key 1)\",\"version\":4}" \
+  "/cleanuparr/api/configuration/sonarr/instances/sonarr-id"
 check "the new ApiKey is in config.xml" 0 configs/sonarr/config/config.xml "<ApiKey>$(key 1)</ApiKey>"
 check "the new key is the homepage secret" 0 configs/sonarr/secrets/api_key.txt "$(key 1)"
 check "Bazarr learns Sonarr's and Radarr's keys and its own" 0 configs/bazarr/config/config/config.yaml \
@@ -217,7 +236,7 @@ check "homepage is recreated" 0 log "podman-compose --file docker-compose.yml --
 check "permissions are repaired" 0 log "permissions.py repair --runtime podman --recursive"
 
 # Each service on its own.
-for service in sonarr radarr lidarr readarr whisparr prowlarr bazarr lazylibrarian mylar nzbhydra2 jellyfin; do
+for service in sonarr radarr lidarr readarr whisparr prowlarr bazarr lazylibrarian mylar nzbhydra2 jellyfin cleanuparr; do
   deployment
   run "${service}"
   check "${service} rotates on its own" 0 out "$(ok "${service}")"
@@ -362,6 +381,19 @@ deployment
 rule '^podman-compose ' 1 ""
 run bazarr
 check "homepage that will not recreate fails the run" 1 err "ERROR: homepage still would not recreate after retries"
+
+# Cleanuparr refusing its own key, then an instance update.
+deployment
+rule 'cleanuparr curl -sS -X POST .*/cleanuparr/api/account/api-key/regenerate$' 0 $'{"title": "Unauthorized"}\n401'
+run cleanuparr
+check "a refused Cleanuparr key stops its rotation" 1 err \
+  "ERROR: [Cleanuparr] the key in configs/cleanuparr/secrets/api_key.txt was refused: {\"title\": \"Unauthorized\"}"
+check "and the key file is left as it was" 1 configs/cleanuparr/secrets/api_key.txt old-cleanuparr
+deployment
+rule 'cleanuparr curl -sS -X PUT .*/configuration/radarr/instances/radarr-id$' 0 $'{"title": "refused"}\n500'
+run radarr
+check "an instance that will not take the key is reported" 0 err \
+  "[Cleanuparr] WARNING: could not update Radarr's API key; run 'make wire_connections' to save it."
 
 # Keys the services do not accept afterwards.
 deployment

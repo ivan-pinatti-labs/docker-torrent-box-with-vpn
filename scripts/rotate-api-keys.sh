@@ -3,7 +3,7 @@
 # Copyright 2022 Ivan Pinatti
 set -euo pipefail
 
-# Usage: ./scripts/rotate-api-keys.sh [sonarr|radarr|lidarr|readarr|whisparr|prowlarr|bazarr|lazylibrarian|mylar|nzbhydra2|jellyfin|all]
+# Usage: ./scripts/rotate-api-keys.sh [sonarr|radarr|lidarr|readarr|whisparr|prowlarr|bazarr|lazylibrarian|mylar|nzbhydra2|jellyfin|cleanuparr|all]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
@@ -11,7 +11,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 readonly REPO_ROOT
 cd "$REPO_ROOT"
 
-readonly USAGE="Usage: $0 [sonarr|radarr|lidarr|readarr|whisparr|prowlarr|bazarr|lazylibrarian|mylar|nzbhydra2|jellyfin|all]"
+readonly USAGE="Usage: $0 [sonarr|radarr|lidarr|readarr|whisparr|prowlarr|bazarr|lazylibrarian|mylar|nzbhydra2|jellyfin|cleanuparr|all]"
 
 if [[ $# -ne 1 ]]; then
   echo "$USAGE" >&2
@@ -56,12 +56,13 @@ JELLYFIN_HTTP_PORT="$(env_value JELLYFIN_HTTP_PORT)"
 JELLYFIN_BASE_URL="$(env_value JELLYFIN_BASE_URL)"
 BAZARR_HTTP_PORT="$(env_value BAZARR_HTTP_PORT)"
 LAZYLIBRARIAN_HTTP_PORT="$(env_value LAZYLIBRARIAN_HTTP_PORT)"
+CLEANUPARR_HTTP_PORT="$(env_value CLEANUPARR_HTTP_PORT)"
 # The *arr apps, Mylar, and NZBHydra2 deliberately have no port variables here:
 # their scheme, port, and UrlBase are read from each app's own config by
 # arr_endpoint()/mylar_endpoint()/nzbhydra_endpoint(), which are authoritative
 # where .env is only aspirational.
 readonly JELLYFIN_HTTP_PORT JELLYFIN_BASE_URL \
-  BAZARR_HTTP_PORT LAZYLIBRARIAN_HTTP_PORT
+  BAZARR_HTTP_PORT LAZYLIBRARIAN_HTTP_PORT CLEANUPARR_HTTP_PORT
 
 # ---------------------------------------------------------------------------
 # Current (old) API keys, read from config.xml at rotation time
@@ -131,6 +132,9 @@ readonly MYLAR_API_KEY_SECRET="configs/mylar/secrets/api_key.txt"       # pragma
 # Jellyfin has no independent source of truth for its own current key (it is
 # created/revoked live via Jellyfin's own API); this file is that record.
 readonly JELLYFIN_API_KEY_SECRET="configs/jellyfin/secrets/api_key.txt" # pragma: allowlist secret
+# Cleanuparr's own key, saved by wire-connections.sh, the only record of it
+# outside its database. Read by scripts alone.
+readonly CLEANUPARR_API_KEY_SECRET="configs/cleanuparr/secrets/api_key.txt" # pragma: allowlist secret
 readonly LAZYLIBRARIAN_INI="configs/lazylibrarian/config/config.ini"
 readonly MYLAR_INI="configs/mylar/config/mylar/config.ini"
 readonly NZBHYDRA_YML="configs/nzbhydra2/config/nzbhydra.yml"
@@ -528,6 +532,57 @@ PYEOF
 # Per-app rotation functions
 # ---------------------------------------------------------------------------
 
+# Cleanuparr's API, as its own saved key, from inside its own container.
+# Prints the body and succeeds only on a 2xx. Mirrors wire-connections.sh's
+# cleanuparr_keyed. Args: method path [body]
+cleanuparr_keyed() {
+  local key out code
+  key=$(cat "$CLEANUPARR_API_KEY_SECRET" 2>/dev/null) || key=""
+  out=$(container_curl cleanuparr -sS -X "$1" -w '\n%{http_code}' -H "X-Api-Key: ${key}" -H "Content-Type: application/json" ${3+-d "$3"} "http://127.0.0.1:${CLEANUPARR_HTTP_PORT}/cleanuparr/api/$2" 2>&1) || true
+  code=${out##*$'\n'}
+  printf '%s' "${out%$'\n'*}"
+  [[ "$code" == 2?? ]]
+}
+
+# Cleanuparr's instance of an arr app holds that app's key too, so it is
+# updated through Cleanuparr's live API, which never returns the stored key:
+# the instance is sent back as read with the new one. A Cleanuparr that is
+# not there, or not wired yet, has nothing to update.
+# Args: app name new_key
+update_cleanuparr_instance() {
+  local app="$1" name="$2" instance
+  if ! podman container exists "$(cname cleanuparr)" 2>/dev/null; then
+    return 0
+  fi
+  instance=$(cleanuparr_keyed GET "configuration/${app}" | jq --arg key instances --arg name "$name" '.[$key] | map(select(.name == $name)) | first') || instance=null
+  if [[ "$instance" == null ]]; then
+    echo "[Cleanuparr] No ${name} instance to update, skipping."
+    return 0
+  fi
+  echo "[Cleanuparr] Updating ${name}'s API key..."
+  if ! cleanuparr_keyed PUT "configuration/${app}/instances/$(jq -r '.id' <<<"$instance")" \
+    "$(jq -c --arg key "$3" '.apiKey = $key' <<<"$instance")" >/dev/null; then
+    echo "[Cleanuparr] WARNING: could not update ${name}'s API key; run 'make wire_connections' to save it." >&2
+  fi
+}
+
+# Through Cleanuparr's own API, as its current key. Nothing else holds it.
+rotate_cleanuparr() {
+  local old_key new_key response
+  old_key=$(cat "$CLEANUPARR_API_KEY_SECRET")
+  echo "[Cleanuparr] Regenerating its API key..."
+  if ! response=$(cleanuparr_keyed POST account/api-key/regenerate); then
+    echo "ERROR: [Cleanuparr] the key in ${CLEANUPARR_API_KEY_SECRET} was refused: ${response:0:300}" >&2
+    echo "Run 'make wire_connections' to save the current one, then rotate again." >&2
+    exit 1
+  fi
+  new_key=$(jq -r '.apiKey' <<<"$response")
+  write_secret_file "$CLEANUPARR_API_KEY_SECRET" "$new_key"
+
+  SUMMARY_CLEANUPARR_OLD="$old_key"
+  SUMMARY_CLEANUPARR_NEW="$new_key"
+}
+
 rotate_sonarr() {
   local old_key
   old_key=$(get_xml_apikey "$SONARR_XML")
@@ -537,6 +592,7 @@ rotate_sonarr() {
   local prowlarr_key
   prowlarr_key=$(get_xml_apikey "$PROWLARR_XML")
   update_prowlarr_application "$prowlarr_key" "Sonarr" "$new_key"
+  update_cleanuparr_instance sonarr Sonarr "$new_key"
 
   echo "[Bazarr] Updating sonarr.apikey in config.yaml..."
   yq -i ".sonarr.apikey = \"$new_key\"" "$BAZARR_CONFIG"
@@ -563,6 +619,7 @@ rotate_radarr() {
   local prowlarr_key
   prowlarr_key=$(get_xml_apikey "$PROWLARR_XML")
   update_prowlarr_application "$prowlarr_key" "Radarr" "$new_key"
+  update_cleanuparr_instance radarr Radarr "$new_key"
 
   echo "[Bazarr] Updating radarr.apikey in config.yaml..."
   yq -i ".radarr.apikey = \"$new_key\"" "$BAZARR_CONFIG"
@@ -589,6 +646,7 @@ rotate_lidarr() {
   local prowlarr_key
   prowlarr_key=$(get_xml_apikey "$PROWLARR_XML")
   update_prowlarr_application "$prowlarr_key" "Lidarr" "$new_key"
+  update_cleanuparr_instance lidarr Lidarr "$new_key"
 
   write_secret_file "$LIDARR_API_KEY_SECRET" "$new_key"
 
@@ -605,6 +663,7 @@ rotate_readarr() {
   local prowlarr_key
   prowlarr_key=$(get_xml_apikey "$PROWLARR_XML")
   update_prowlarr_application "$prowlarr_key" "Readarr" "$new_key"
+  update_cleanuparr_instance readarr Readarr "$new_key"
 
   write_secret_file "$READARR_API_KEY_SECRET" "$new_key"
 
@@ -621,6 +680,7 @@ rotate_whisparr() {
   local prowlarr_key
   prowlarr_key=$(get_xml_apikey "$PROWLARR_XML")
   update_prowlarr_application "$prowlarr_key" "Whisparr" "$new_key"
+  update_cleanuparr_instance whisparr Whisparr "$new_key"
 
   write_secret_file "$WHISPARR_API_KEY_SECRET" "$new_key"
 
@@ -941,6 +1001,8 @@ SUMMARY_NZBHYDRA2_OLD=""
 SUMMARY_NZBHYDRA2_NEW=""
 SUMMARY_JELLYFIN_OLD=""
 SUMMARY_JELLYFIN_NEW=""
+SUMMARY_CLEANUPARR_OLD=""
+SUMMARY_CLEANUPARR_NEW=""
 
 # Rotate one service, but only when its compose profile is enabled (and, for
 # arr apps, only when the container it needs stopped/exec'd into actually
@@ -985,6 +1047,7 @@ lazylibrarian) rotate_if_enabled LAZYLIBRARIAN lazylibrarian rotate_lazylibraria
 mylar) rotate_if_enabled MYLAR mylar rotate_mylar ;;
 nzbhydra2) rotate_if_enabled NZBHYDRA2 nzbhydra2 rotate_nzbhydra2 ;;
 jellyfin) rotate_if_enabled JELLYFIN jellyfin rotate_jellyfin ;;
+cleanuparr) rotate_if_enabled CLEANUPARR cleanuparr rotate_cleanuparr ;;
 all)
   rotate_if_enabled SONARR sonarr rotate_sonarr
   rotate_if_enabled RADARR radarr rotate_radarr
@@ -997,6 +1060,7 @@ all)
   rotate_if_enabled MYLAR mylar rotate_mylar
   rotate_if_enabled NZBHYDRA2 nzbhydra2 rotate_nzbhydra2
   rotate_if_enabled JELLYFIN jellyfin rotate_jellyfin
+  rotate_if_enabled CLEANUPARR cleanuparr rotate_cleanuparr
   ;;
 *)
   echo "Unknown target: $TARGET" >&2
@@ -1069,6 +1133,7 @@ print_row "lazylibrarian" "$SUMMARY_LAZYLIBRARIAN_OLD" "$SUMMARY_LAZYLIBRARIAN_N
 print_row "mylar" "$SUMMARY_MYLAR_OLD" "$SUMMARY_MYLAR_NEW"
 print_row "nzbhydra2" "$SUMMARY_NZBHYDRA2_OLD" "$SUMMARY_NZBHYDRA2_NEW"
 print_row "jellyfin" "$SUMMARY_JELLYFIN_OLD" "$SUMMARY_JELLYFIN_NEW"
+print_row "cleanuparr" "$SUMMARY_CLEANUPARR_OLD" "$SUMMARY_CLEANUPARR_NEW"
 
 echo "======================================================================"
 # ---------------------------------------------------------------------------
@@ -1173,6 +1238,7 @@ echo "======================================================================"
 [[ -n "$SUMMARY_MYLAR_NEW" ]] && validate mylar 300 mylar_key_ok "$SUMMARY_MYLAR_NEW"
 [[ -n "$SUMMARY_NZBHYDRA2_NEW" ]] && validate nzbhydra2 240 nzbhydra_key_ok "$SUMMARY_NZBHYDRA2_NEW"
 [[ -n "$SUMMARY_JELLYFIN_NEW" ]] && validate jellyfin 120 jellyfin_key_ok "$SUMMARY_JELLYFIN_NEW"
+[[ -n "$SUMMARY_CLEANUPARR_NEW" ]] && validate cleanuparr 120 cleanuparr_keyed GET account
 echo "======================================================================"
 
 if [[ ${#VALIDATION_FAILURES[@]} -gt 0 ]]; then

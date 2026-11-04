@@ -54,7 +54,7 @@ container regardless of its prior state; those stop calls are batched, so
 stopping several containers for one rotation (e.g. qBittorrent's or
 SABnzbd's Servarr consumers) waits for the slowest one instead of each in
 turn. The few rotations that log into the app's own live API instead
-(Servarr apps, qBittorrent, Grafana, Jellyfin) need their container already
+(Servarr apps, qBittorrent, Grafana, Jellyfin, Cleanuparr) need their container already
 running; before dispatch, the script starts every one of these containers
 that this run will need in a single batched call and waits for all of them
 to report healthy together, rather than starting and waiting on each in
@@ -68,9 +68,9 @@ some of these containers still warming up; the script distinguishes that
 stopped ("Starting stopped containers needed for rotation") so the message
 doesn't claim to be starting something that's already up.
 
-With the `all` target, the eight services with no shared container or
-config file (Audiobookshelf, Bazarr, Calibre-Web, Grafana, jDownloader2,
-Jellyfin, NZBHydra2, Prowlarr) rotate concurrently in the background, with
+With the `all` target, the nine services with no shared container or
+config file (Audiobookshelf, Bazarr, Calibre-Web, Cleanuparr, Grafana,
+jDownloader2, Jellyfin, NZBHydra2, Prowlarr) rotate concurrently in the background, with
 each one's output streamed live prefixed by `[service]` (interleaved,
 since they genuinely run at the same time) rather than buffered and
 printed only after the whole group finishes. The rest run sequentially
@@ -87,13 +87,16 @@ state" note in `AGENTS.md` for why that's unsafe.
 
 Valid targets: `sonarr`, `radarr`, `lidarr`, `readarr`, `whisparr`,
 `prowlarr`, `bazarr`, `lazylibrarian`, `mylar`, `nzbhydra2`, `jellyfin`,
-`all`.
+`cleanuparr`, `all`.
 
 For each Servarr app the script writes a new `ApiKey` into the app's
 `config.xml` (the apps ignore key changes sent over their API), then updates
 every consumer of that key:
 
 - The matching application entry in Prowlarr (over the Prowlarr API).
+- The app's instance in Cleanuparr (over Cleanuparr's API, as its own key).
+  A Cleanuparr that refuses the update keeps the old key and the run warns;
+  `make wire_connections` saves the current one.
 - Bazarr's `sonarr.apikey` and `radarr.apikey` in
   `configs/bazarr/config/config/config.yaml`.
 - Recyclarr's `sonarr_apikey` and `radarr_apikey` in
@@ -128,6 +131,12 @@ The non-Servarr targets:
   hasn't, rotation skips Jellyfin with a note instead of failing; visit
   `http://localhost:${JELLYFIN_HTTP_PORT}/` once in a browser to complete
   the wizard reliably, then `make rotate_all SERVICE=jellyfin` picks it up.
+- **Cleanuparr** regenerates its own key over its API
+  (`POST /api/account/api-key/regenerate`, as the current key) and writes it
+  to `configs/cleanuparr/secrets/api_key.txt`, the only record of it outside
+  its database. Only the scripts use it, so nothing else needs the new value.
+  A key file Cleanuparr refuses stops the rotation; `make wire_connections`
+  saves the current key first.
 
 Apps whose key was rewritten on disk are restarted or recreated
 automatically so they load the new key, and Homepage is restarted (it reads
@@ -145,7 +154,7 @@ respective config files.
 ## Passwords (`rotate-passwords.sh`)
 
 Valid targets (alphabetical): `audiobookshelf`, `bazarr`, `calibre`,
-`calibre-web`, `grafana`, `jdownloader2`, `jellyfin`, `lazylibrarian`,
+`calibre-web`, `cleanuparr`, `grafana`, `jdownloader2`, `jellyfin`, `lazylibrarian`,
 `lidarr`, `mylar`, `nzbhydra2`, `prowlarr`, `qbittorrent`, `radarr`,
 `readarr`, `sabnzbd`, `sonarr`, `whisparr`, `all`.
 
@@ -212,6 +221,10 @@ alphabetical by service.
   actual row count rather than trusting a successful `UPDATE` with no
   matching rows, and skips with a note (rather than silently claiming
   success) if the user is gone when it runs.
+- **Cleanuparr**: changes the `cleanuparr` login's password over its API
+  (`PUT /api/account/password`, with the current password from
+  `configs/cleanuparr/secrets/password.txt` and its own API key), then writes
+  the new one to that file. Nothing else logs in with it.
 - **Grafana**: changes the admin password over Grafana's API, then keeps
   `grafana.ini` and the shared secret file
   `configs/grafana/secrets/homepage_auth.txt` (the precomputed Basic-auth
@@ -247,9 +260,11 @@ alphabetical by service.
 - **qBittorrent**: logs into the WebUI API with the current password (read
   from Sonarr's download client settings), sets the new one, then updates
   every consumer: the `DownloadClients` tables of all five Servarr apps,
-  LazyLibrarian's and Mylar's download client settings, and the shared
-  secret file `configs/qbittorrent/secrets/password.txt`, which
-  qbittorrent_exporter and Homepage both read directly.
+  LazyLibrarian's and Mylar's download client settings, Cleanuparr's
+  qBittorrent download client (over Cleanuparr's API, so Cleanuparr keeps
+  running; a refused update warns, and `make wire_connections` repairs it),
+  and the shared secret file `configs/qbittorrent/secrets/password.txt`,
+  which qbittorrent_exporter and Homepage both read directly.
 - **SABnzbd**: rotates the password, API key, and NZB key together. Updates
   `configs/sabnzbd/config/sabnzbd.ini`, `configs/sabnzbd/.env.secrets`
   (password and NZB key only), the shared secret file

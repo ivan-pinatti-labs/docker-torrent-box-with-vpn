@@ -33,6 +33,7 @@ flowchart LR
 
     subgraph consumers["Consumers only"]
         recyclarr
+        Cleanuparr
         Notifiarr
         sabnzbd_exporter["sabnzbd_exporter"]
         Mylar
@@ -52,6 +53,12 @@ flowchart LR
     Sonarr   -->|api_key| recyclarr
     Radarr   -->|api_key| recyclarr
 
+    Sonarr   -->|api_key| Cleanuparr
+    Radarr   -->|api_key| Cleanuparr
+    Lidarr   -->|api_key| Cleanuparr
+    Readarr  -->|api_key| Cleanuparr
+    Whisparr -->|api_key| Cleanuparr
+
     Sonarr   -->|api_key| Homepage
     Radarr   -->|api_key| Homepage
     Lidarr   -->|api_key| Homepage
@@ -65,6 +72,7 @@ flowchart LR
     qBittorrent -->|password| Radarr
     qBittorrent -->|password| Lidarr
     qBittorrent -->|password| Whisparr
+    qBittorrent -->|password| Cleanuparr
     qBittorrent -->|password| Homepage
 
     SABnzbd -->|api_key| Sonarr
@@ -160,9 +168,19 @@ Grafana              |          |        |           |         |         |      
 - Produces: WebUI password (username `qbittorrent`, see DownloadClients table in Sonarr's
   DB for current value)
 - Consumed by: Sonarr, Radarr, Lidarr, Whisparr, Prowlarr (each app's DownloadClients
-  table). Not Readarr, whose client has no credentials: qBittorrent lets
-  `READARR_SERVICES_IP` in without a login (see [CONNECTIONS.md](CONNECTIONS.md))
+  table), Cleanuparr (its download client). Not Readarr, whose client has no
+  credentials: qBittorrent lets `READARR_SERVICES_IP` in without a login (see
+  [CONNECTIONS.md](CONNECTIONS.md))
 - Consumes: nothing from other services
+
+**Cleanuparr**
+
+- Produces: login password (username `cleanuparr`) and API key, both in
+  `configs/cleanuparr/secrets/` and read only by the scripts
+- Consumed by: nobody else
+- Consumes: qBittorrent password (its download client) and the API keys of Sonarr,
+  Radarr, Lidarr, Readarr and Whisparr (one instance each), all held in its own
+  database under `configs/cleanuparr/config`
 
 **SABnzbd**
 
@@ -196,6 +214,9 @@ Grafana              |          |        |           |         |         |      
 | Bazarr        | radarr API key            | `configs/bazarr/config/config/config.yaml` (`radarr.apikey`)          | plain text YAML value                                     |
 | recyclarr     | sonarr API key            | `configs/recyclarr/config/secrets.yml` (`sonarr_apikey`)              | plain text YAML value                                     |
 | recyclarr     | radarr API key            | `configs/recyclarr/config/secrets.yml` (`radarr_apikey`)              | plain text YAML value                                     |
+| Cleanuparr    | login password            | `configs/cleanuparr/secrets/password.txt`                             | plain text file; Cleanuparr itself stores a hash          |
+| Cleanuparr    | API key                   | `configs/cleanuparr/secrets/api_key.txt`                              | plain text file                                           |
+| Cleanuparr    | qbt password, app keys    | `configs/cleanuparr/config` (its SQLite databases)                    | plain text, never returned by its API                     |
 | Sonarr        | login password            | `configs/sonarr/config/sonarr.db` (Users table)                       | PBKDF2-SHA512 hash                                        |
 | Radarr        | login password            | `configs/radarr/config/radarr.db` (Users table)                       | PBKDF2-SHA512 hash                                        |
 | Lidarr        | login password            | `configs/lidarr/config/lidarr.db` (Users table)                       | PBKDF2-SHA512 hash                                        |

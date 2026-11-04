@@ -24,6 +24,11 @@ set -euo pipefail
 # let Readarr's address in without a login (see
 # ensure_qbittorrent_readarr_bypass).
 #
+# Cleanuparr gets its login and API key, qBittorrent and every enabled arr
+# app as connections, and its queue cleaner set to clear the downloads
+# qBittorrent's excluded file names leave stuck in the arr queues (see
+# wire_cleanuparr).
+#
 # It also attempts the first-run setup that Jellyfin, Audiobookshelf,
 # Calibre's content server, and Calibre-Web each need before they have any
 # usable account at all (see the "First-run setup" section below), since
@@ -123,11 +128,12 @@ READARR_SERVICES_IP="${READARR_SERVICES_IP-$(env_value READARR_SERVICES_IP)}"
 READARR_PROFILE="${READARR_PROFILE-$(env_value READARR_PROFILE)}"
 SERVICES_SUBNET="${SERVICES_SUBNET-$(env_value SERVICES_SUBNET)}"
 readonly READARR_SERVICES_IP READARR_PROFILE SERVICES_SUBNET
+CLEANUPARR_HTTP_PORT="$(env_value CLEANUPARR_HTTP_PORT)"
 readonly LAN_IP GLUETUN_SERVICES_IP QBITTORRENT_HTTPS_PORT SABNZBD_HTTP_PORT \
   SABNZBD_HTTPS_PORT SONARR_HTTP_PORT RADARR_HTTPS_PORT LIDARR_HTTPS_PORT READARR_HTTPS_PORT \
   WHISPARR_HTTPS_PORT PROWLARR_HTTPS_PORT LAZYLIBRARIAN_HTTP_PORT MYLAR_HTTPS_PORT \
   JELLYFIN_BASE_URL CALIBREWEB_VERSION \
-  JELLYFIN_HTTP_PORT AUDIOBOOKSHELF_HTTP_PORT FLARESOLVERR_HTTP_PORT
+  JELLYFIN_HTTP_PORT AUDIOBOOKSHELF_HTTP_PORT FLARESOLVERR_HTTP_PORT CLEANUPARR_HTTP_PORT
 
 readonly SONARR_XML="configs/sonarr/config/config.xml"
 readonly RADARR_XML="configs/radarr/config/config.xml"
@@ -147,6 +153,19 @@ readonly JELLYFIN_API_KEY_FILE="configs/jellyfin/secrets/api_key.txt" # pragma: 
 # What bootstrap seeds the file above from, a key Jellyfin never issued.
 readonly JELLYFIN_API_KEY_PLACEHOLDER_FILE="configs/jellyfin/secrets/api_key.txt.example" # pragma: allowlist secret
 readonly AUDIOBOOKSHELF_API_KEY_FILE="configs/audiobookshelf/secrets/api_key.txt"         # pragma: allowlist secret
+readonly CLEANUPARR_API="http://127.0.0.1:${CLEANUPARR_HTTP_PORT}/cleanuparr/api"
+readonly CLEANUPARR_USERNAME="cleanuparr"
+readonly CLEANUPARR_PASSWORD_FILE="configs/cleanuparr/secrets/password.txt" # pragma: allowlist secret
+readonly CLEANUPARR_API_KEY_FILE="configs/cleanuparr/secrets/api_key.txt"   # pragma: allowlist secret
+# What Cleanuparr's API answers in place of a stored password or key. Sent
+# back in a connection test, it tests the stored one.
+readonly CLEANUPARR_PLACEHOLDER="••••••••"
+# The status message substrings the queue cleaner strikes a failed import on:
+# the extensions qBittorrent's excluded file names hold
+# (qBittorrent.conf.example, #125), less .com and .js, which also turn up in
+# legitimate messages (release titles and URLs, .json). See
+# docs/CONNECTIONS.md, "Cleanuparr".
+readonly CLEANUPARR_FAILED_IMPORT_PATTERNS='[".exe", ".scr", ".bat", ".cmd", ".pif", ".msi", ".lnk", ".vbs", ".ps1"]'
 readonly CALIBRE_USERS_DB_CONTAINER_PATH="/config/.config/calibre/server-users.sqlite"
 readonly CALIBRE_PASSWORD_FILE="configs/calibre/secrets/password.txt" # pragma: allowlist secret
 readonly CALIBREWEB_DB="configs/calibre-web/config/app.db"
@@ -2289,6 +2308,226 @@ ensure_prowlarr_application() {
 }
 
 # ---------------------------------------------------------------------------
+# Cleanuparr (#398): its login and API key, qBittorrent as its download
+# client, an instance per arr app, and the queue cleaner striking the
+# downloads qBittorrent's excluded file names leave with nothing to import.
+# Everything it knows lives in its own database, so all of it goes through
+# its API, from inside its own container, where curl is.
+# ---------------------------------------------------------------------------
+
+# One request to Cleanuparr's API. Prints the body and succeeds only on a 2xx,
+# like send_arr_connection. Args: method path [curl argument...]
+cleanuparr_api() {
+  local method="$1" path="$2" out code
+  shift 2
+  out=$(container_curl cleanuparr -sS -X "$method" -w '\n%{http_code}' "$@" "${CLEANUPARR_API}/${path}" 2>&1) || true
+  code=${out##*$'\n'}
+  printf '%s' "${out%$'\n'*}"
+  [[ "$code" == 2?? ]]
+}
+
+# The same, as the key wire_cleanuparr saved, with an optional JSON body.
+# Args: method path [body]
+cleanuparr_keyed() {
+  local key
+  key=$(cat "$CLEANUPARR_API_KEY_FILE" 2>/dev/null) || key=""
+  if [[ $# -gt 2 ]]; then
+    cleanuparr_api "$1" "$2" -H "X-Api-Key: ${key}" -H "Content-Type: application/json" -d "$3"
+  else
+    cleanuparr_api "$1" "$2" -H "X-Api-Key: ${key}"
+  fi
+}
+
+cleanuparr_credentials() {
+  jq -cn --arg username "$CLEANUPARR_USERNAME" --arg password "$(cat "$CLEANUPARR_PASSWORD_FILE")" \
+    '{username: $username, password: $password}'
+}
+
+# Cleanuparr has no account until the first-run setup makes one, and its setup
+# endpoints answer anyone until then, so this runs on the first wiring after
+# the container starts. The password is the seeded placeholder, which `make
+# bootstrap` rotates right after wiring (rotate-passwords.sh). A failed
+# account request is left to the login below to report: it is a 409 when an
+# earlier run made the account and stopped before completing setup.
+ensure_cleanuparr_account() {
+  local status
+  status=$(cleanuparr_api GET auth/status) || return 1
+  if [[ "$(jq -r '.setupCompleted' <<<"$status")" == true ]]; then
+    return 0
+  fi
+  echo "[Cleanuparr] Creating its login..."
+  cleanuparr_api POST auth/setup/account -H "Content-Type: application/json" -d "$(cleanuparr_credentials)" >/dev/null || true
+  cleanuparr_api POST auth/setup/complete >/dev/null
+}
+
+# The API key, which only a logged in session can read. The key the file
+# already holds is current when Cleanuparr accepts it; the file starts as
+# the placeholder api_key.txt.example, which it never does.
+ensure_cleanuparr_api_key() {
+  if cleanuparr_keyed GET account >/dev/null; then
+    return 0
+  fi
+  echo "[Cleanuparr] Saving its API key..."
+  local login token key
+  if ! login=$(cleanuparr_api POST auth/login -H "Content-Type: application/json" -d "$(cleanuparr_credentials)"); then
+    echo "[Cleanuparr] WARNING: could not log in as '${CLEANUPARR_USERNAME}' with ${CLEANUPARR_PASSWORD_FILE}: ${login:0:300}"
+    return 1
+  fi
+  token=$(jq -r '.tokens.accessToken' <<<"$login")
+  key=$(cleanuparr_api GET account/api-key -H "Authorization: Bearer ${token}" | jq -r '.apiKey')
+  # No trailing newline, like every other secret file (seed-secrets.sh).
+  printf '%s' "$key" >"$CLEANUPARR_API_KEY_FILE"
+  chmod 644 "$CLEANUPARR_API_KEY_FILE"
+}
+
+# qBittorrent's WebUI and the arr apps serve this stack's self-signed
+# certificate, so Cleanuparr has to accept it on local addresses, the same
+# relaxation the arr apps get (ensure_arr_host_prereqs). PUT replaces the
+# whole configuration, so it is sent back as read with that one field set.
+ensure_cleanuparr_certificate_validation() {
+  local general
+  general=$(cleanuparr_keyed GET configuration/general) || return 1
+  if [[ "$(jq -r '.httpCertificateValidation' <<<"$general")" == DisabledForLocalAddresses ]]; then
+    return 0
+  fi
+  echo "[Cleanuparr] Accepting self-signed certificates on local addresses..."
+  general=$(jq -c '.httpCertificateValidation = "DisabledForLocalAddresses"' <<<"$general")
+  local response
+  if ! response=$(cleanuparr_keyed PUT configuration/general "$general"); then
+    echo "[Cleanuparr] WARNING: could not save its general settings: ${response:0:300}"
+    return 1
+  fi
+}
+
+# One connection, a download client or an arr instance, by name. Cleanuparr
+# never returns a stored password or API key, so one that exists at the
+# right address is tested with the placeholder, which tests the stored one,
+# and is left alone when that passes. Otherwise the connection is tested
+# with what the files hold now, then created or updated with it.
+# Args: label list_path list_key name address_field address test_path
+#       save_path secret_field id_field payload
+ensure_cleanuparr_connection() {
+  local label="$1" list_path="$2" list_key="$3" name="$4" address_field="$5" address="$6"
+  local test_path="$7" save_path="$8" secret_field="$9" id_field="${10}" payload="${11}"
+  local list existing method=POST response
+  list=$(cleanuparr_keyed GET "$list_path") || return 1
+  existing=$(jq --arg key "$list_key" --arg name "$name" '.[$key] | map(select(.name == $name)) | first' <<<"$list")
+  if [[ "$existing" != null ]]; then
+    local id stored_test
+    id=$(jq -r '.id' <<<"$existing")
+    stored_test=$(jq -c --arg secret "$secret_field" --arg idField "$id_field" --arg id "$id" --arg placeholder "$CLEANUPARR_PLACEHOLDER" '.[$secret] = $placeholder | .[$idField] = $id' <<<"$payload")
+    local stored_address
+    stored_address=$(jq -r --arg field "$address_field" '.[$field]' <<<"$existing")
+    if [[ "${stored_address%/}" == "${address%/}" ]] && cleanuparr_keyed POST "$test_path" "$stored_test" >/dev/null; then
+      echo "[Cleanuparr] ${label} already connected, skipping."
+      return 0
+    fi
+    method=PUT
+    save_path="${save_path}/${id}"
+  fi
+  if ! response=$(cleanuparr_keyed POST "$test_path" "$payload"); then
+    echo "[Cleanuparr] WARNING: ${label} failed its connection test: ${response:0:300}"
+    return 1
+  fi
+  echo "[Cleanuparr] Connecting ${label}..."
+  if ! response=$(cleanuparr_keyed "$method" "$save_path" "$payload"); then
+    echo "[Cleanuparr] WARNING: could not save ${label}: ${response:0:300}"
+    return 1
+  fi
+}
+
+# qBittorrent, as the arr apps reach it: its WebUI on gluetun's services
+# address, logged in, since qBittorrent lets only Readarr in without a login
+# (ensure_qbittorrent_readarr_bypass).
+ensure_cleanuparr_qbittorrent() {
+  local host="https://${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}" payload
+  payload=$(jq -cn --arg host "$host" --arg username "$(cat "$QBITTORRENT_USERNAME_FILE")" --arg password "$(cat "$QBITTORRENT_PASSWORD_FILE")" '{enabled: true, name: "qBittorrent", typeName: "qBittorrent", host: $host, username: $username, password: $password, urlBase: ""}')
+  ensure_cleanuparr_connection "qBittorrent" configuration/download_client clients qBittorrent host "$host" \
+    configuration/download_client/test configuration/download_client password clientId "$payload"
+}
+
+# An arr app, at the address Prowlarr registers it on, with the key its
+# config.xml holds. Skipped when its profile is off. Cleanuparr only reads
+# the version to tell Whisparr 2 from 3. Args: app name url version
+ensure_cleanuparr_arr() {
+  local app="$1" name="$2" url="$3" version="$4" payload
+  if ! podman container exists "$(cname "$app")" 2>/dev/null; then
+    return 0
+  fi
+  payload=$(jq -cn --arg name "$name" --arg url "$url" --arg apiKey "$(get_xml_apikey "configs/${app}/config/config.xml")" --argjson version "$version" '{enabled: true, name: $name, url: $url, apiKey: $apiKey, version: $version}')
+  ensure_cleanuparr_connection "$name" "configuration/${app}" instances "$name" url "$url" \
+    "configuration/${app}/instances/test" "configuration/${app}/instances" apiKey instanceId "$payload"
+}
+
+cleanuparr_queue_cleaner_jq() {
+  cat <<'JQ'
+.enabled = true |
+.failedImport.patternMode = "Include" |
+.failedImport.maxStrikes = ([.failedImport.maxStrikes, 3] | max) |
+.failedImport.patterns += ($patterns - .failedImport.patterns)
+JQ
+}
+
+# The queue cleaner on, striking a failed import whose status message holds
+# one of CLEANUPARR_FAILED_IMPORT_PATTERNS, and removing it after three
+# strikes, three of its five minute runs: Cleanuparr's minimum. Raising the
+# strikes or adding patterns in its UI survives a rerun; the shipped patterns
+# are put back. Its other strikes (stalled, metadata, errored) keep
+# Cleanuparr's defaults, which are off, and the Malware Blocker stays off:
+# qBittorrent's excluded file names already keep those files off disk.
+ensure_cleanuparr_queue_cleaner() {
+  local current wanted
+  current=$(cleanuparr_keyed GET configuration/queue_cleaner) || return 1
+  wanted=$(jq -c --argjson patterns "$CLEANUPARR_FAILED_IMPORT_PATTERNS" "$(cleanuparr_queue_cleaner_jq)" <<<"$current")
+  if [[ "$(jq -c . <<<"$current")" == "$wanted" ]]; then
+    return 0
+  fi
+  echo "[Cleanuparr] Striking failed imports of the excluded file types..."
+  local response
+  if ! response=$(cleanuparr_keyed PUT configuration/queue_cleaner "$wanted"); then
+    echo "[Cleanuparr] WARNING: could not save the queue cleaner: ${response:0:300}"
+    return 1
+  fi
+}
+
+# Runs in the second batch, once the arr jobs are done, so every app it
+# connects to is already up. Returns non-zero when any part failed.
+wire_cleanuparr() {
+  if ! podman container exists "$(cname cleanuparr)" 2>/dev/null; then
+    echo "[Cleanuparr] Container doesn't exist, skipping."
+    return 0
+  fi
+  if ! retry 180 "[Cleanuparr]" container_curl cleanuparr -sf -o /dev/null "http://127.0.0.1:${CLEANUPARR_HTTP_PORT}/cleanuparr/health"; then
+    echo "[Cleanuparr] Not reachable, skipping."
+    return 0
+  fi
+  # Bootstrap seeds this from password.txt.example. A deployment updated to
+  # the version that added Cleanuparr never ran that seed.
+  if [[ ! -f "$CLEANUPARR_PASSWORD_FILE" ]]; then
+    printf '%s' "$CLEANUPARR_USERNAME" >"$CLEANUPARR_PASSWORD_FILE"
+    chmod 644 "$CLEANUPARR_PASSWORD_FILE"
+  fi
+  if ! ensure_cleanuparr_account || ! ensure_cleanuparr_api_key; then
+    echo "[Cleanuparr] WARNING: no usable login, nothing else was wired."
+    return 1
+  fi
+  local failed=0
+  ensure_cleanuparr_certificate_validation || failed=1
+  ensure_cleanuparr_qbittorrent || failed=1
+  ensure_cleanuparr_arr lidarr Lidarr "https://lidarr:${LIDARR_HTTPS_PORT}/lidarr" 3 || failed=1
+  ensure_cleanuparr_arr radarr Radarr "https://radarr:${RADARR_HTTPS_PORT}/radarr" 6 || failed=1
+  ensure_cleanuparr_arr readarr Readarr "https://readarr:${READARR_HTTPS_PORT}/readarr" 0.4 || failed=1
+  ensure_cleanuparr_arr sonarr Sonarr "http://sonarr:${SONARR_HTTP_PORT}/sonarr" 4 || failed=1
+  ensure_cleanuparr_arr whisparr Whisparr "https://whisparr:${WHISPARR_HTTPS_PORT}/whisparr" 3 || failed=1
+  ensure_cleanuparr_queue_cleaner || failed=1
+  if [[ "$failed" -ne 0 ]]; then
+    echo "[Cleanuparr] WARNING: not everything was wired, see above. Re-run 'make wire_connections'."
+    return 1
+  fi
+  echo "[Cleanuparr] Done."
+}
+
+# ---------------------------------------------------------------------------
 # Dispatch: alphabetical by service, matching the convention documented in
 # docs/ROTATION.md for the sibling rotation scripts.
 # ---------------------------------------------------------------------------
@@ -2352,7 +2591,9 @@ for name in "${ARR_APPS[@]}"; do
 done
 
 # The second batch: every arr app's Jellyfin connection, now that the Jellyfin
-# job and the arr jobs have all finished. See wire_arr_jellyfin.
+# job and the arr jobs have all finished (see wire_arr_jellyfin), and
+# Cleanuparr, whose connection tests need those apps up.
+start_job cleanuparr wire_cleanuparr
 start_job lidarr-jellyfin wire_arr_jellyfin lidarr lidarr https "$LIDARR_HTTPS_PORT" v1
 start_job radarr-jellyfin wire_arr_jellyfin radarr radarr https "$RADARR_HTTPS_PORT" v3
 start_job readarr-jellyfin wire_arr_jellyfin readarr readarr https "$READARR_HTTPS_PORT" v1
@@ -2361,6 +2602,8 @@ start_job whisparr-jellyfin wire_arr_jellyfin whisparr whisparr https "$WHISPARR
 for name in "${ARR_APPS[@]}"; do
   wait_job "${name}-jellyfin" || JELLYFIN_FAILED+=("$name")
 done
+# wire_cleanuparr names what failed itself.
+wait_job cleanuparr || true
 
 if [[ ${#JELLYFIN_FAILED[@]} -gt 0 ]]; then
   echo "[Jellyfin] WARNING: these apps did NOT get their Jellyfin connection wired:"

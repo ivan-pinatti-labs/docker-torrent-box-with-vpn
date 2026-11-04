@@ -1,6 +1,7 @@
 import configparser
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -194,6 +195,16 @@ SERVICES = {
     "recyclarr": {
         "profile_var": "RECYCLARR_PROFILE",
         "api_health_path": None,
+        "api_key_source": None,
+        "password_var": None,
+    },
+    # Its health endpoint is the one route it answers without a key, and it
+    # moves under BASE_PATH with the rest.
+    "cleanuparr": {
+        "profile_var": "CLEANUPARR_PROFILE",
+        "http_port_var": "CLEANUPARR_HTTP_PORT",
+        "proxy_path": "/cleanuparr",
+        "api_health_path": "/cleanuparr/health",
         "api_key_source": None,
         "password_var": None,
     },
@@ -618,6 +629,101 @@ QBITTORRENT_QUEUEING = [
     ("Session\\SlowTorrentsUploadRate", "slow_torrent_ul_rate_threshold", 2),
     ("Session\\SlowTorrentsInactivityTimer", "slow_torrent_inactive_timer", 60),
 ]
+
+
+# The file names qBittorrent.conf.example tells qBittorrent never to write
+# (#125): Windows executables, installers, shortcuts and script types. The
+# seed holds them as `Session\ExcludedFileNames`, comma separated, and the
+# WebUI API as `excluded_file_names`, one per line.
+QBITTORRENT_EXCLUDED_FILE_NAMES = [
+    "*.exe",
+    "*.scr",
+    "*.bat",
+    "*.cmd",
+    "*.com",
+    "*.pif",
+    "*.msi",
+    "*.lnk",
+    "*.vbs",
+    "*.js",
+    "*.ps1",
+]
+
+
+def cleanuparr_failed_import_patterns() -> list[str]:
+    """CLEANUPARR_FAILED_IMPORT_PATTERNS, as scripts/wire-connections.sh sets it."""
+    text = (REPO_ROOT / "scripts" / "wire-connections.sh").read_text()
+    match = re.search(
+        r"^readonly CLEANUPARR_FAILED_IMPORT_PATTERNS='(.*)'$", text, re.MULTILINE
+    )
+    assert match, "CLEANUPARR_FAILED_IMPORT_PATTERNS is not in wire-connections.sh"
+    return json.loads(match.group(1))
+
+
+# What Cleanuparr calls each arr app it holds an instance of, which is also
+# the instance's name, and what its API answers in place of a stored password
+# or key. Sent back in a connection test, the placeholder tests the stored one.
+CLEANUPARR_ARR_NAMES = {
+    "lidarr": "Lidarr",
+    "radarr": "Radarr",
+    "readarr": "Readarr",
+    "sonarr": "Sonarr",
+    "whisparr": "Whisparr",
+}
+CLEANUPARR_PLACEHOLDER = "••••••••"
+
+
+def cleanuparr_api(
+    path: str, *, method: str | None = None, body=None, key: str | None = None
+) -> tuple[int, str]:
+    """One request to Cleanuparr's API, from inside its container.
+
+    As the key wire-connections.sh saved, unless another is given.
+    """
+    port = ENV.get("CLEANUPARR_HTTP_PORT") or dotenv_values(
+        REPO_ROOT / ".env.example"
+    ).get("CLEANUPARR_HTTP_PORT")
+    if key is None:
+        key = read_secret("cleanuparr", "api_key.txt") or ""
+    return container_http(
+        container_name("cleanuparr"),
+        f"http://127.0.0.1:{port}/cleanuparr/api/{path}",
+        headers={"X-Api-Key": key, "Content-Type": "application/json"},
+        method=method,
+        data=None if body is None else json.dumps(body),
+        timeout=60,
+    )
+
+
+def cleanuparr_connection(list_path: str, list_key: str, name: str) -> dict | None:
+    """The download client or arr instance Cleanuparr holds by that name."""
+    status, body = cleanuparr_api(list_path)
+    assert status == 200, f"GET {list_path} failed: {status} {body[:200]}"
+    matches = [entry for entry in json.loads(body)[list_key] if entry["name"] == name]
+    assert len(matches) <= 1, f"Cleanuparr holds {len(matches)} entries named {name}"
+    return matches[0] if matches else None
+
+
+def cleanuparr_qbittorrent_test(client: dict) -> tuple[int, str]:
+    """Cleanuparr's own connection test of its qBittorrent client, as stored."""
+    return cleanuparr_api(
+        "configuration/download_client/test",
+        method="POST",
+        body={**client, "password": CLEANUPARR_PLACEHOLDER, "clientId": client["id"]},
+    )
+
+
+def cleanuparr_instance_test(app: str, instance: dict) -> tuple[int, str]:
+    """Cleanuparr's own connection test of an arr instance, as stored."""
+    return cleanuparr_api(
+        f"configuration/{app}/instances/test",
+        method="POST",
+        body={
+            **instance,
+            "apiKey": CLEANUPARR_PLACEHOLDER,
+            "instanceId": instance["id"],
+        },
+    )
 
 
 def qbittorrent_preferences(timeout: int = 30) -> dict:

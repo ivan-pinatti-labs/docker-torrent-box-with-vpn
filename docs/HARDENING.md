@@ -22,7 +22,7 @@ means the running application is uid=1000, not uid=0.
 `PUID=0`/`PGID=0` (which was the previous default) defeats this entirely: the application
 itself runs as root inside the container.
 
-For images that use a `user:` field instead of PUID/PGID (recyclarr, prometheus, grafana),
+For images that use a `user:` field instead of PUID/PGID (recyclarr, cleanuparr, prometheus, grafana),
 the same principle applies via the Compose `user:` key.
 
 ### `no-new-privileges`
@@ -51,7 +51,7 @@ Applied to containers whose init does not need Linux capabilities to function:
 | alloy | `cap_drop: ALL` + `cap_add: [DAC_READ_SEARCH]` | Needs to read log files owned by other services' PUIDs |
 | prometheus, grafana, loki | yes | Static binary / Go service |
 | node_exporter, nginx_exporter, qbittorrent_exporter, sabnzbd_exporter | yes | Read-only exporters |
-| recyclarr, flaresolverr, homepage, audiobookshelf, korsync, log_rotator | yes | No s6-overlay privilege switching |
+| recyclarr, flaresolverr, cleanuparr, homepage, audiobookshelf, korsync, log_rotator | yes | No s6-overlay privilege switching |
 
 **Not applied** to linuxserver/hotio images (sonarr, radarr, jellyfin, qbittorrent, sabnzbd,
 legacy nzbget, etc.): s6-overlay needs `CAP_CHOWN` to transfer `/config` ownership to PUID,
@@ -114,6 +114,43 @@ address.
 The observability stack and the services network are declared `internal: true`, meaning
 containers on those networks cannot route to external addresses. This limits what a
 compromised exporter or servarr app can reach.
+
+### Read-only root filesystem
+
+Cleanuparr runs with `read_only: true`. Started as its own `user:`, its image
+writes nowhere but the `/config` volume (its SQLite databases, logs and JWT
+signing key), so nothing else in the container can be changed by the process,
+or by anyone who takes it over. It is the only service with it so far: the
+linuxserver/hotio images write their init state outside `/config` before
+dropping to PUID.
+
+### Excluded file names in qBittorrent
+
+qBittorrent never writes a file whose name matches its excluded file names. A
+torrent is a stranger's choice of files, and these are the types that run when
+opened on Windows rather than being read, so the seed
+(`configs/qbittorrent/config/qBittorrent/qBittorrent.conf.example`) turns the
+list on (`[BitTorrent] ExcludedFileNamesEnabled=true`) with eleven patterns
+(`Session\ExcludedFileNames`, #125):
+
+```text
+*.exe *.scr *.bat *.cmd *.com *.pif *.msi *.lnk *.vbs *.js *.ps1
+```
+
+They match case insensitively. A matching file is marked "do not download",
+and the rest of the torrent downloads as usual. This is a choice about what
+the stack refuses to download, made on your behalf because the safer default
+is the one a fresh clone should start with. To change it, use the WebUI
+(Options, Downloads, Excluded file names) or its API, not qBittorrent.conf:
+qBittorrent writes its running settings over that file on shutdown. The seed
+reaches a fresh bootstrap only, so an existing install keeps whatever it has;
+turn the list on there in the WebUI. `test_qbittorrent_excludes_executables`
+reads the running settings back, since they can revert without a sound.
+
+A fake release made of nothing but such a file then finishes empty, and the
+arr app that grabbed it can import nothing. Cleanuparr clears those
+([CONNECTIONS.md](CONNECTIONS.md#cleanuparr)), striking on the same extensions
+less `.com` and `.js`. Change both lists together.
 
 ### Read-only volume mounts
 

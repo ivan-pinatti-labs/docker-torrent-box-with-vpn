@@ -23,7 +23,7 @@ containers on any CPU.
 | --- | --- | --- | --- | --- | --- |
 | Nginx | `nginx` | `NGINX_CPUS` | `NGINX_MEMORY` | `0.5` | `512mb` |
 | Homepage | `homepage` | `HOMEPAGE_CPUS` | `HOMEPAGE_MEMORY` | `0.25` | `256mb` |
-| Servarr | `bazarr`, `lazylibrarian`, `lidarr`, `mylar`, `prowlarr`, `radarr`, `readarr`, `recyclarr`, `sonarr`, `whisparr` | `SERVARR_CPUS` | `SERVARR_MEMORY` | `0.5` | `512mb` |
+| Servarr | `bazarr`, `cleanuparr`, `lazylibrarian`, `lidarr`, `mylar`, `prowlarr`, `radarr`, `readarr`, `recyclarr`, `sonarr`, `whisparr` | `SERVARR_CPUS` | `SERVARR_MEMORY` | `0.5` | `512mb` |
 | FlareSolverr | `flaresolverr` | `FLARESOLVERR_CPUS` | `FLARESOLVERR_MEMORY` | `1` | `1gb` |
 | Downloaders | `qbittorrent`, `sabnzbd`, `nzbget`, `jdownloader2` | `DOWNLOADERS_CPUS` | `DOWNLOADERS_MEMORY` | `2` | `1gb` |
 | NZBHydra2 | `nzbhydra2` | `NZBHYDRA2_CPUS` | `NZBHYDRA2_MEMORY` | `1` | `1gb` |

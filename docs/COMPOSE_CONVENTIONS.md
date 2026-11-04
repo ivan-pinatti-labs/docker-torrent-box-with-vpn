@@ -27,6 +27,7 @@ user
 security_opt
 cap_drop
 cap_add
+read_only           # only services whose image writes nowhere but its volumes
 devices
 entrypoint
 command

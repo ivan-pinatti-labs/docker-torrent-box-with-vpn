@@ -14,7 +14,7 @@ usable account at all until a human clicks through their own web UI once.
 
 | What | Make target | Script |
 | ---------------------------------- | ---------------------- | ------------------------------ |
-| Download clients, Prowlarr apps, Jellyfin library updates | `make wire_connections` | `scripts/wire-connections.sh` |
+| Download clients, Prowlarr apps, Jellyfin library updates, Cleanuparr | `make wire_connections` | `scripts/wire-connections.sh` |
 
 `make bootstrap` runs this automatically, after the stack's first
 `make start` and before it rotates every seeded credential
@@ -240,6 +240,76 @@ what an application holds against what it defines and tries to remove
 entries it does not recognize, which Mylar rejects with
 `MylarException Code 460`, aborting the rest of that application's sync. Only
 the real NZBHydra2 entry belongs in those seeds.
+
+### Cleanuparr
+
+qBittorrent's excluded file names (see
+[HARDENING.md](HARDENING.md#excluded-file-names-in-qbittorrent)) keep an
+executable off disk, but a fake release whose only file is
+`Some.Show.S01E01.1080p.WEB.H264.exe` then finishes with nothing in it. The
+arr app that grabbed it is left with nothing to import: Sonarr holds the item
+at `importPending` with `No files found are eligible for import in
+.../<name>.exe` and retries every minute, for ever, and nothing blocklists the
+release or searches for the episode again. Sonarr's and Radarr's own "Fail
+Downloads" options look only at files on disk, so they never fire, and Lidarr
+and Readarr have no such option.
+
+Cleanuparr (`CLEANUPARR_PROFILE`, enabled by default) watches the arr queues.
+Its queue cleaner strikes a failed import whose status message holds one of
+the patterns below, every five minutes, and after three strikes removes the
+download from the arr app and from qBittorrent, blocklists the release and
+searches for the same episode, movie, album or book again. Its settings live
+in its own database, so `wire_cleanuparr` makes them through its API, at
+`/cleanuparr/api` with its own API key:
+
+- **Login and API key**: on the first run it completes Cleanuparr's setup
+  with the `cleanuparr` login and the password in
+  `configs/cleanuparr/secrets/password.txt` (seeded as `cleanuparr`, rotated
+  by `make bootstrap`), then saves its API key to
+  `configs/cleanuparr/secrets/api_key.txt`. Its setup endpoints answer anyone
+  until setup is complete, which is why this runs on the first wiring after
+  the container starts.
+- **Certificates**: self-signed certificates are accepted on local addresses
+  only (`httpCertificateValidation: DisabledForLocalAddresses`), as the arr
+  apps already are, since qBittorrent and the arr apps serve this stack's
+  own.
+- **qBittorrent**: its WebUI on gluetun's services address, logged in as
+  `qbittorrent`, since qBittorrent lets only Readarr in without a login.
+- **Arr apps**: one instance per enabled app (Sonarr, Radarr, Lidarr,
+  Readarr, Whisparr), at the address Prowlarr reaches it on, with the key its
+  `config.xml` holds.
+- **Queue cleaner**: on, failed import strikes `3`, pattern mode `Include`,
+  and these patterns:
+
+  ```text
+  .exe .scr .bat .cmd .pif .msi .lnk .vbs .ps1
+  ```
+
+  They are qBittorrent's excluded extensions less `.com` and `.js`, which
+  also turn up in legitimate status messages (release titles and URLs, and
+  `.json`). A pattern is a case insensitive substring of the message, so
+  `.exe` matches the path the message names. Stalled, metadata and errored
+  strikes keep Cleanuparr's defaults, which are off, and so does its Malware
+  Blocker: when every file of a torrent is already skipped it reports nothing
+  to block, so with the excluded file names on it would never act.
+
+Cleanuparr never returns a stored password or key, so a connection that
+exists at the right address is tested with what it stores and left alone
+when that passes, and saved again from the files when it does not. To add a
+pattern or raise the strikes, change them in Cleanuparr's UI (Queue Cleaner,
+Failed Imports): a rerun keeps both, and only puts back a shipped pattern that
+was removed. Its dry run (Settings, General) is left as you set it.
+
+A fake packed in a folder (`Show.S01E01/Show.S01E01.exe`) is reported by its
+folder path, which holds no extension, so none of these patterns strikes it.
+`No files found are eligible for import` would, but also every legitimate
+release that ends up with nothing importable, such as a RAR only pack; add it
+in the UI if you prefer that trade.
+
+Cleanuparr has no VPN route: it talks to the arr apps and qBittorrent inside
+the stack and to nothing outside it. Rotating an arr app's API key or
+qBittorrent's password updates Cleanuparr's copy through its API
+([ROTATION.md](ROTATION.md)).
 
 ## First-run setup
 

@@ -34,19 +34,25 @@ $(if $(VERSION_VARS),$(eval export $(VERSION_VARS)))
 JELLYFIN_BASE_URL ?= /jellyfin
 JELLYFIN_KNOWN_PROXY ?= $(NGINX_MEDIA_IP)
 
-# The apps subnet, nginx's two trusted addresses and Readarr's services
-# address arrived after most .env files were seeded, and seed-configs.sh never
-# rewrites an existing .env. A .env without them takes .env.example's values
-# instead of handing `network create --subnet` and an `ipv4_address:` an empty
-# string. Exported so compose, check-network-subnets.sh and
-# wire-connections.sh see the same values.
+# The apps subnet, nginx's two trusted addresses, Readarr's services address
+# and Cleanuparr's settings arrived after most .env files were seeded, and
+# seed-configs.sh never rewrites an existing .env. A .env without them takes
+# .env.example's values instead of handing `network create --subnet`, an
+# `ipv4_address:` or Cleanuparr's `user:` an empty string. Exported so
+# compose, check-network-subnets.sh and wire-connections.sh see the same
+# values.
 env_example_default = $(shell grep -m1 '^$(1)=' .env.example | cut -d= -f2-)
 APPS_SUBNET ?= $(call env_example_default,APPS_SUBNET)
 APPS_DYNAMIC_IP_RANGE ?= $(call env_example_default,APPS_DYNAMIC_IP_RANGE)
 NGINX_APPS_IP ?= $(call env_example_default,NGINX_APPS_IP)
 NGINX_SERVICES_IP ?= $(call env_example_default,NGINX_SERVICES_IP)
 READARR_SERVICES_IP ?= $(call env_example_default,READARR_SERVICES_IP)
-export APPS_SUBNET APPS_DYNAMIC_IP_RANGE NGINX_APPS_IP NGINX_SERVICES_IP READARR_SERVICES_IP
+CLEANUPARR_UID ?= $(call env_example_default,CLEANUPARR_UID)
+CLEANUPARR_GID ?= $(call env_example_default,CLEANUPARR_GID)
+CLEANUPARR_PROFILE ?= $(call env_example_default,CLEANUPARR_PROFILE)
+CLEANUPARR_HTTP_PORT ?= $(call env_example_default,CLEANUPARR_HTTP_PORT)
+export APPS_SUBNET APPS_DYNAMIC_IP_RANGE NGINX_APPS_IP NGINX_SERVICES_IP READARR_SERVICES_IP \
+	CLEANUPARR_UID CLEANUPARR_GID CLEANUPARR_PROFILE CLEANUPARR_HTTP_PORT
 
 # CONTAINER_RUNTIME can be set in .env to 'podman' or 'docker'.
 # If not set, auto-detect: Podman takes priority when available.
@@ -357,6 +363,7 @@ seed_all: seed_flaresolverr_chromedriver
 	@./scripts/seed-secrets.sh configs/jellyfin
 	@./scripts/seed-secrets.sh configs/audiobookshelf
 	@./scripts/seed-secrets.sh configs/calibre-web
+	@./scripts/seed-secrets.sh configs/cleanuparr
 	@./scripts/seed-configs.sh configs/grafana/.env
 	@./scripts/seed-configs.sh configs/grafana/config/grafana.ini
 	@./scripts/seed-configs.sh configs/sonarr/config/config.xml

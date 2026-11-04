@@ -5,13 +5,14 @@ enabled=false
 program=
 
 [BitTorrent]
+ExcludedFileNamesEnabled=true
 Session\AddExtensionToIncompleteFiles=true
 Session\AlternativeGlobalDLSpeedLimit=122070
 Session\AlternativeGlobalUPSpeedLimit=3662
 Session\AnonymousModeEnabled=true
 Session\BandwidthSchedulerEnabled=true
 Session\DefaultSavePath=/downloads/
-Session\ExcludedFileNames=
+Session\ExcludedFileNames=*.exe, *.scr, *.bat, *.cmd, *.com, *.pif, *.msi, *.lnk, *.vbs, *.js, *.ps1
 Session\GlobalMaxRatio=3
 Session\GlobalMaxSeedingMinutes=20160
 Session\IgnoreSlowTorrentsForQueueing=true
