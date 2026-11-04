@@ -355,6 +355,12 @@ nc -vz <VPN-exit-IP> <PF peer port>        # connects (peer protocol)
   direct clients should include `/jellyfin`. Setting `JELLYFIN_PROXY_DOMAIN` adds a
   dedicated Nginx vhost, while setting `JELLYFIN_BASE_URL=` makes root direct/domain access
   canonical at the cost of making `/jellyfin/` a non-canonical compatibility path.
+- **Why an app's host name redirects instead of proxying `/`.** Every other app keeps its
+  path as its URL base, and every location already answers any `Host`, so
+  `<app>.${APP_PROXY_DOMAIN}/` only needs a `302` to the app's path: no server block per
+  app, nothing duplicated. The redirect runs before the disabled app check, so a disabled
+  Homepage does not answer for an app, and it is a `302` so a browser forgets it once the
+  setting changes. See [APP_LINKS.md](APP_LINKS.md#one-host-name-per-app).
 - **Why qBittorrent binds to `172.28.0.10` (gluetun's `services` bridge IP) rather than
   `0.0.0.0`.** Binding only to the bridge NIC means the WebUI is not reachable on `wg0`
   regardless of firewall state, an additional safety margin. Portability is preserved

@@ -41,6 +41,8 @@ CERT_OU="$(env_value CERT_OU "$CERT_CONF")"
 CERT_FQDN="$(env_value CERT_FQDN "$CERT_CONF")"
 CERT_PASSWORD="$(env_value CERT_PASSWORD "$CERT_CONF")"
 JELLYFIN_PROXY_DOMAIN="$(env_value JELLYFIN_PROXY_DOMAIN .env)"
+# Every app's own host name, <app>.${APP_PROXY_DOMAIN}, under one wildcard.
+APP_PROXY_DOMAIN="$(env_value APP_PROXY_DOMAIN .env)"
 LAN_IP="$(env_value LAN_IP .env)"
 GLUETUN_SERVICES_IP="$(env_value GLUETUN_SERVICES_IP .env)"
 GLUETUN_OBSERVABILITY_IP="$(env_value GLUETUN_OBSERVABILITY_IP .env)"
@@ -60,7 +62,7 @@ echo "======================================================================"
 
 openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 \
   -subj "/C=${CERT_COUNTRY}/ST=${CERT_STATE}/L=${CERT_CITY}/O=${CERT_ORGANIZATION}/OU=${CERT_OU}/CN=${CERT_FQDN}" \
-  -addext "subjectAltName = DNS:${CERT_FQDN}, DNS:${JELLYFIN_PROXY_DOMAIN}, DNS:localhost, IP:127.0.0.1, IP:${LAN_IP}, IP:${GLUETUN_SERVICES_IP}, IP:${GLUETUN_OBSERVABILITY_IP}" \
+  -addext "subjectAltName = DNS:${CERT_FQDN}, DNS:${JELLYFIN_PROXY_DOMAIN}, DNS:*.${APP_PROXY_DOMAIN}, DNS:localhost, IP:127.0.0.1, IP:${LAN_IP}, IP:${GLUETUN_SERVICES_IP}, IP:${GLUETUN_OBSERVABILITY_IP}" \
   -keyout certs/server.key -out certs/server.crt
 
 openssl pkcs12 -export -out certs/server.pfx -inkey certs/server.key -in certs/server.crt \

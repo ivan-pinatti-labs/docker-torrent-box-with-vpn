@@ -11,6 +11,43 @@ map $request_uri $grafana_log_enabled {
     default                1;
 }
 
+# Optional host name per app (#413): <app>.${APP_PROXY_DOMAIN} opens the app
+# at its path on this server, so a password manager can tell the apps apart
+# by host name. The default domain, invalid, never resolves, so nothing
+# matches. A name is its location's, with `_` turned into `-` (a host name
+# cannot hold `_`), and the /admin/ apps go by their bare name. Jellyfin has
+# JELLYFIN_PROXY_DOMAIN instead, and paths that are not a UI have none.
+map $host $app_proxy_path {
+  default                             "";
+  audiobookshelf.${APP_PROXY_DOMAIN}  /audiobookshelf/;
+  bazarr.${APP_PROXY_DOMAIN}          /bazarr/;
+  cadvisor.${APP_PROXY_DOMAIN}        /admin/cadvisor/;
+  calibre.${APP_PROXY_DOMAIN}         /calibre/;
+  calibre-web.${APP_PROXY_DOMAIN}     /calibre_web/;
+  cleanuparr.${APP_PROXY_DOMAIN}      /cleanuparr/;
+  grafana.${APP_PROXY_DOMAIN}         /admin/grafana/;
+  jdownloader2.${APP_PROXY_DOMAIN}    /jdownloader2/;
+  lazylibrarian.${APP_PROXY_DOMAIN}   /lazylibrarian/;
+  lidarr.${APP_PROXY_DOMAIN}          /lidarr/;
+  mylar.${APP_PROXY_DOMAIN}           /mylar/;
+  nzbhydra2.${APP_PROXY_DOMAIN}       /nzbhydra2/;
+  prometheus.${APP_PROXY_DOMAIN}      /admin/prometheus/;
+  prowlarr.${APP_PROXY_DOMAIN}        /prowlarr/;
+  qbittorrent.${APP_PROXY_DOMAIN}     /qbittorrent/;
+  radarr.${APP_PROXY_DOMAIN}          /radarr/;
+  readarr.${APP_PROXY_DOMAIN}         /readarr/;
+  sabnzbd.${APP_PROXY_DOMAIN}         /sabnzbd/;
+  sonarr.${APP_PROXY_DOMAIN}          /sonarr/;
+  whisparr.${APP_PROXY_DOMAIN}        /whisparr/;
+}
+
+# Where an app's host name sends a request for `/`; empty for any other path,
+# so the app's own paths under that host are served as usual.
+map "$app_proxy_path:$uri" $app_proxy_redirect {
+  default                             "";
+  "~^(?<app_proxy_target>/[^:]+):/$"  $app_proxy_target;
+}
+
 # The app each proxied path belongs to, and the profile that switches it on,
 # for the error pages below (#415). Keyed on $request_uri, which an
 # error_page redirect leaves as the browser asked for it. A path matching no
@@ -147,6 +184,14 @@ server {
   # since proxy_intercept_errors stays off. The pages are addressed by URI,
   # not as named locations, because only a URI redirect turns a POST (a login
   # form) into the GET a static page can answer; a named one gave 405.
+  #
+  # An app's host name redirects to its path first, at server level rather
+  # than in Homepage's `location /`, so a disabled Homepage does not answer
+  # for it. 302, so a browser forgets it once the setting changes, and
+  # $http_host keeps a port other than 443.
+  if ($app_proxy_redirect) {
+    return 302 $scheme://$http_host$app_proxy_redirect;
+  }
   if ($app_refused) {
     return 503;
   }

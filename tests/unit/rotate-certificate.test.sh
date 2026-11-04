@@ -65,7 +65,7 @@ fresh_repo() {
   ln -s "${__script}" "${repo}/scripts/rotate-certificate.sh"
   printf '%s\n' CERT_COUNTRY=US CERT_STATE=NY CERT_CITY=NYC CERT_ORGANIZATION=Org \
     CERT_OU=Unit CERT_FQDN=box.example CERT_PASSWORD=previous >"${repo}/certs/cert.conf"
-  printf '%s\n' UID=1000 JELLYFIN_PROXY_DOMAIN=jf.example LAN_IP=192.0.2.10 \
+  printf '%s\n' UID=1000 JELLYFIN_PROXY_DOMAIN=jf.example APP_PROXY_DOMAIN=apps.example LAN_IP=192.0.2.10 \
     GLUETUN_SERVICES_IP=172.16.0.2 GLUETUN_OBSERVABILITY_IP=172.17.0.2 >"${repo}/.env"
   for app in ${__apps}; do
     mkdir -p "${repo}/configs/${app}/config"
@@ -106,7 +106,7 @@ check() {
 fresh_repo
 run
 check "builds the subject from cert.conf" 0 log "-subj /C=US/ST=NY/L=NYC/O=Org/OU=Unit/CN=box.example"
-check "adds every name and address from .env" 0 log "DNS:box.example, DNS:jf.example, DNS:localhost, IP:127.0.0.1, IP:192.0.2.10, IP:172.16.0.2, IP:172.17.0.2"
+check "adds every name and address from .env" 0 log "DNS:box.example, DNS:jf.example, DNS:*.apps.example, DNS:localhost, IP:127.0.0.1, IP:192.0.2.10, IP:172.16.0.2, IP:172.17.0.2"
 check "drops / + = from the new password" 0 log "pass:NEWpassword"
 check "stores the new password in cert.conf" 0 repo/certs/cert.conf "CERT_PASSWORD=NEWpassword"
 check "updates an app with SSL on" 0 repo/configs/radarr/config/config.xml "<SslCertPassword>NEWpassword<"
@@ -141,6 +141,12 @@ run
 check "a key .env lacks comes from .env.example" 0 log "IP:172.16.0.2, IP:198.51.100.2"
 GLUETUN_OBSERVABILITY_IP=192.0.2.20 run
 check "a value make passes down comes before .env.example's" 0 log "IP:172.16.0.2, IP:192.0.2.20"
+unset APP_PROXY_DOMAIN
+sed -i '/^APP_PROXY_DOMAIN=/d' "${__scratch}/repo/.env"
+echo APP_PROXY_DOMAIN=invalid >>"${__scratch}/repo/.env.example"
+run
+check "a .env from before app host names takes .env.example's placeholder" 0 log "DNS:jf.example, DNS:*.invalid, DNS:localhost"
+echo APP_PROXY_DOMAIN=apps.example >>"${__scratch}/repo/.env"
 rm "${__scratch}/repo/.env.example"
 run
 check "a key in neither file is named" 1 err "ERROR: GLUETUN_OBSERVABILITY_IP is set in neither .env nor .env.example, nor in the environment."

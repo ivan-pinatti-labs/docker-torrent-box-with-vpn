@@ -7,9 +7,11 @@ import yaml
 from dotenv import dotenv_values
 
 from conftest import (
+    NGINX_TEMPLATE,
     QBITTORRENT_EXCLUDED_FILE_NAMES,
     QBITTORRENT_QUEUEING,
     cleanuparr_failed_import_patterns,
+    nginx_map,
 )
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -491,24 +493,6 @@ def test_stop_grace_period(compose_file, service, grace):
 
 
 # The error pages for an app that is switched off or not answering (#415).
-NGINX_TEMPLATE = REPO_ROOT / "configs/nginx/templates/default.conf.template"
-
-
-def _nginx_map(name: str) -> dict[str, str]:
-    """A `map $request_uri $<name>` of the template, key to value, quotes dropped."""
-    block = re.search(
-        rf"^map \$request_uri \${name} \{{\n(.*?)^\}}",
-        NGINX_TEMPLATE.read_text(),
-        re.M | re.S,
-    )
-    assert block, f"no ${name} map in {NGINX_TEMPLATE.name}"
-    entries = {}
-    for line in block.group(1).splitlines():
-        key, value = line.split(None, 1)
-        entries[key] = value.rstrip(";").strip('"')
-    return entries
-
-
 def _main_https_locations() -> list[str]:
     """Every live `location` path of the HTTPS server Homepage is served from."""
     text = NGINX_TEMPLATE.read_text()
@@ -521,13 +505,13 @@ def _keys_matching(path: str) -> list[str]:
     """The $app_profile keys whose regex matches a request for `path`."""
     return [
         key
-        for key in _nginx_map("app_profile")
+        for key in nginx_map("app_profile")
         if key != "default" and re.search(key.removeprefix("~"), path)
     ]
 
 
 def test_nginx_names_the_app_and_profile_of_the_same_paths():
-    names, profiles = _nginx_map("app_name"), _nginx_map("app_profile")
+    names, profiles = nginx_map("app_name"), nginx_map("app_profile")
     assert names.keys() == profiles.keys()
     assert names["default"] == "Homepage"
     assert profiles["default"] == "HOMEPAGE_PROFILE"
@@ -556,7 +540,7 @@ def test_nginx_maps_every_proxied_path_to_one_app():
 
 def test_nginx_maps_only_real_profiles():
     example = dotenv_values(REPO_ROOT / ".env.example")
-    for profile in _nginx_map("app_profile").values():
+    for profile in nginx_map("app_profile").values():
         assert profile == "" or profile in example, profile
 
 
@@ -590,3 +574,54 @@ def test_nginx_mounts_the_error_pages_and_the_disabled_list():
 
 def test_nginx_hides_its_version():
     assert "server_tokens off;" in (REPO_ROOT / "configs/nginx/nginx.conf").read_text()
+
+
+# One host name per app (#413).
+def test_nginx_app_host_names_open_a_location_of_their_own():
+    hosts = nginx_map("app_proxy_path")
+    assert hosts.pop("default") == ""
+    locations = _main_https_locations()
+    assert "sonarr.${APP_PROXY_DOMAIN}" in hosts
+    for host, path in hosts.items():
+        name = host.removesuffix(".${APP_PROXY_DOMAIN}")
+        # A host name label: no `_`, which a host name cannot hold.
+        assert re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name), host
+        assert path in locations, (host, path)
+        # The location's name, `_` as `-`, an /admin/ app by its bare name.
+        assert path.removeprefix("/admin").strip("/").replace("_", "-") == name
+    # Jellyfin has JELLYFIN_PROXY_DOMAIN instead.
+    assert "/jellyfin/" not in hosts.values()
+
+
+def test_nginx_redirects_only_the_root_of_an_app_host_name():
+    redirects = nginx_map("app_proxy_redirect")
+    assert redirects.pop("default") == ""
+    ((key, target),) = redirects.items()
+    # nginx's named group, in Python's spelling.
+    pattern = re.compile(key.removeprefix("~").replace("(?<", "(?P<"))
+    match = pattern.search("/sonarr/:/")
+    assert match and match.group(target.removeprefix("$")) == "/sonarr/"
+    assert not pattern.search(":/")  # any other host
+    assert not pattern.search("/sonarr/:/sonarr/")  # the app's own paths
+    assert not pattern.search("/sonarr/:/login")
+
+
+def test_nginx_redirects_an_app_host_name_before_refusing_a_disabled_app():
+    """A disabled Homepage does not answer for an app's host name."""
+    text = NGINX_TEMPLATE.read_text()
+    redirect = (
+        "if ($app_proxy_redirect) {\n"
+        "    return 302 $scheme://$http_host$app_proxy_redirect;\n"
+        "  }"
+    )
+    assert redirect in text
+    assert text.index(redirect) < text.index("if ($app_refused) {")
+
+
+def test_app_proxy_domain_defaults_to_a_name_that_never_resolves():
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose-proxy.yml").read_text())
+    environment = compose["services"]["nginx"]["environment"]
+    assert environment["APP_PROXY_DOMAIN"] == "${APP_PROXY_DOMAIN:-invalid}"
+    assert _env_example("APP_PROXY_DOMAIN") == "invalid"
+    tests = dotenv_values(REPO_ROOT / ".env.tests")
+    assert tests["APP_PROXY_DOMAIN"] == "apps.test"
