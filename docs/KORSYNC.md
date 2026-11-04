@@ -35,8 +35,9 @@ With `APP_PROXY_DOMAIN` set (see
 `korsync.example.com` has to resolve to this host on the e-reader's network,
 and the certificate has to name it, as `make generate_certificate` and
 `make rotate_certificate` do. `https://<your-host>/korsync` keeps working
-either way. Give the address without a path: KOReader adds `/users/auth` and
-`/syncs/progress` to it and does not follow a redirect.
+either way. Give the short address without a path: KOReader adds
+`/users/auth` and `/syncs/progress` to it and does not follow a redirect. On
+the shared host the `/korsync` path stays, or those requests reach Homepage.
 
 ## User management
 

@@ -930,7 +930,8 @@ server {
 # address to type on an e-reader. A proxy rather than #413's redirect, since
 # KOReader calls /users/auth and /syncs/progress under the address it is given
 # and does not follow a redirect. With the default domain, invalid, nothing
-# matches.
+# matches. No #415 error pages here: they are for a browser and name the app
+# from the path, and KOReader shows its own sync error for any failure.
 server {
   listen ${NGINX_HTTPS_PORT} ssl;
   server_name korsync.${APP_PROXY_DOMAIN};

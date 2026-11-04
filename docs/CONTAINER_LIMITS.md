@@ -66,7 +66,8 @@ failed with "unknown server error". At `1` and `256mb` it takes under a
 second. The server answers one request at a time, so a slow check also holds
 up `/health`. A `.env` seeded before the change keeps the old values: set
 `KORSYNC_CPUS=1` and `KORSYNC_MEMORY=256mb` there, then recreate the
-container, since `make start` keeps a running one:
+container, since `make start` keeps a running one. With a `CONTAINER_PREFIX`
+in `.env`, the container's name starts with it (`dev-korsync` for `dev-`):
 
 ```shell
 podman stop korsync && podman rm korsync && make start
