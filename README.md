@@ -330,7 +330,8 @@ up.
 So does nginx. A disabled app's address, a bookmark or a password manager entry
 say, answers with a page naming the app and the setting that turns it on, rather
 than nginx's bare `502 Bad Gateway`, and an enabled app nginx cannot reach gets a
-page saying it is not answering. See
+page saying it is not answering, unless nginx still holds a cached copy of what was
+asked for. See
 [docs/NETWORKING.md](docs/NETWORKING.md#error-pages).
 
 Two apps have their own configuration deep-dive:

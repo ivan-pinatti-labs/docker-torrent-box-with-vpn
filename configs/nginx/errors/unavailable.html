@@ -12,7 +12,8 @@
     <p>The proxy could not reach it. It may be stopped, restarting or still
       starting; wait a minute and reload.</p>
     <p>If it stays like this, check its container with <code>podman ps</code>
-      and its log with <code>podman logs</code>. If it was switched off since
+      (<code>docker ps</code> on Docker) and its log with
+      <code>podman logs</code> (<code>docker logs</code>). If it was switched off since
       the proxy last started (<code><!--# echo var="app_profile" --></code>
       in <code>.env</code>), run <code>make start</code>.</p>
   </main>

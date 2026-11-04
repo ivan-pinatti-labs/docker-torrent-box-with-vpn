@@ -19,6 +19,7 @@ whose flag it cannot find: a parsing mismatch should not hide an app. So does
 every profile when there is no .env yet, since nginx needs the file either way.
 """
 
+import os
 import re
 from pathlib import Path
 
@@ -28,16 +29,37 @@ TEMPLATE_FILE = REPO_ROOT / "configs/nginx/templates/default.conf.template"
 OUTPUT_FILE = REPO_ROOT / "configs/nginx/generated/disabled-apps.conf"
 
 
+def env_value(raw: str) -> str:
+    """A .env value as Compose reads it: quotes dropped, a trailing comment cut.
+
+    Only an unquoted value carries a comment, and only after whitespace: a
+    bare # is part of the value.
+    """
+    value = raw.strip()
+    if value[:1] in ("'", '"') and len(value) > 1:
+        end = value.find(value[0], 1)
+        if end > 0:
+            return value[1:end]
+    return re.split(r"\s#", value, maxsplit=1)[0].strip()
+
+
 def read_profiles(env_file: Path) -> dict[str, bool]:
-    """Each *_PROFILE in .env, True when it is `enabled`."""
-    if not env_file.is_file():
-        return {}
-    profiles = {}
-    for line in env_file.read_text().splitlines():
-        m = re.match(r"^([A-Z0-9_]+_PROFILE)=(\S*)$", line)
-        if m:
-            profiles[m.group(1)] = m.group(2) == "enabled"
-    return profiles
+    """Each *_PROFILE, True when it is `enabled`.
+
+    The environment wins over .env, as it does for Compose: make hands a
+    profile given on its command line (`make start SONARR_PROFILE=enabled`)
+    to this script that way.
+    """
+    values = {}
+    if env_file.is_file():
+        for line in env_file.read_text().splitlines():
+            m = re.match(r"^([A-Z0-9_]+_PROFILE)=(.*)$", line)
+            if m:
+                values[m.group(1)] = env_value(m.group(2))
+    values.update(
+        (key, value) for key, value in os.environ.items() if key.endswith("_PROFILE")
+    )
+    return {key: value == "enabled" for key, value in values.items()}
 
 
 def read_app_profiles(template: str) -> tuple[str, list[tuple[str, str]]]:
@@ -80,7 +102,12 @@ def main() -> None:
     """Write OUTPUT_FILE. A failure raises SystemExit; reaching the end is success."""
     default, entries = read_app_profiles(TEMPLATE_FILE.read_text())
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_FILE.write_text(render(default, entries, read_profiles(ENV_FILE)))
+    # Written beside the file and renamed over it, so a run that stops halfway
+    # never leaves nginx a partial list to read at its next start. Not named
+    # *.conf, which nginx's include would pick up.
+    staged = OUTPUT_FILE.with_name(OUTPUT_FILE.name + ".new")
+    staged.write_text(render(default, entries, read_profiles(ENV_FILE)))
+    os.replace(staged, OUTPUT_FILE)
 
 
 if __name__ == "__main__":

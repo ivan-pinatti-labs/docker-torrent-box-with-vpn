@@ -482,7 +482,9 @@ nginx's bare `502 Bad Gateway`. Now (#415):
 - **An app nginx cannot reach**, stopped, restarting or still starting, answers **502**
   (or **504** on a timeout) with a page naming it and the likely causes. nginx cannot
   tell those apart from a failed connection, so the page lists them rather than
-  guessing.
+  guessing. The exception is a GET or HEAD nginx holds a cached answer for: that
+  answer is served instead (`proxy_cache_use_stale error timeout ...`), and the page
+  only appears for what is not cached.
 - An app's own error statuses pass through unchanged: `proxy_intercept_errors` stays
   off, so only nginx's own failures get these pages.
 - `server_tokens off`: no response names the nginx version.

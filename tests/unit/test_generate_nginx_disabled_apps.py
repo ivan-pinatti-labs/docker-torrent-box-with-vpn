@@ -36,6 +36,9 @@ def generator(load_script, tmp_path, monkeypatch):
         module, "OUTPUT_FILE", tmp_path / "generated" / "disabled-apps.conf"
     )
     (tmp_path / "default.conf.template").write_text(TEMPLATE)
+    # The environment wins over .env; start each test with no profile in it.
+    for key in [key for key in module.os.environ if key.endswith("_PROFILE")]:
+        monkeypatch.delenv(key)
     return module
 
 
@@ -52,7 +55,8 @@ def test_read_profiles_without_an_env_file(generator, tmp_path):
     assert generator.read_profiles(tmp_path / "missing") == {}
 
 
-def test_read_profiles_reads_only_profile_flags(generator, tmp_path):
+def test_read_profiles_reads_values_as_compose_does(generator, tmp_path):
+    """Quotes dropped, a comment after whitespace cut, other keys left alone."""
     env = tmp_path / ".env"
     env.write_text(
         "# NZBHYDRA2_PROFILE=disabled\n"
@@ -60,10 +64,38 @@ def test_read_profiles_reads_only_profile_flags(generator, tmp_path):
         "SONARR_PROFILE=enabled\n"
         "SONARR_HTTP_PORT=8989\n"
         "WHISPARR_PROFILE=enabled # trailing note\n"
+        'RADARR_PROFILE="enabled"\n'
+        "LIDARR_PROFILE='disabled' # quoted, then a note\n"
+        "READARR_PROFILE=disabled # note\n"
+        "BAZARR_PROFILE=enabled#not-a-comment\n"
+        'PROWLARR_PROFILE="\n'
+        'JELLYFIN_PROFILE="enabled\n'
     )
     assert generator.read_profiles(env) == {
         "NZBHYDRA2_PROFILE": False,
         "SONARR_PROFILE": True,
+        "WHISPARR_PROFILE": True,
+        "RADARR_PROFILE": True,
+        "LIDARR_PROFILE": False,
+        "READARR_PROFILE": False,
+        "BAZARR_PROFILE": False,
+        # A lone quote is not a quoted value.
+        "PROWLARR_PROFILE": False,
+        # Nor is one whose quote never closes.
+        "JELLYFIN_PROFILE": False,
+    }
+
+
+def test_read_profiles_takes_the_environment_over_env(generator, tmp_path, monkeypatch):
+    """`make start SONARR_PROFILE=enabled` reaches the script that way."""
+    env = tmp_path / ".env"
+    env.write_text("SONARR_PROFILE=disabled\nRADARR_PROFILE=enabled\n")
+    monkeypatch.setenv("SONARR_PROFILE", "enabled")
+    monkeypatch.setenv("WHISPARR_PROFILE", "disabled")
+    assert generator.read_profiles(env) == {
+        "SONARR_PROFILE": True,
+        "RADARR_PROFILE": True,
+        "WHISPARR_PROFILE": False,
     }
 
 
@@ -116,6 +148,18 @@ def test_main_without_an_env_file_enables_everything(generator):
     generator.main()
 
     assert set(_entries(generator.OUTPUT_FILE.read_text()).values()) == {"0"}
+
+
+def test_main_replaces_the_list_whole(generator, tmp_path):
+    """The new list is staged and renamed over the old, leaving nothing else."""
+    generator.OUTPUT_FILE.parent.mkdir(parents=True)
+    generator.OUTPUT_FILE.write_text("default 1;\n")
+    generator.main()
+
+    assert _entries(generator.OUTPUT_FILE.read_text())["default"] == "0"
+    assert [p.name for p in generator.OUTPUT_FILE.parent.iterdir()] == [
+        "disabled-apps.conf"
+    ]
 
 
 def test_the_real_template_parses(load_script):
