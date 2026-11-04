@@ -270,7 +270,10 @@ in its own database, so `wire_cleanuparr` makes them through its API, at
   answer anyone until setup is complete, which is why this runs on the first
   wiring after the container starts, and why the password is never a
   placeholder: `make update` adds Cleanuparr to a deployment without the
-  rotation `make bootstrap` ends with.
+  rotation `make bootstrap` ends with. nginx refuses those setup endpoints
+  (`/cleanuparr/api/auth/setup/`), so nobody who reaches it before the wiring
+  runs can create the account first; the wiring calls them from inside the
+  container.
 - **Certificates**: self-signed certificates are accepted on local addresses
   only (`httpCertificateValidation: DisabledForLocalAddresses`), as the arr
   apps already are, since qBittorrent and the arr apps serve this stack's

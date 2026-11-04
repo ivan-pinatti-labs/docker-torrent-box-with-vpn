@@ -1097,6 +1097,15 @@ check "a key that cannot be read is not saved" 0 out \
   "[Cleanuparr] WARNING: no usable login, nothing else was wired."
 check "and the old key file stays" 0 configs/cleanuparr/secrets/api_key.txt key-cleanuparr
 
+# An arr app whose profile is off is not wired, even with its container left
+# behind; one whose profile .env does not name is.
+deployment
+containers cleanuparr qbittorrent sonarr whisparr
+printf 'SONARR_PROFILE=disabled\n' >>"${__repo}/.env"
+run
+refute "a switched off app is not wired" log "/cleanuparr/api/configuration/sonarr"
+check "an app .env names no profile for is" 0 log "/cleanuparr/api/configuration/whisparr"
+
 # Every other part failing, in two runs, each failure reported and none
 # stopping the rest.
 deployment

@@ -132,6 +132,16 @@ server {
   # forwarded header (TrustForwardedHeaders stays off), and X-Forwarded-For
   # is overwritten anyway, as for qBittorrent and SABnzbd, so nothing a
   # browser sends can name another client.
+  #
+  # Its first-run setup endpoints answer anyone until an account exists, and
+  # the container starts before `make wire_connections` makes that account,
+  # so through here anyone who reached nginx first could create the admin
+  # account and lock the stack's wiring out. The wiring never comes this way:
+  # it calls Cleanuparr from inside its own container. So nginx refuses them.
+  location ^~ /cleanuparr/api/auth/setup/ {
+    return 403;
+  }
+
   location /cleanuparr/ {
     proxy_pass                  $cleanuparr_upstream;
     proxy_redirect              off;

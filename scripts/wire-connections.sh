@@ -2466,8 +2466,11 @@ ensure_cleanuparr_qbittorrent() {
 # certificate, which Cleanuparr accepts on local addresses. Cleanuparr only
 # reads the version to tell Whisparr 2 from 3. Args: app name url version
 ensure_cleanuparr_arr() {
-  local app="$1" name="$2" url="$3" version="$4" payload
-  if ! podman container exists "$(cname "$app")" 2>/dev/null; then
+  local app="$1" name="$2" url="$3" version="$4" payload profile
+  # A profile missing from .env counts as on, like everywhere else here; a
+  # container left behind by one switched off is not wired.
+  profile=$(env_value "${app^^}_PROFILE" 2>/dev/null) || profile=enabled
+  if [[ "$profile" != enabled ]] || ! podman container exists "$(cname "$app")" 2>/dev/null; then
     return 0
   fi
   payload=$(jq -cn --arg name "$name" --arg url "$url" --arg apiKey "$(get_xml_apikey "configs/${app}/config/config.xml")" --argjson version "$version" '{enabled: true, name: $name, url: $url, apiKey: $apiKey, version: $version}')

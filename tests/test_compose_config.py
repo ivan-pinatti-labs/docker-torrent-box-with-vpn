@@ -236,6 +236,18 @@ def test_cleanuparr_serves_under_its_base_path():
     }
 
 
+def test_nginx_refuses_the_cleanuparr_setup():
+    """Nobody but the wiring may create Cleanuparr's first account.
+
+    Its setup endpoints answer anyone until an account exists, and the
+    wiring reaches them from inside the container, never through nginx.
+    """
+    template = (REPO_ROOT / "configs/nginx/templates/default.conf.template").read_text()
+    assert (
+        "  location ^~ /cleanuparr/api/auth/setup/ {\n    return 403;\n  }" in template
+    )
+
+
 def test_nginx_variables_hash_fits_every_upstream():
     """One `set` per upstream outgrew nginx's default, which warns on reload."""
     assert (
