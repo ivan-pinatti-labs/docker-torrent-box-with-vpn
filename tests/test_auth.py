@@ -276,16 +276,18 @@ def test_cleanuparr_through_nginx(running_containers):
     assert resp.status_code == 401, (
         f"Cleanuparr's API with a wrong key: {resp.status_code}"
     )
-    # Its first-run setup is the wiring's alone, never through nginx.
-    resp = requests.post(
-        f"{BASE}/cleanuparr/api/auth/setup/account",
-        json={
-            "username": "someone",
-            "password": "not-the-stacks",  # pragma: allowlist secret
-        },
-        verify=False,
-        timeout=TIMEOUT,
-    )
-    assert resp.status_code == 403, (
-        f"Cleanuparr's setup through nginx: {resp.status_code}"
-    )
+    # Its first-run setup is the wiring's alone, never through nginx, however
+    # the path is spelled: Cleanuparr matches routes case-insensitively.
+    for path in ("api/auth/setup/account", "API/Auth/SETUP/account", "api/auth/setup"):
+        resp = requests.post(
+            f"{BASE}/cleanuparr/{path}",
+            json={
+                "username": "someone",
+                "password": "not-the-stacks",  # pragma: allowlist secret
+            },
+            verify=False,
+            timeout=TIMEOUT,
+        )
+        assert resp.status_code == 403, (
+            f"Cleanuparr's setup through nginx, as /{path}: {resp.status_code}"
+        )

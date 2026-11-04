@@ -243,8 +243,10 @@ def test_nginx_refuses_the_cleanuparr_setup():
     wiring reaches them from inside the container, never through nginx.
     """
     template = (REPO_ROOT / "configs/nginx/templates/default.conf.template").read_text()
+    # Case-insensitive: Cleanuparr routes /api/auth/SETUP/ the same way.
     assert (
-        "  location ^~ /cleanuparr/api/auth/setup/ {\n    return 403;\n  }" in template
+        "  location ~* ^/cleanuparr/api/auth/setup(?:/|$) {\n    return 403;\n  }"
+        in template
     )
 
 

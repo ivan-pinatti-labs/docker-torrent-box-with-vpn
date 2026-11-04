@@ -137,8 +137,10 @@ server {
   # the container starts before `make wire_connections` makes that account,
   # so through here anyone who reached nginx first could create the admin
   # account and lock the stack's wiring out. The wiring never comes this way:
-  # it calls Cleanuparr from inside its own container. So nginx refuses them.
-  location ^~ /cleanuparr/api/auth/setup/ {
+  # it calls Cleanuparr from inside its own container. So nginx refuses them,
+  # in any case: Cleanuparr's routes match case-insensitively, and a regex
+  # location is checked ahead of the plain /cleanuparr/ prefix.
+  location ~* ^/cleanuparr/api/auth/setup(?:/|$) {
     return 403;
   }
 

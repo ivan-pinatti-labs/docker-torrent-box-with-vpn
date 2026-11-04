@@ -1072,6 +1072,22 @@ refute "and nothing else is tried" log "/cleanuparr/api/configuration/"
 
 # A first setup keeps a password of the user's own, but never the username,
 # which anyone could guess.
+# A password that cannot be generated stops the setup, rather than sending
+# an empty one.
+deployment
+containers cleanuparr
+rm "${__repo}/configs/cleanuparr/secrets/password.txt"
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/auth/status$" 0 $'{"setupCompleted": false}\n200'
+rule '^openssl rand' 1 ""
+run
+check "a password that cannot be generated stops the setup" 0 out \
+  "[Cleanuparr] WARNING: could not generate a password for its login." \
+  "[Cleanuparr] WARNING: no usable login, nothing else was wired."
+refute "and no account is created" log "/cleanuparr/api/auth/setup/account"
+if [[ -e "${__repo}/configs/cleanuparr/secrets/password.txt" ]]; then
+  fail "nor is an empty password file left behind"
+fi
+
 for given in my-own-password cleanuparr; do
   deployment
   containers cleanuparr

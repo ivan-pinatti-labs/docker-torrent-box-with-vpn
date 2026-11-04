@@ -2361,8 +2361,14 @@ ensure_cleanuparr_account() {
   fi
   # Only the scripts read it, as the host user, so it is private from the
   # moment it exists, and one of the user's own is made private too.
+  # The setup is never sent with an empty password: this runs as a condition,
+  # so `set -e` would not stop a failed generation on its own.
   if [[ ! -s "$CLEANUPARR_PASSWORD_FILE" || "$(cat "$CLEANUPARR_PASSWORD_FILE")" == "$CLEANUPARR_USERNAME" ]]; then
-    (umask 077 && openssl rand -hex 16 | tr -d '\n' >"$CLEANUPARR_PASSWORD_FILE")
+    if ! (umask 077 && openssl rand -hex 16 | tr -d '\n' >"$CLEANUPARR_PASSWORD_FILE") || [[ ! -s "$CLEANUPARR_PASSWORD_FILE" ]]; then
+      rm -f "$CLEANUPARR_PASSWORD_FILE"
+      echo "[Cleanuparr] WARNING: could not generate a password for its login."
+      return 1
+    fi
   fi
   chmod 600 "$CLEANUPARR_PASSWORD_FILE"
   echo "[Cleanuparr] Creating its login..."
