@@ -1154,4 +1154,30 @@ check "a refused save is reported" 0 out \
   "[Cleanuparr] WARNING: could not save Sonarr: {\"title\": \"save refused\"}" \
   "[Cleanuparr] WARNING: not everything was wired, see above. Re-run 'make wire_connections'."
 
+# A `podman stop` that fails ends the run before Mylar's database is written
+# under a Mylar still running (#405); a bare `wait` used to report it as done.
+deployment
+mylar_db 0
+rule '^podman stop mylar$' 125 ""
+run
+check "a failed stop ends the run" 125 out "[Mylar] Adding a placeholder comic so its Homepage widget has data..."
+if [[ "$(query configs/mylar/config/mylar/mylar.db 'SELECT COUNT(*) FROM comics')" != "[(0,)]" ]]; then
+  fail "before Mylar's database is written"
+fi
+refute "nor is Mylar started again" log "podman start mylar"
+
+# The same for an app stopped with the timeout. Calibre-Web runs as a
+# background job, so its stop failing ends that job, named in the summary, and
+# leaves its database as it was.
+deployment
+calibre_web_db /data/media/calibre-library 0 ""
+rule '^podman stop --time 60 calibre-web$' 125 ""
+run
+check "a failed timed stop ends its job" 0 out "[Calibre-Web] Configuring library path..." \
+  "[setup] WARNING: these jobs stopped before they finished:" "[setup]   - calibre-web (exit 125)"
+if [[ "$(query configs/calibre-web/config/app.db 'SELECT config_calibre_dir, config_calibre_split FROM settings')" != "[('/data/media/calibre-library', 0)]" ]]; then
+  fail "before Calibre-Web's database is written"
+fi
+refute "nor is Calibre-Web started again" log "podman start calibre-web"
+
 finish

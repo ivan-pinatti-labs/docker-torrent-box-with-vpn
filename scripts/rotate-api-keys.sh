@@ -196,7 +196,7 @@ readonly STOP_TIMEOUT=60
 readonly STOP_TIMEOUT_EXEMPT=(mylar)
 
 stop_container() {
-  local c exempt=() normal=() pids=()
+  local c exempt=() normal=() pids=() pid status=0
   for c in "$@"; do
     if [[ " ${STOP_TIMEOUT_EXEMPT[*]} " == *" ${c} "* ]]; then
       exempt+=("$(cname "$c")")
@@ -205,10 +205,11 @@ stop_container() {
     fi
   done
   # Both batches run concurrently so an exempt container waiting out its
-  # timeout never serializes behind the others. A bare `wait` (no PIDs)
-  # always returns 0 regardless of how its background jobs exited, which
-  # under `set -e` silently turned a real `podman stop` failure into
-  # success; waiting on each PID by name surfaces it instead.
+  # timeout never serializes behind the others. Each PID is waited on in
+  # turn: a bare `wait` returns 0 however its jobs exited, and `wait` given
+  # several PIDs returns only the last one's status, so either turned a
+  # failed `podman stop` into success and let the caller edit a config or
+  # database the app still had open (#405).
   if [[ ${#normal[@]} -gt 0 ]]; then
     podman stop --time "$STOP_TIMEOUT" "${normal[@]}" >/dev/null &
     pids+=("$!")
@@ -217,7 +218,10 @@ stop_container() {
     podman stop "${exempt[@]}" >/dev/null &
     pids+=("$!")
   fi
-  wait "${pids[@]}"
+  for pid in "${pids[@]}"; do
+    wait "$pid" || status=$?
+  done
+  return "$status"
 }
 
 # Lets the host write an app's SQLite database, which the app must already be

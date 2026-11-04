@@ -496,4 +496,21 @@ rule 'calibre curl -s -o /dev/null -w %\{http_code\}' 0 000
 run calibre
 check "a Calibre content server that does not answer is only a note" 0 out "[Calibre] Content server not reachable on port 8081"
 
+# A `podman stop` that fails ends the rotation before the file is edited
+# under an app still running (#405); a bare `wait` used to report it as done.
+deployment
+rule '^podman stop --time 60 bazarr$' 125 ""
+run bazarr
+check "a failed stop ends the rotation" 125 log "podman stop --time 60 bazarr"
+check "before Bazarr's config is edited" 125 configs/bazarr/config/config/config.yaml '"password": "old"' # pragma: allowlist secret
+refute "nor is Bazarr started again" log "podman start bazarr"
+
+# The same when Mylar's own stop, the last one waited on, succeeds: `wait`
+# given both PIDs returned only Mylar's status.
+deployment
+rule '^podman stop --time 60 .*sonarr' 125 ""
+run qbittorrent
+check "a failed stop beside Mylar's ends the rotation" 125 log "podman stop mylar"
+refute "before any arr database is edited" out "[Sonarr DB] Updating"
+
 finish

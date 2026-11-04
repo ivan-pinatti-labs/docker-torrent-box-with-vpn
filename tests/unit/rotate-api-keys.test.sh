@@ -416,4 +416,13 @@ run all
 check "keys the services refuse fail validation" 1 err "ERROR: validation failed for: lazylibrarian mylar nzbhydra2"
 check "NZBHydra2 without ssl or urlBase is plain http at the root" 1 log "nzbhydra2 curl -sk http://127.0.0.1:5076/api?t=caps"
 
+# A `podman stop` that fails ends the rotation before the file is edited
+# under an app still running (#405).
+deployment
+rule '^podman stop --time 60 bazarr$' 125 ""
+run bazarr
+check "a failed stop ends the rotation" 125 log "podman stop --time 60 bazarr"
+check "before Bazarr's config is edited" 125 configs/bazarr/config/config/config.yaml '"apikey": "old-bazarr"' # pragma: allowlist secret
+refute "nor is Bazarr started again" log "podman start bazarr"
+
 finish
