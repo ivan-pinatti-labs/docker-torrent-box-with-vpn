@@ -49,7 +49,9 @@ def read_profiles(env_file: Path) -> dict[str, bool]:
 
     The environment wins over .env, as it does for Compose: make hands a
     profile given on its command line (`make start SONARR_PROFILE=enabled`)
-    to this script that way.
+    to this script that way. A value Compose would interpolate (`${...}`) is
+    not worked out here and counts as enabled, like a missing one: a page that
+    calls a running app disabled is worse than the plain "not answering" one.
     """
     values = {}
     if env_file.is_file():
@@ -61,7 +63,7 @@ def read_profiles(env_file: Path) -> dict[str, bool]:
     values.update(
         (key, value) for key, value in os.environ.items() if key.endswith("_PROFILE")
     )
-    return {key: value == "enabled" for key, value in values.items()}
+    return {key: value == "enabled" or "$" in value for key, value in values.items()}
 
 
 def read_app_profiles(template: str) -> tuple[str, list[tuple[str, str]]]:

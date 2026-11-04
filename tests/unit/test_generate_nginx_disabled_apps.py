@@ -136,6 +136,18 @@ def test_main_marks_disabled_profiles(generator, tmp_path):
     }
 
 
+def test_main_leaves_an_interpolated_profile_enabled(generator, tmp_path):
+    """`${...}` is Compose's to work out; the entry for it is never refused."""
+    (tmp_path / ".env").write_text(
+        "NZBHYDRA2_PROFILE=${HYDRA_PROFILE}\nSONARR_PROFILE=$ARR_PROFILE\n"
+    )
+    generator.main()
+
+    entries = _entries(generator.OUTPUT_FILE.read_text())
+    assert entries["~^/nzbhydra2(?:[/?]|$)"] == "0"
+    assert entries["~^/sonarr(?:[/?]|$)"] == "0"
+
+
 def test_main_disables_the_default_with_homepage(generator, tmp_path):
     """Every path no key matches is Homepage's, so it follows Homepage's flag."""
     (tmp_path / ".env").write_text("HOMEPAGE_PROFILE=disabled\n")
