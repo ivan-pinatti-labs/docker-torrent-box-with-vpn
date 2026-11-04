@@ -21,7 +21,6 @@ every profile when there is no .env yet, since nginx needs the file either way.
 
 import os
 import re
-import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -108,15 +107,12 @@ def main() -> None:
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     # Written beside the file and renamed over it, so a run that stops halfway
     # never leaves nginx a partial list to read at its next start. The staged
-    # name is this run's own, so two runs at once cannot rename each other's,
-    # and does not end in .conf, which nginx's include would pick up. 0644,
-    # the mode a plain write gives it, for nginx to read.
-    fd, staged = tempfile.mkstemp(
-        dir=OUTPUT_FILE.parent, prefix=OUTPUT_FILE.name + ".", suffix=".new"
-    )
-    with os.fdopen(fd, "w") as handle:
-        os.chmod(staged, 0o644)
-        handle.write(render(default, entries, read_profiles(ENV_FILE)))
+    # name is this run's own (its process id), so two runs at once cannot
+    # rename each other's, and does not end in .conf, which nginx's include
+    # would pick up. A plain write, so the file gets the mode nginx.conf and
+    # the templates have, which nginx reads under Docker too.
+    staged = OUTPUT_FILE.with_name(f"{OUTPUT_FILE.name}.{os.getpid()}.new")
+    staged.write_text(render(default, entries, read_profiles(ENV_FILE)))
     os.replace(staged, OUTPUT_FILE)
 
 

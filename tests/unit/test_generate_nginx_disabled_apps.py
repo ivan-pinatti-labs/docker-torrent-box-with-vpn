@@ -175,8 +175,10 @@ def test_main_replaces_the_list_whole(generator, tmp_path):
     assert [p.name for p in generator.OUTPUT_FILE.parent.iterdir()] == [
         "disabled-apps.conf"
     ]
-    # Readable by nginx, as a plain write would leave it, not mkstemp's 0600.
-    assert generator.OUTPUT_FILE.stat().st_mode & 0o777 == 0o644
+    # The mode a plain write gives under the umask, as nginx.conf has.
+    umask = generator.os.umask(0)
+    generator.os.umask(umask)
+    assert generator.OUTPUT_FILE.stat().st_mode & 0o777 == 0o666 & ~umask
 
 
 def test_the_real_template_parses(load_script):
