@@ -6,6 +6,8 @@ run directly on app networks or through Gluetun route overrides.
 """
 
 import socket
+import subprocess  # nosec B404 - podman CLI, see _reload_nginx
+import time
 from urllib.parse import urlsplit
 from xml.etree import ElementTree  # nosec B405 - parses this checkout's own config.xml
 
@@ -16,6 +18,7 @@ import urllib3
 from conftest import (
     REPO_ROOT,
     SERVICES,
+    container_name,
     env,
     is_enabled,
     port,
@@ -225,3 +228,80 @@ def test_servarr_redirect_keeps_the_original_scheme_and_port(
             f"{service_name} redirected to {resp.headers['Location']}, not back to "
             f"https://{expected}: it is not trusting nginx's forwarded headers"
         )
+
+
+# ---------------------------------------------------------------------------
+# Error pages for an app that is switched off or not answering (#415)
+# ---------------------------------------------------------------------------
+
+NGINX_GENERATED = REPO_ROOT / "configs/nginx/generated"
+
+
+def _nginx(path: str, method: str = "GET") -> requests.Response:
+    return requests.request(
+        method,
+        f"https://{HOST}:{NGINX_HTTPS_PORT}{path}",
+        allow_redirects=False,
+        verify=False,  # nosec B501 - the stack's own self-signed certificate
+        timeout=CONNECT_TIMEOUT,
+    )
+
+
+def _reload_nginx() -> None:
+    subprocess.run(  # nosec B603 B607 - fixed arguments, no user input
+        ["podman", "exec", container_name("nginx"), "nginx", "-s", "reload"],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    # A reload starts new workers and lets the old ones finish; give them a
+    # moment, so the next request is answered with the new configuration.
+    time.sleep(2)
+
+
+def test_nginx_hides_its_version(running_containers):
+    skip_if_not_running("nginx", running_containers)
+    response = _nginx("/stub_status")
+    assert response.headers.get("Server") == "nginx"
+
+
+def test_make_start_wrote_the_disabled_apps(running_containers):
+    """`make start` lists every path of the template, each 0 or 1."""
+    skip_if_not_running("nginx", running_containers)
+    listing = (NGINX_GENERATED / "disabled-apps.conf").read_text()
+    entries = [line for line in listing.splitlines() if line and line[0] != "#"]
+    assert entries[0] in ("default 0;", "default 1;")
+    assert any(line.startswith("~^/nzbhydra2(") for line in entries)
+    assert all(line.endswith((" 0;", " 1;")) for line in entries)
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_nginx_names_a_disabled_app(method, running_containers):
+    """A path whose app is switched off answers 503 with a page saying so.
+
+    CI enables every app nginx proxies, so this adds a disabled path of its
+    own beside the list `make start` writes, a path no app serves and no other
+    test asks for, reloads nginx, and takes the probe out again afterwards. A
+    POST, such as a login form, gets the same page. Each case has a probe of
+    its own, since pytest-xdist can run them at once.
+    """
+    skip_if_not_running("nginx", running_containers)
+    name = f"_disabled_probe_{method.lower()}"
+    probe = NGINX_GENERATED / f"zz-test{name}.conf"
+    probe.write_text(f"~^/{name}(?:[/?]|$) 1;\n")
+    try:
+        _reload_nginx()
+        response = _nginx(f"/{name}/login", method)
+    finally:
+        probe.unlink()
+        _reload_nginx()
+
+    assert response.status_code == 503
+    # The probe matches no app of its own, so the page names Homepage's.
+    assert "<h1>Homepage is disabled</h1>" in response.text
+    assert "<code>HOMEPAGE_PROFILE=enabled</code>" in response.text
+
+
+def test_nginx_keeps_its_error_pages_internal(running_containers):
+    skip_if_not_running("nginx", running_containers)
+    assert _nginx("/_errors/disabled.html").status_code == 404

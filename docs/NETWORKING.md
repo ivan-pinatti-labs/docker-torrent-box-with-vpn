@@ -461,6 +461,37 @@ upstream resolver is Cloudflare with malicious-domain blocking enabled.
    metrics, or define a new one).
 2. If it needs a reverse proxy entry, add nginx to that bridge too, and add a `location`
    block with `proxy_pass http://<service>:<port>;`.
+3. Give its path a key in the `$app_name` and `$app_profile` maps at the top of
+   `configs/nginx/templates/default.conf.template`, so its error pages name it (see
+   below). `tests/test_compose_config.py` fails for a `location` without one.
+
+### Error pages
+
+nginx resolves every app's name per request, which is how it starts without every app,
+and a disabled app's name does not resolve at all, so its address used to answer with
+nginx's bare `502 Bad Gateway`. Now (#415):
+
+- **A disabled app** answers **503** with a page naming it and the setting that turns
+  it on (`<APP>_PROFILE=enabled`, then `make start`). `make start` runs
+  `scripts/generate-nginx-disabled-apps.py`, which reads the `$app_profile` map and
+  `.env` and writes `configs/nginx/generated/disabled-apps.conf`, then reloads a
+  running nginx, since `up --no-recreate` would otherwise leave it with the old list.
+  503 rather than 404: the address is real, the app is only switched off, and a
+  password manager or bookmark should not treat it as gone for good. A path no app
+  claims is Homepage's, so it follows `HOMEPAGE_PROFILE`; `/stub_status` never does.
+- **An app nginx cannot reach**, stopped, restarting or still starting, answers **502**
+  (or **504** on a timeout) with a page naming it and the likely causes. nginx cannot
+  tell those apart from a failed connection, so the page lists them rather than
+  guessing.
+- An app's own error statuses pass through unchanged: `proxy_intercept_errors` stays
+  off, so only nginx's own failures get these pages.
+- `server_tokens off`: no response names the nginx version.
+
+The pages are `configs/nginx/errors/*.html`, filled in by server side includes. Both
+are reached by URI, not as named locations, so a POST (a login form) is served the
+page as a GET instead of a bare 405. The Jellyfin host name server
+(`JELLYFIN_PROXY_DOMAIN`) keeps nginx's own pages, since every path there is
+Jellyfin's.
 
 ### Verifying the killswitch
 

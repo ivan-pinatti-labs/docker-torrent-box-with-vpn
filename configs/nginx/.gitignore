@@ -12,6 +12,15 @@ templates/*
 !templates/default.conf.template
 !templates/resolver.conf.template
 
+# The error pages are tracked. generated/ is written by `make start`
+# (scripts/generate-nginx-disabled-apps.py); only its own .gitignore is
+# tracked, so the directory nginx mounts exists in every clone.
+!errors/
+!errors/*.html
+!generated/
+generated/*
+!generated/.gitignore
+
 # nginx.conf is a hand-maintained static config with no per-install secrets
 # and nothing nginx rewrites at runtime, so unlike the servarr/downloader
 # configs it is tracked directly rather than through a seeded .example, the

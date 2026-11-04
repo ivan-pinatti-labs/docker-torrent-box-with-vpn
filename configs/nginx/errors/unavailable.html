@@ -1,0 +1,29 @@
+<!doctype html>
+<!-- Served by nginx, with server side includes, when it cannot reach an app
+     (502 or 504; configs/nginx/templates/default.conf.template, #415). -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title><!--# echo var="app_name" --> is not answering</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
+    main { max-width: 34rem; padding: 2rem; line-height: 1.5; }
+    h1 { margin-top: 0; font-size: 1.5rem; }
+    code { font-size: 0.95em; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1><!--# echo var="app_name" --> is not answering</h1>
+    <p>The proxy could not reach it. It may be stopped, restarting or still
+      starting; wait a minute and reload.</p>
+    <p>If it stays like this, check its container with <code>podman ps</code>
+      and its log with <code>podman logs</code>. If it was switched off since
+      the proxy last started (<code><!--# echo var="app_profile" --></code>
+      in <code>.env</code>), run <code>make start</code>.</p>
+  </main>
+</body>
+</html>

@@ -11,6 +11,93 @@ map $request_uri $grafana_log_enabled {
     default                1;
 }
 
+# The app each proxied path belongs to, and the profile that switches it on,
+# for the error pages below (#415). Keyed on $request_uri, which an
+# error_page redirect leaves as the browser asked for it. A path matching no
+# key is proxied to Homepage (`location /`), hence the default, and
+# /stub_status belongs to nginx itself. Every `location` of the HTTPS server
+# has a key here (tests/test_compose_config.py), and
+# scripts/generate-nginx-disabled-apps.py reads $app_profile to list the
+# paths whose app is switched off.
+map $request_uri $app_name {
+  default                            Homepage;
+  ~^/stub_status(?:\?|$)             "";
+  ~^/admin/cadvisor(?:[/?]|$)        cAdvisor;
+  ~^/admin/grafana(?:[/?]|$)         Grafana;
+  ~^/admin/node_exporter(?:[/?]|$)   "Node Exporter";
+  ~^/admin/prometheus(?:[/?]|$)      Prometheus;
+  ~^/audiobookshelf(?:[/?]|$)        Audiobookshelf;
+  ~^/bazarr(?:[/?]|$)                Bazarr;
+  ~^/calibre(?:[/?]|$)               Calibre;
+  ~^/calibre_content(?:[/?]|$)       "Calibre content server";
+  ~^/calibre_web(?:[/?]|$)           Calibre-Web;
+  ~^/cleanuparr(?:[/?]|$)            Cleanuparr;
+  ~^/flaresolverr(?:[/?]|$)          FlareSolverr;
+  ~^/gluetun(?:[/?]|$)               Gluetun;
+  ~^/jdownloader2(?:[/?]|$)          JDownloader2;
+  ~^/jellyfin(?:[/?]|$)              Jellyfin;
+  ~^/korsync(?:[/?]|$)               "KOReader Sync";
+  ~^/lazylibrarian(?:[/?]|$)         LazyLibrarian;
+  ~^/lidarr(?:[/?]|$)                Lidarr;
+  ~^/mylar(?:[/?]|$)                 Mylar;
+  ~^/nzbhydra2(?:[/?]|$)             NZBHydra2;
+  ~^/prowlarr(?:[/?]|$)              Prowlarr;
+  ~^/qbittorrent(?:[/?]|$)           qBittorrent;
+  ~^/radarr(?:[/?]|$)                Radarr;
+  ~^/readarr(?:[/?]|$)               Readarr;
+  ~^/sabnzbd(?:[/?]|$)               SABnzbd;
+  ~^/sonarr(?:[/?]|$)                Sonarr;
+  ~^/whisparr(?:[/?]|$)              Whisparr;
+}
+
+map $request_uri $app_profile {
+  default                            HOMEPAGE_PROFILE;
+  ~^/stub_status(?:\?|$)             "";
+  ~^/admin/cadvisor(?:[/?]|$)        CADVISOR_PROFILE;
+  ~^/admin/grafana(?:[/?]|$)         GRAFANA_PROFILE;
+  ~^/admin/node_exporter(?:[/?]|$)   NODE_EXPORTER_PROFILE;
+  ~^/admin/prometheus(?:[/?]|$)      PROMETHEUS_PROFILE;
+  ~^/audiobookshelf(?:[/?]|$)        AUDIOBOOKSHELF_PROFILE;
+  ~^/bazarr(?:[/?]|$)                BAZARR_PROFILE;
+  ~^/calibre(?:[/?]|$)               CALIBRE_PROFILE;
+  ~^/calibre_content(?:[/?]|$)       CALIBRE_PROFILE;
+  ~^/calibre_web(?:[/?]|$)           CALIBREWEB_PROFILE;
+  ~^/cleanuparr(?:[/?]|$)            CLEANUPARR_PROFILE;
+  ~^/flaresolverr(?:[/?]|$)          FLARESOLVERR_PROFILE;
+  ~^/gluetun(?:[/?]|$)               GLUETUN_PROFILE;
+  ~^/jdownloader2(?:[/?]|$)          JDOWNLOADER2_PROFILE;
+  ~^/jellyfin(?:[/?]|$)              JELLYFIN_PROFILE;
+  ~^/korsync(?:[/?]|$)               KORSYNC_PROFILE;
+  ~^/lazylibrarian(?:[/?]|$)         LAZYLIBRARIAN_PROFILE;
+  ~^/lidarr(?:[/?]|$)                LIDARR_PROFILE;
+  ~^/mylar(?:[/?]|$)                 MYLAR_PROFILE;
+  ~^/nzbhydra2(?:[/?]|$)             NZBHYDRA2_PROFILE;
+  ~^/prowlarr(?:[/?]|$)              PROWLARR_PROFILE;
+  ~^/qbittorrent(?:[/?]|$)           QBITTORRENT_PROFILE;
+  ~^/radarr(?:[/?]|$)                RADARR_PROFILE;
+  ~^/readarr(?:[/?]|$)               READARR_PROFILE;
+  ~^/sabnzbd(?:[/?]|$)               SABNZBD_PROFILE;
+  ~^/sonarr(?:[/?]|$)                SONARR_PROFILE;
+  ~^/whisparr(?:[/?]|$)              WHISPARR_PROFILE;
+}
+
+# 1 for a path whose app's profile is off. `make start` writes the entries
+# from .env (scripts/generate-nginx-disabled-apps.py) and reloads a running
+# nginx. A glob, so nginx still starts before the file exists, every app
+# then counting as enabled.
+map $request_uri $app_disabled {
+  include /etc/nginx/generated/*.conf;
+}
+
+# Refuse a disabled app's path, but not the error page the refusal is
+# redirected to: $request_uri, and so $app_disabled, stays the same across
+# that redirect. Volatile, so it is worked out again after the redirect.
+map "$app_disabled:$uri" $app_refused {
+  volatile;
+  default            0;
+  "~^1:(?!/_errors/)" 1;
+}
+
 proxy_cache_path /var/cache/nginx/proxy levels=1:2 keys_zone=proxy_cache:10m max_size=${NGINX_PROXY_CACHE_MAX_SIZE} inactive=${NGINX_PROXY_CACHE_INACTIVE} use_temp_path=off;
 
 server {
@@ -52,6 +139,25 @@ server {
   proxy_no_cache         $http_authorization $http_pragma;
   proxy_cache_bypass     $http_authorization $http_pragma;
   add_header             X-Cache-Status $upstream_cache_status always;
+
+  # An app that is switched off, or that nginx cannot reach, gets a page
+  # naming it instead of nginx's bare error (#415). A disabled app's path
+  # answers 503 before it is proxied. 502 and 504 are nginx's own failures to
+  # reach an app; an app's own error statuses still pass through unchanged,
+  # since proxy_intercept_errors stays off. The pages are addressed by URI,
+  # not as named locations, because only a URI redirect turns a POST (a login
+  # form) into the GET a static page can answer; a named one gave 405.
+  if ($app_refused) {
+    return 503;
+  }
+  error_page 503     /_errors/disabled.html;
+  error_page 502 504 /_errors/unavailable.html;
+
+  location ^~ /_errors/ {
+    internal;
+    alias   /etc/nginx/errors/;
+    ssi     on;
+  }
 
   location = /stub_status {
     stub_status;

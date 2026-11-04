@@ -327,6 +327,12 @@ Homepage's dashboard follows these profiles automatically: `make start` (and so
 app whose profile is disabled. Flip a profile and restart to see Homepage pick it
 up.
 
+So does nginx. A disabled app's address, a bookmark or a password manager entry
+say, answers with a page naming the app and the setting that turns it on, rather
+than nginx's bare `502 Bad Gateway`, and an enabled app nginx cannot reach gets a
+page saying it is not answering. See
+[docs/NETWORKING.md](docs/NETWORKING.md#error-pages).
+
 Two apps have their own configuration deep-dive:
 [docs/SABNZBD.md](docs/SABNZBD.md) and [docs/JDOWNLOADER2.md](docs/JDOWNLOADER2.md).
 

@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- Served by nginx, with server side includes, for the path of an app whose
+     profile is off (configs/nginx/templates/default.conf.template, #415). -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title><!--# echo var="app_name" --> is disabled</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
+    main { max-width: 34rem; padding: 2rem; line-height: 1.5; }
+    h1 { margin-top: 0; font-size: 1.5rem; }
+    code { font-size: 0.95em; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1><!--# echo var="app_name" --> is disabled</h1>
+    <p>This app is switched off in this stack, so nothing answers at this
+      address.</p>
+    <p>To turn it on, set <code><!--# echo var="app_profile" -->=enabled</code>
+      in <code>.env</code>, then run <code>make start</code>.</p>
+  </main>
+</body>
+</html>

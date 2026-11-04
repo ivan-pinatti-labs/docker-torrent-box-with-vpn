@@ -176,6 +176,11 @@ services:
       - ${CERTIFICATES_FOLDER}:/certs:ro,z
       - ${CONFIG_FOLDER}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro,z
       - ${CONFIG_FOLDER}/nginx/templates:/etc/nginx/templates:ro,z
+      # The error pages, and the disabled apps `make start` writes from .env
+      # (scripts/generate-nginx-disabled-apps.py). Directories, so a rewritten
+      # file reaches nginx on its next reload.
+      - ${CONFIG_FOLDER}/nginx/errors:/etc/nginx/errors:ro,z
+      - ${CONFIG_FOLDER}/nginx/generated:/etc/nginx/generated:ro,z
       - ${CONFIG_FOLDER}/nginx/.htpasswd:/etc/nginx/.htpasswd:ro
       - ${LOGS_FOLDER}/nginx:/var/log/nginx/services:z
     healthcheck:

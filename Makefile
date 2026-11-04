@@ -1046,6 +1046,14 @@ start: storage_guard podman_userns_guard seed_flaresolverr_chromedriver calibre_
 	@./scripts/migrate-versions.py --check
 	@echo "Generating Homepage's services.yaml for the currently enabled profiles..."
 	@./scripts/generate-homepage-services.py
+	@# nginx's list of disabled apps, for its "app is disabled" page (#415).
+	@# `up --no-recreate` below leaves a running nginx as it is, so it is
+	@# reloaded here to read the new list; a stopped one reads it at start.
+	@./scripts/generate-nginx-disabled-apps.py
+	@if [ "$$($(RUNTIME) container inspect -f '{{.State.Running}}' $(CONTAINER_PREFIX)nginx 2>/dev/null)" = true ]; then \
+		$(RUNTIME) exec $(CONTAINER_PREFIX)nginx nginx -s reload >/dev/null 2>&1 \
+			|| echo "WARNING: nginx refused to reload and kept its previous configuration; see '$(RUNTIME) logs $(CONTAINER_PREFIX)nginx'."; \
+	fi
 	@if [ "$(RUNTIME)" = "podman" ]; then \
 		stopping=$$(podman ps -a --format "{{.ID}} {{.State}}" | awk '/stopping/{print $$1}'); \
 		if [ -n "$$stopping" ]; then \
