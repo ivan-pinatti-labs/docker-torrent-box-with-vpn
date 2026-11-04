@@ -70,6 +70,7 @@ def test_read_profiles_reads_values_as_compose_does(generator, tmp_path):
         "BAZARR_PROFILE=enabled#not-a-comment\n"
         'PROWLARR_PROFILE="\n'
         'JELLYFIN_PROFILE="enabled\n'
+        "  SABNZBD_PROFILE = disabled\n"
     )
     assert generator.read_profiles(env) == {
         "NZBHYDRA2_PROFILE": False,
@@ -83,6 +84,8 @@ def test_read_profiles_reads_values_as_compose_does(generator, tmp_path):
         "PROWLARR_PROFILE": False,
         # Nor is one whose quote never closes.
         "JELLYFIN_PROFILE": False,
+        # Whitespace around the name and the = is allowed.
+        "SABNZBD_PROFILE": False,
     }
 
 
@@ -160,6 +163,8 @@ def test_main_replaces_the_list_whole(generator, tmp_path):
     assert [p.name for p in generator.OUTPUT_FILE.parent.iterdir()] == [
         "disabled-apps.conf"
     ]
+    # Readable by nginx, as a plain write would leave it, not mkstemp's 0600.
+    assert generator.OUTPUT_FILE.stat().st_mode & 0o777 == 0o644
 
 
 def test_the_real_template_parses(load_script):

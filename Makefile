@@ -128,7 +128,7 @@ STOP_COMPOSE_FILES := --file docker-compose.yml $(foreach route_file,$(STOP_ROUT
 .PHONY: storage_mount storage_unmount storage_status storage_install_boot storage_uninstall_boot storage_guard podman_userns_guard
 .PHONY: install_requirements pull_docker_images pre_commit
 .PHONY: restore-configs restore-full
-.PHONY: restart sanity_fast sanity_full start start_library start_observability
+.PHONY: nginx_disabled_apps restart sanity_fast sanity_full start start_library start_observability
 .PHONY: stop stop_all update update_containers update-schedule update_pre_commit migrate_versions test test_ci test_nested test_extended test_prerequisites
 .PHONY: test_bootstrap test_no_rotate_passwords nested_only suite_ci suite_full suite_no_rotate_passwords suite_prerequisites suite_rinse
 .PHONY: suite_marker test_marker
@@ -1040,20 +1040,24 @@ podman_userns_guard:
 	echo "See docs/PODMAN.md."; \
 	exit 1
 
-start: storage_guard podman_userns_guard seed_flaresolverr_chromedriver calibre_library permissions_repair
-	@# Says so when .env still carries pins that override versions.env, the
-	@# reason a deployment that pulled would otherwise keep its old images.
-	@./scripts/migrate-versions.py --check
-	@echo "Generating Homepage's services.yaml for the currently enabled profiles..."
-	@./scripts/generate-homepage-services.py
-	@# nginx's list of disabled apps, for its "app is disabled" page (#415).
-	@# `up --no-recreate` below leaves a running nginx as it is, so it is
-	@# reloaded here to read the new list; a stopped one reads it at start.
+# nginx's list of disabled apps, for its "app is disabled" page (#415), from
+# .env's profiles. Every start target depends on it, since each one starts
+# apps from those profiles. `up --no-recreate` leaves a running nginx as it
+# is, so it is reloaded here to read the new list; a stopped one reads it at
+# start.
+nginx_disabled_apps:
 	@./scripts/generate-nginx-disabled-apps.py
 	@if [ "$$($(RUNTIME) container inspect -f '{{.State.Running}}' $(CONTAINER_PREFIX)nginx 2>/dev/null)" = true ]; then \
 		$(RUNTIME) exec $(CONTAINER_PREFIX)nginx nginx -s reload >/dev/null 2>&1 \
 			|| echo "WARNING: nginx refused to reload and kept its previous configuration; see '$(RUNTIME) logs $(CONTAINER_PREFIX)nginx'."; \
 	fi
+
+start: storage_guard podman_userns_guard seed_flaresolverr_chromedriver calibre_library permissions_repair nginx_disabled_apps
+	@# Says so when .env still carries pins that override versions.env, the
+	@# reason a deployment that pulled would otherwise keep its old images.
+	@./scripts/migrate-versions.py --check
+	@echo "Generating Homepage's services.yaml for the currently enabled profiles..."
+	@./scripts/generate-homepage-services.py
 	@if [ "$(RUNTIME)" = "podman" ]; then \
 		stopping=$$(podman ps -a --format "{{.ID}} {{.State}}" | awk '/stopping/{print $$1}'); \
 		if [ -n "$$stopping" ]; then \
@@ -1097,7 +1101,7 @@ start: storage_guard podman_userns_guard seed_flaresolverr_chromedriver calibre_
 	COMPOSE_UP_PID=$$up_pid ./scripts/assert-stack-started.sh $(COMPOSE_FILES)
 	@echo "$(VPN_ON)" > $(VPN_STATE_FILE)
 
-start_library: storage_guard calibre_library permissions_repair
+start_library: storage_guard calibre_library permissions_repair nginx_disabled_apps
 	@echo "Starting Media Library containers..."
 	@./scripts/check-network-subnets.sh
 	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_apps || $(RUNTIME) network create --subnet ${APPS_SUBNET} --ip-range ${APPS_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_apps
@@ -1105,7 +1109,7 @@ start_library: storage_guard calibre_library permissions_repair
 	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_media || $(RUNTIME) network create --subnet ${MEDIA_SUBNET} --ip-range ${MEDIA_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_media
 	@$(COMPOSE) --file docker-compose.yml --file docker-compose-media-library.yml --profile enabled up --detach --no-recreate
 
-start_observability: storage_guard podman_userns_guard permissions_repair
+start_observability: storage_guard podman_userns_guard permissions_repair nginx_disabled_apps
 	@echo "Starting Observability containers..."
 	@./scripts/check-network-subnets.sh
 	@$(RUNTIME) network exists $(COMPOSE_PROJECT_NAME)_apps || $(RUNTIME) network create --subnet ${APPS_SUBNET} --ip-range ${APPS_DYNAMIC_IP_RANGE} $(COMPOSE_PROJECT_NAME)_apps

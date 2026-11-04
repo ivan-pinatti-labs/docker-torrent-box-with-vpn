@@ -1,10 +1,12 @@
-"""`make start` writes nginx's list of disabled apps and reloads a running nginx.
+"""Every start target writes nginx's list of disabled apps and reloads nginx.
 
 `up --no-recreate` leaves a running nginx alone, so without the reload a
-profile flipped since nginx started would keep its old page (#415). The unit
-tier runs in a container without make, so these tests take the step from the
-`start` recipe, expand the make variables it uses, and run it with sh, where
-the generator and the container runtime are stand ins that record their calls.
+profile flipped since nginx started would keep its old page (#415). The step
+is `make nginx_disabled_apps`, a prerequisite of each target that starts apps
+from .env's profiles. The unit tier runs in a container without make, so these
+tests read its recipe, expand the make variables it uses, and run it with sh,
+where the generator and the container runtime are stand ins that record their
+calls.
 """
 
 from __future__ import annotations
@@ -22,18 +24,26 @@ MAKEFILE = REPO_ROOT / "Makefile"
 GENERATOR = "./scripts/generate-nginx-disabled-apps.py"
 
 
+def _rule(target: str) -> str:
+    """The rule line of `target`: its name and prerequisites."""
+    return next(
+        line
+        for line in MAKEFILE.read_text().splitlines()
+        if line.startswith(f"{target}:")
+    )
+
+
 def _step() -> str:
-    """The generator call and the reload after it, as make hands them to sh."""
+    """The recipe of nginx_disabled_apps, as make hands it to sh."""
     lines = MAKEFILE.read_text().splitlines()
-    start = lines.index(next(line for line in lines if line.startswith("start:")))
+    start = lines.index(_rule("nginx_disabled_apps"))
     recipe = []
     for line in lines[start + 1 :]:
         if not line.startswith("\t"):
             break
         recipe.append(line[1:].removeprefix("@"))
-    first = recipe.index(GENERATOR)
-    end = next(i for i in range(first, len(recipe)) if recipe[i].strip() == "fi")
-    return "\n".join(recipe[first : end + 1]).replace("$$", "$")
+    assert recipe[0] == GENERATOR
+    return "\n".join(recipe).replace("$$", "$")
 
 
 def _stub(path: Path, body: str) -> None:
@@ -68,9 +78,19 @@ def _run(tmp_path: Path, running: str, reload_status: int) -> tuple[list[str], s
     return log.read_text().splitlines(), result.stdout
 
 
-def test_the_list_is_written_before_compose_starts_anything() -> None:
-    recipe = MAKEFILE.read_text().split("\nstart:", 1)[1]
-    assert recipe.index(GENERATOR) < recipe.index("up --detach")
+@pytest.mark.parametrize("target", ["start", "start_library", "start_observability"])
+def test_every_start_target_writes_the_list_first(target: str) -> None:
+    """A prerequisite, so it runs before the recipe starts anything."""
+    assert "nginx_disabled_apps" in _rule(target).split(":", 1)[1].split()
+
+
+def test_the_step_is_phony() -> None:
+    """It writes no file named after itself, so make must always run it."""
+    assert any(
+        "nginx_disabled_apps" in line.split()[1:]
+        for line in MAKEFILE.read_text().splitlines()
+        if line.startswith(".PHONY:")
+    )
 
 
 def test_a_running_nginx_is_reloaded(tmp_path: Path) -> None:

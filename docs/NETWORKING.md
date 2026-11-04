@@ -472,7 +472,8 @@ and a disabled app's name does not resolve at all, so its address used to answer
 nginx's bare `502 Bad Gateway`. Now (#415):
 
 - **A disabled app** answers **503** with a page naming it and the setting that turns
-  it on (`<APP>_PROFILE=enabled`, then `make start`). `make start` runs
+  it on (`<APP>_PROFILE=enabled`, then `make start`). Every start target (`start`,
+  `start_library`, `start_observability`) first runs
   `scripts/generate-nginx-disabled-apps.py`, which reads the `$app_profile` map and
   `.env` and writes `configs/nginx/generated/disabled-apps.conf`, then reloads a
   running nginx, since `up --no-recreate` would otherwise leave it with the old list.

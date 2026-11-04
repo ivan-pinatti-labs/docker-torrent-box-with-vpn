@@ -21,6 +21,7 @@ every profile when there is no .env yet, since nginx needs the file either way.
 
 import os
 import re
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -53,7 +54,8 @@ def read_profiles(env_file: Path) -> dict[str, bool]:
     values = {}
     if env_file.is_file():
         for line in env_file.read_text().splitlines():
-            m = re.match(r"^([A-Z0-9_]+_PROFILE)=(.*)$", line)
+            # Compose allows whitespace around the name and the `=`.
+            m = re.match(r"^\s*([A-Z0-9_]+_PROFILE)\s*=(.*)$", line)
             if m:
                 values[m.group(1)] = env_value(m.group(2))
     values.update(
@@ -103,10 +105,16 @@ def main() -> None:
     default, entries = read_app_profiles(TEMPLATE_FILE.read_text())
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     # Written beside the file and renamed over it, so a run that stops halfway
-    # never leaves nginx a partial list to read at its next start. Not named
-    # *.conf, which nginx's include would pick up.
-    staged = OUTPUT_FILE.with_name(OUTPUT_FILE.name + ".new")
-    staged.write_text(render(default, entries, read_profiles(ENV_FILE)))
+    # never leaves nginx a partial list to read at its next start. The staged
+    # name is this run's own, so two runs at once cannot rename each other's,
+    # and does not end in .conf, which nginx's include would pick up. 0644,
+    # the mode a plain write gives it, for nginx to read.
+    fd, staged = tempfile.mkstemp(
+        dir=OUTPUT_FILE.parent, prefix=OUTPUT_FILE.name + ".", suffix=".new"
+    )
+    with os.fdopen(fd, "w") as handle:
+        os.chmod(staged, 0o644)
+        handle.write(render(default, entries, read_profiles(ENV_FILE)))
     os.replace(staged, OUTPUT_FILE)
 
 
