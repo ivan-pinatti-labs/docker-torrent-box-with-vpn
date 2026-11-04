@@ -21,6 +21,11 @@ name: Comment-Triggered Checks
 # that) with the PR number as an input. Those workflows do the actual
 # code checkout themselves, against refs/pull/<n>/head.
 on:
+  # zizmor: ignore[dangerous-triggers]
+  #
+  # Flagged by default. For the reasons above it is safe here: the job runs
+  # for a comment by an owner, member or collaborator only, never checks out
+  # anything, and dispatches main's own copy of the target workflow.
   issue_comment:
     types: [created]
 
@@ -50,8 +55,9 @@ jobs:
         if: startsWith(github.event.comment.body, '/run-check')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           gh workflow run pull-request-validation.yml \
-            --ref "${{ github.event.repository.default_branch }}" \
+            --ref "$DEFAULT_BRANCH" \
             -f pr_number="${{ github.event.issue.number }}" \
             -f job_scope=checks

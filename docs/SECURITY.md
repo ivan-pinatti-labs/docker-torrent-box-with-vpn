@@ -10,7 +10,7 @@ Please report through the GitHub Report Security Issues page:
 | Shell (`*.sh`, `*.bash`) | shellcheck, shfmt, shebang checks | `.pre-commit-config.yaml`, every commit |
 | Python | ruff, bandit, check-ast, debug-statements | `.pre-commit-config.yaml`, every commit |
 | Dockerfiles | hadolint | `.pre-commit-config.yaml`, every commit |
-| `.github/workflows/*` | actionlint | `.pre-commit-config.yaml`, every commit |
+| `.github/workflows/*` | actionlint, zizmor | `.pre-commit-config.yaml`, every commit |
 | Everything | detect-secrets, gitleaks | `.pre-commit-config.yaml`, every commit |
 | Everything | checkov, trivy (misconfiguration and vulnerabilities) | `.pre-commit-config.yaml`, every push |
 | Everything SonarQube Cloud has an analyzer for: shell, Python, the Dockerfiles, the homepage JavaScript, YAML, `.github/workflows/*`, secrets | SonarQube Cloud, Sonar way quality gate, plus 100% coverage from `make coverage` | `sonarqube.yml`, every pull request from a branch of this repository and every push to `main` |

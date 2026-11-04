@@ -291,6 +291,22 @@ repos:
         types: ["yaml"]
         files: ^\.github/workflows/
 
+      # The workflows' security audit (template injection, dangerous
+      # triggers, persisted credentials), which until #116 only reported to
+      # the Security tab through the Security Reports job. Offline, so it
+      # reads nothing but these files: a new advisory published upstream
+      # cannot fail a pull request that did not touch a workflow. A finding
+      # that is safe here is ignored inline with `# zizmor: ignore[...]` and
+      # a comment saying why, beside the line it is about.
+      - id: zizmor
+        name: Audit GitHub Actions workflows for security issues
+        entry: zizmor --no-progress --offline
+        language: python
+        # renovate: datasource=pypi depName=zizmor
+        additional_dependencies: ["zizmor==1.31.1"]
+        types: ["yaml"]
+        files: ^\.github/workflows/
+
   # Dockerfile linting, which nothing here covered before. trivy and checkov
   # both read the two Dockerfiles already, but for security misconfiguration:
   # a missing USER, a missing HEALTHCHECK. hadolint is the only thing in this

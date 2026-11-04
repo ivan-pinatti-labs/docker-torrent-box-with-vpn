@@ -279,9 +279,10 @@ jobs:
         if: steps.auth.outputs.authorized == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |
           gh api --method POST \
-            "repos/${{ github.repository }}/statuses/${{ steps.pr.outputs.head_sha }}" \
+            "repos/${{ github.repository }}/statuses/$HEAD_SHA" \
             -f state=pending \
             -f context="$STATUS_CONTEXT" \
             -f description="Integration suite running" \
@@ -457,6 +458,10 @@ jobs:
         # Withheld from a fork's head, since the suite runs that head's code.
         # A fork pulls anonymously and leans on the pull retry in
         # tests/ci-suite.sh, so this must not fail it.
+        #
+        # The secret's name goes to the suite step as a step output rather
+        # than through GITHUB_ENV, as in the tiers job below.
+        id: login
         timeout-minutes: 2
         env:
           DOCKERHUB_USERNAME: ${{ needs.gate.outputs.is_fork == 'false' && secrets.DOCKERHUB_USERNAME || '' }}
@@ -473,7 +478,7 @@ jobs:
             | podman login docker.io --authfile "$auth" --username "$DOCKERHUB_USERNAME" --password-stdin
           podman secret create "$name" "$auth" >/dev/null
           rm -f "$auth"
-          echo "NESTED_REGISTRY_SECRET=$name" >> "$GITHUB_ENV"
+          echo "secret=$name" >> "$GITHUB_OUTPUT"
 
       - name: Probe cgroup delegation for the nested run
         # The nested engine keeps cgroup statistics (which the podman_exporter
@@ -589,6 +594,7 @@ jobs:
         shell: bash
         env:
           SCOPE: ${{ steps.cgroups.outputs.scope }}
+          NESTED_REGISTRY_SECRET: ${{ steps.login.outputs.secret }}
         run: |
           if [ "$SCOPE" = true ]; then
             sudo --preserve-env systemd-run --scope --quiet --collect \

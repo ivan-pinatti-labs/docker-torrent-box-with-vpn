@@ -71,6 +71,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/head', inputs.pr_number) || github.ref }}
+          # Nothing in this job pushes, and a fetch from this public
+          # repository needs no token, so it does not stay in .git/config for
+          # the steps that follow.
+          persist-credentials: false
           # The gitleaks-history hook scans commits, not the working tree. The
           # default shallow clone (depth 1) has exactly one, so the secret scan
           # would report success having looked at almost nothing. This was on
@@ -217,6 +221,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/head', inputs.pr_number) || github.ref }}
+          # Nothing in this job pushes, and a fetch from this public
+          # repository needs no token, so it does not stay in .git/config for
+          # the steps that follow.
+          persist-credentials: false
 
       - name: Set up rootless Podman
         # `make test_prerequisites` runs the prerequisites tier inside the
@@ -256,12 +264,10 @@ jobs:
   # useful. The versions are pinned to match the hooks exactly; Renovate keeps
   # the two copies in step through the annotations below.
   #
-  # zizmor is the exception: it runs only here and gates nothing. It audits
-  # workflow security (template injection, credential persistence, overly broad
-  # permissions) and its current findings are hardening opportunities rather
-  # than defects, several of which need a policy decision (pinning actions to a
-  # hash rather than a tag). Reporting them without blocking a merge is the
-  # honest way to carry that.
+  # zizmor, the workflow security audit (template injection, credential
+  # persistence, overly broad permissions), is a pre-commit hook too since
+  # #116, so Code Check gates on it like the other four, and its SARIF copy
+  # here reports the same findings.
   security_reports:
     name: Security Reports
     runs-on: ubuntu-latest
@@ -288,6 +294,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/head', inputs.pr_number) || github.ref }}
+          # Nothing in this job pushes, and a fetch from this public
+          # repository needs no token, so it does not stay in .git/config for
+          # the steps that follow.
+          persist-credentials: false
           # The secret scan reads commits, not the working tree.
           fetch-depth: 0
 
@@ -452,6 +462,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/head', inputs.pr_number) || github.ref }}
+          # Nothing in this job pushes, and a fetch from this public
+          # repository needs no token, so it does not stay in .git/config for
+          # the steps that follow.
+          persist-credentials: false
 
       - name: Filter
         id: filter
