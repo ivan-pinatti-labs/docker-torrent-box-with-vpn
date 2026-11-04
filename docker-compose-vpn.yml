@@ -72,10 +72,18 @@ services:
     # (b) gluetun's ip6tables rules. Disabling IPv6 via sysctl also disables the DNS
     # server and breaks name resolution for all containers in this namespace.
     env_file: [".env", "${CONFIG_FOLDER}/gluetun/.env"]
+    # Set here rather than in configs/gluetun/.env so it reaches installs whose
+    # seeded copy still has the old command, which qBittorrent refuses since
+    # its login bypass covers Readarr alone (#419). The script logs in with the
+    # two secrets below; see its header.
+    environment:
+      VPN_PORT_FORWARDING_UP_COMMAND: "/bin/sh /scripts/qbittorrent-port-forward.sh {{PORTS}}"
+    secrets: [qbittorrent_username, qbittorrent_password]
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /dev/net/tun:/dev/net/tun
       - ${CONFIG_FOLDER}/gluetun:/gluetun:z
+      - ./scripts/qbittorrent-port-forward.sh:/scripts/qbittorrent-port-forward.sh:ro,z
     healthcheck:
       test: wget -q -O /dev/null http://127.0.0.1:9999/ || exit 1
       interval: 30s
@@ -113,3 +121,9 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${CONFIG_FOLDER}/vpn_mock/config:/config:z
+
+secrets:
+  qbittorrent_username:
+    file: ./configs/qbittorrent/secrets/username.txt
+  qbittorrent_password:
+    file: ./configs/qbittorrent/secrets/password.txt
