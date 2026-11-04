@@ -39,12 +39,15 @@ printf '#!%s\n%s\n' "${__bash}" "{
 } >'${__scratch}/log'" >"${bin}/stub-runtime"
 chmod +x "${bin}/stub-runtime"
 
-# Runs the script with the given arguments, standard input from ${__scratch}/in.
+# Runs the script with the given arguments, standard input from ${__scratch}/in,
+# and the variables in __extra_env added to its environment.
+__extra_env=()
 run() {
   rm -f "${__scratch}/log"
   touch "${__scratch}/log"
   __status=0
-  "${__env}" -u CONTAINER_RUNTIME -u USERNAME -u NEW_PASSWORD PATH="${bin}" \
+  "${__env}" -u CONTAINER_RUNTIME -u CONTAINER_PREFIX -u USERNAME -u NEW_PASSWORD \
+    PATH="${bin}" "${__extra_env[@]}" \
     "${__bash}" "${repo}/scripts/korsync-users.sh" "$@" \
     <"${__scratch}/in" >"${__scratch}/out" 2>&1 || __status=$?
 }
@@ -92,6 +95,21 @@ check "changes a password read from standard input" 0 log "USERNAME=alice NEW_PA
 printf '\n' >"${__scratch}/in"
 run change-password alice
 check "refuses an empty password" 1 out "password cannot be empty"
+
+# Compose names the container ${CONTAINER_PREFIX}korsync (#417).
+: >"${__scratch}/in"
+printf 'CONTAINER_PREFIX=live-\n' >>"${repo}/.env"
+run list
+check "takes the container prefix from .env" 0 log "args exec live-korsync bun -e"
+run remove alice
+check "removes through the prefixed container" 0 log "args exec -e USERNAME live-korsync bun"
+__extra_env=(CONTAINER_PREFIX=dev-)
+run list
+check "takes the container prefix from the environment over .env" 0 log "args exec dev-korsync bun -e"
+__extra_env=(CONTAINER_PREFIX=)
+run list
+check "keeps an empty prefix set in the environment" 0 log "args exec korsync bun -e"
+__extra_env=()
 
 if [[ "${__failures}" -gt 0 ]]; then
   echo "${__failures} failed" >&2

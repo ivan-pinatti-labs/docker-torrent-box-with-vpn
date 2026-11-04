@@ -32,7 +32,7 @@ containers on any CPU.
 | Calibre | `calibre` | `CALIBRE_CPUS` | `CALIBRE_MEMORY` | `0.5` | `1gb` |
 | Calibre-web | `calibre-web` | `CALIBREWEB_CPUS` | `CALIBREWEB_MEMORY` | `0.5` | `512mb` |
 | Audiobookshelf | `audiobookshelf` | `AUDIOBOOKSHELF_CPUS` | `AUDIOBOOKSHELF_MEMORY` | `0.5` | `512mb` |
-| KOReader sync | `korsync` | `KORSYNC_CPUS` | `KORSYNC_MEMORY` | `0.25` | `128mb` |
+| KOReader sync | `korsync` | `KORSYNC_CPUS` | `KORSYNC_MEMORY` | `1` | `256mb` |
 | Grafana | `grafana` | `GRAFANA_CPUS` | `GRAFANA_MEMORY` | `1` | `1.5gb` |
 | Telemetry | `prometheus`, `loki`, `cadvisor`, `alloy`, `node_exporter`, `podman_exporter`, `podman_limits_exporter`, `nginx_exporter`, `qbittorrent_exporter`, `sabnzbd_exporter` | `TELEMETRY_CPUS` | `TELEMETRY_MEMORY` | `0.25` | `256mb` |
 | Log rotation | `log_rotator` | `LOG_ROTATOR_CPUS` | `LOG_ROTATOR_MEMORY` | `0.25` | `64mb` |
@@ -57,6 +57,21 @@ the `jlesage/jdownloader-2` image. Its JVM heap is capped at 384 MB via
 `JDOWNLOADER_MAX_MEM=384m` in `configs/jdownloader2/.env`, with supporting JVM
 options in `configs/jdownloader2/config/JDownloader2.vmoptions`, so total idle
 memory stays within the 1 GB container ceiling.
+
+korsync checks the password on every request, progress sync included, with
+`Bun.password.verify`, and one check peaks near 172 MB. KOReader gives up on a
+progress sync after 2 seconds (login gets longer, so login still works), and at
+the old defaults, `0.25` and `128mb`, a check took 5 to 10 seconds: syncing
+failed with "unknown server error". At `1` and `256mb` it takes under a
+second. The server answers one request at a time, so a slow check also holds
+up `/health`. A `.env` seeded before the change keeps the old values: set
+`KORSYNC_CPUS=1` and `KORSYNC_MEMORY=256mb` there, then recreate the
+container, since `make start` keeps a running one. With a `CONTAINER_PREFIX`
+in `.env`, the container's name starts with it (`dev-korsync` for `dev-`):
+
+```shell
+podman stop korsync && podman rm korsync && make start
+```
 
 Prometheus and Loki share the telemetry limits by default. Increase
 `TELEMETRY_MEMORY` if metrics or logs retention grows.

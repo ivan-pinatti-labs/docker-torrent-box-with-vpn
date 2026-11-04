@@ -28,7 +28,10 @@ env_value() {
 }
 
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-$(env_value CONTAINER_RUNTIME || printf 'podman')}"
-CONTAINER=korsync
+# Compose names the container ${CONTAINER_PREFIX}korsync. The prefix is empty
+# for a deployment, so env_value fails on it and printf supplies the empty one.
+CONTAINER_PREFIX="${CONTAINER_PREFIX-$(env_value CONTAINER_PREFIX || printf '')}"
+CONTAINER="${CONTAINER_PREFIX}korsync"
 
 usage() {
   cat <<EOF

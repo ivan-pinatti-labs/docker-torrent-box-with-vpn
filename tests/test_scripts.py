@@ -16,7 +16,7 @@ import subprocess
 
 import pytest
 
-from conftest import REPO_ROOT, live_db
+from conftest import REPO_ROOT, container_name, live_db
 
 pytestmark = pytest.mark.scripts
 
@@ -24,7 +24,8 @@ SCRIPTS = REPO_ROOT / "scripts"
 READARR_DB = REPO_ROOT / "configs/readarr/config/readarr.db"
 
 
-def _skip_unless_running(container: str) -> None:
+def _skip_unless_running(service: str) -> None:
+    container = container_name(service)
     result = subprocess.run(
         ["podman", "ps", "--format", "{{.Names}}"],
         capture_output=True,
@@ -225,7 +226,7 @@ def test_podman_limits_exporter_metrics():
         [
             "podman",
             "exec",
-            "podman_limits_exporter",
+            container_name("podman_limits_exporter"),
             "wget",
             "-q",
             "-O",
