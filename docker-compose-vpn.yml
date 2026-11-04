@@ -7,6 +7,12 @@ x-limit-gluetun: &limit-gluetun
         memory: ${GLUETUN_MEMORY}
         cpus: "${GLUETUN_CPUS}"
 
+secrets:
+  qbittorrent_username:
+    file: ./configs/qbittorrent/secrets/username.txt
+  qbittorrent_password:
+    file: ./configs/qbittorrent/secrets/password.txt
+
 services:
   gluetun:
     <<: *limit-gluetun
@@ -121,9 +127,3 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${CONFIG_FOLDER}/vpn_mock/config:/config:z
-
-secrets:
-  qbittorrent_username:
-    file: ./configs/qbittorrent/secrets/username.txt
-  qbittorrent_password:
-    file: ./configs/qbittorrent/secrets/password.txt

@@ -21,7 +21,10 @@
 # would hold up the port renewals. The script therefore hands the work to a
 # copy of itself in the background, logging to gluetun's own output, and
 # returns at once. That copy gives up when gluetun has forwarded another port
-# in the meantime.
+# in the meantime. Each attempt (login, setPreferences, logout) holds a lock
+# shared by every copy and checks the forwarded port again once it has it, so
+# an older copy can never apply its port after a newer one; the lock is
+# released while a copy waits between attempts.
 #
 # Usage: qbittorrent-port-forward.sh <ports>   (gluetun's {{PORTS}}, comma separated)
 set -u
@@ -31,6 +34,7 @@ status_file="${VPN_PORT_FORWARDING_STATUS_FILE:-/tmp/gluetun/forwarded_port}"
 secrets_dir="${QBITTORRENT_SECRETS_DIR:-/run/secrets}"
 attempts="${QBITTORRENT_PORT_FORWARD_ATTEMPTS:-180}"
 delay="${QBITTORRENT_PORT_FORWARD_DELAY:-10}"
+lock_file="${QBITTORRENT_PORT_FORWARD_LOCK:-/tmp/qbittorrent-port-forward.lock}"
 # Both come from the stack's .env, which gluetun reads through its env_file.
 services_ip="${GLUETUN_SERVICES_IP:-}"
 https_port="${QBITTORRENT_HTTPS_PORT:-}"
@@ -57,8 +61,15 @@ still_forwarded() {
   [ "$(head -n 1 "$status_file" 2>/dev/null)" = "$port" ]
 }
 
+# --server-response puts the reply's status line on standard error even with
+# --quiet, which is how a 5xx is told apart from a refusal: wget exits 8 for
+# both.
 qbt() {
-  wget --quiet --no-check-certificate --tries=1 --timeout=10 --load-cookies="${work_dir}/cookies" --save-cookies="${work_dir}/cookies" --keep-session-cookies --output-document="${work_dir}/reply" "$@"
+  wget --quiet --server-response --no-check-certificate --tries=1 --timeout=10 --load-cookies="${work_dir}/cookies" --save-cookies="${work_dir}/cookies" --keep-session-cookies --output-document="${work_dir}/reply" "$@" 2>"${work_dir}/headers"
+}
+
+server_error() {
+  awk '$1 ~ /^HTTP\// { code = $2 } END { exit !(code ~ /^5/) }' "${work_dir}/headers"
 }
 
 dispatch() {
@@ -93,6 +104,7 @@ done
 
 work_dir="$(mktemp -d)" || exit 1
 trap 'rm -rf "$work_dir"' EXIT
+exec 9>"$lock_file"
 
 # The body goes through a file, not --post-data, so the password never shows
 # up in a process list.
@@ -100,6 +112,7 @@ login_body >"${work_dir}/login"
 
 i=1
 while :; do
+  flock 9
   if ! still_forwarded; then
     echo "[PORTFWD] port ${port} is no longer the forwarded port, stopping"
     exit 0
@@ -108,10 +121,11 @@ while :; do
   status=0
   qbt --post-file="${work_dir}/login" "${base_url}/auth/login" || status=$?
   [ "$status" -eq 0 ] && break
-  # 4 is a network failure (qBittorrent not up yet): wait and retry. Anything
-  # else is an answer from qBittorrent (a refused login, a ban) and stops here,
-  # since every retry would count towards its failed login ban.
-  if [ "$status" -ne 4 ]; then
+  # 4 is a network failure (qBittorrent not up yet) and 8 with a 5xx a server
+  # error: wait and retry. Anything else is an answer from qBittorrent (a
+  # refused login, a ban) and stops here, since every retry would count
+  # towards its failed login ban.
+  if [ "$status" -ne 4 ] && { [ "$status" -ne 8 ] || ! server_error; }; then
     echo "[PORTFWD] ERROR: qBittorrent refused the login (wget exit ${status}), port ${port} not applied"
     exit 1
   fi
@@ -120,6 +134,7 @@ while :; do
     exit 1
   fi
   i=$((i + 1))
+  flock -u 9
   sleep "$delay"
 done
 
@@ -132,6 +147,7 @@ fi
 
 if ! qbt --post-data="json=%7B%22listen_port%22%3A${port}%7D" "${base_url}/app/setPreferences"; then
   echo "[PORTFWD] ERROR: qBittorrent did not accept listen port ${port}"
+  qbt --post-data='' "${base_url}/auth/logout" || true
   exit 1
 fi
 

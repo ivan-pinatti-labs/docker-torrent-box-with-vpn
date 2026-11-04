@@ -29,9 +29,11 @@ __requests="${__scratch}/requests"
 mkdir -p "${__bin}" "${__secrets}"
 
 # The stub. STUB_LOGIN_EXIT is the exit status of the first logins (4 is a
-# network failure), STUB_LOGIN_FAILURES how many logins fail with it before
-# one succeeds (default: all of them). STUB_SID=no answers a login with no
-# session cookie, STUB_SET_EXIT and STUB_LOGOUT_EXIT fail those two calls.
+# network failure, 8 an HTTP error whose status line, STUB_LOGIN_HTTP, goes to
+# standard error as wget --server-response prints it), STUB_LOGIN_FAILURES how
+# many logins fail with it before one succeeds (default: all of them), and
+# STUB_LOGIN_DELAY seconds every login takes. STUB_SID=no answers a login with
+# no session cookie, STUB_SET_EXIT and STUB_LOGOUT_EXIT fail those two calls.
 cat >"${__bin}/wget" <<'STUB'
 #!/usr/bin/env bash
 cookies="" reply="" body="" url=""
@@ -48,10 +50,13 @@ path="${url#https://*/api/v2}"
 echo "${path} ${body}" >>"${STUB_REQUESTS}"
 case "${path}" in
 /auth/login)
+  command sleep "${STUB_LOGIN_DELAY:-0}"
   logins="$(grep --count '^/auth/login' "${STUB_REQUESTS}")"
   if [[ -n "${STUB_LOGIN_EXIT:-}" && "${logins}" -le "${STUB_LOGIN_FAILURES:-1000}" ]]; then
+    [[ -n "${STUB_LOGIN_HTTP:-}" ]] && echo "  HTTP/1.1 ${STUB_LOGIN_HTTP}" >&2
     exit "${STUB_LOGIN_EXIT}"
   fi
+  echo "  HTTP/1.1 200 OK" >&2
   if [[ "${STUB_SID:-yes}" == yes ]]; then
     printf 'qbt\tFALSE\t/\tFALSE\t0\tSID\tabc\n' >"${cookies}"
     printf 'Ok.' >"${reply}"
@@ -82,6 +87,7 @@ worker() {
     GLUETUN_SERVICES_IP=192.0.2.10 QBITTORRENT_HTTPS_PORT=8443 \
     QBITTORRENT_SECRETS_DIR="${__secrets}" VPN_PORT_FORWARDING_STATUS_FILE="${__status_file}" \
     QBITTORRENT_PORT_FORWARD_ATTEMPTS=3 QBITTORRENT_PORT_FORWARD_DELAY=0 \
+    QBITTORRENT_PORT_FORWARD_LOCK="${__scratch}/lock" \
     "$@" bash "${__script}" --worker 51413 >"${__scratch}/out" 2>&1 || __status=$?
 }
 
@@ -123,9 +129,13 @@ env PATH="${__bin}:${PATH}" STUB_REQUESTS="${__requests}" \
   GLUETUN_SERVICES_IP=192.0.2.10 QBITTORRENT_HTTPS_PORT=8443 \
   QBITTORRENT_SECRETS_DIR="${__secrets}" VPN_PORT_FORWARDING_STATUS_FILE="${__status_file}" \
   QBITTORRENT_PORT_FORWARD_LOG="${__scratch}/log" QBITTORRENT_PORT_FORWARD_DELAY=0 \
+  QBITTORRENT_PORT_FORWARD_LOCK="${__scratch}/lock" STUB_LOGIN_DELAY=2 \
   bash "${__script}" 40000,40001 >"${__scratch}/out" 2>&1 || __status=$?
-[[ "${__status}" -eq 0 ]] && ok="$(said "setting qBittorrent's listen port to 40000 in the background")" || ok=no
-result "the dispatcher returns at once and names the first port" "${ok}"
+# The login takes 2 seconds, so a dispatcher that waited for the worker would
+# find the result already logged here.
+[[ "${__status}" -eq 0 ]] && ! grep --quiet 'listen port set' "${__scratch}/log" &&
+  ok="$(said "setting qBittorrent's listen port to 40000 in the background")" || ok=no
+result "the dispatcher returns while the worker is still logging in, naming the first port" "${ok}"
 for _ in $(seq 1 100); do
   grep --quiet 'listen port set' "${__scratch}/log" && break
   command sleep 0.1
@@ -159,6 +169,15 @@ result "gives up after the last attempt" "${ok}"
 [[ "$(requests)" == "/auth/login /auth/login /auth/login" ]] && ok=yes || ok=no
 result "tries exactly QBITTORRENT_PORT_FORWARD_ATTEMPTS times" "${ok}"
 
+worker STUB_LOGIN_EXIT=8 STUB_LOGIN_HTTP="503 Service Unavailable" STUB_LOGIN_FAILURES=1
+[[ "${__status}" -eq 0 && "$(requests)" == "/auth/login /auth/login /app/setPreferences /auth/logout" ]] &&
+  ok=yes || ok=no
+result "retries a login answered with a 5xx, then sets the port" "${ok}"
+
+worker STUB_LOGIN_EXIT=8 STUB_LOGIN_HTTP="403 Forbidden"
+[[ "${__status}" -eq 1 && "$(requests)" == "/auth/login" ]] && ok="$(said "refused the login (wget exit 8)")" || ok=no
+result "stops after one login answered with a 4xx, such as a ban" "${ok}"
+
 worker STUB_LOGIN_EXIT=6
 [[ "${__status}" -eq 1 ]] && ok="$(said "refused the login (wget exit 6)")" || ok=no
 result "stops on a refused login" "${ok}"
@@ -172,6 +191,18 @@ result "stops when the login gives no session cookie" "${ok}"
 worker STUB_SET_EXIT=8
 [[ "${__status}" -eq 1 ]] && ok="$(said "did not accept listen port 51413")" || ok=no
 result "reports a refused setPreferences" "${ok}"
+[[ "$(requests)" == "/auth/login /app/setPreferences /auth/logout" ]] && ok=yes || ok=no
+result "logs out after a refused setPreferences too" "${ok}"
+
+# Another copy holds the lock while gluetun moves to a new port: this one
+# waits, then sees the new port and stops without a request.
+flock "${__scratch}/lock" bash -c "command sleep 1; printf 51999 >'${__status_file}'" &
+__holder=$!
+command sleep 0.3
+worker
+wait "${__holder}"
+[[ "${__status}" -eq 0 && ! -s "${__requests}" ]] && ok="$(said "port 51413 is no longer the forwarded port")" || ok=no
+result "waits for another copy's attempt, then checks the forwarded port again" "${ok}"
 
 printf '51999' >"${__scratch}/forwarded_port_next"
 worker VPN_PORT_FORWARDING_STATUS_FILE="${__scratch}/forwarded_port_next"
@@ -184,7 +215,11 @@ result "stops once gluetun clears or has no port file" "${ok}"
 
 worker GLUETUN_SERVICES_IP=
 [[ "${__status}" -eq 1 && ! -s "${__requests}" ]] && ok="$(said "GLUETUN_SERVICES_IP or QBITTORRENT_HTTPS_PORT unset")" || ok=no
-result "stops when the stack's address or port is missing" "${ok}"
+result "stops when the stack's address is missing" "${ok}"
+
+worker QBITTORRENT_HTTPS_PORT=
+[[ "${__status}" -eq 1 && ! -s "${__requests}" ]] && ok="$(said "GLUETUN_SERVICES_IP or QBITTORRENT_HTTPS_PORT unset")" || ok=no
+result "stops when qBittorrent's port is missing" "${ok}"
 
 worker QBITTORRENT_SECRETS_DIR="${__scratch}/nowhere"
 [[ "${__status}" -eq 1 && ! -s "${__requests}" ]] && ok="$(said "nowhere/qbittorrent_username missing")" || ok=no
