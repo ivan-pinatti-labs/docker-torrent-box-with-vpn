@@ -406,6 +406,27 @@ check "and the password file is left as it was" 1 configs/cleanuparr/secrets/pas
 check "the password tried is kept, and named" 1 err \
   "[Cleanuparr] The password tried is in configs/cleanuparr/secrets/password.txt.new, in case Cleanuparr took it anyway."
 check "in a file of its own" 1 configs/cleanuparr/secrets/password.txt.new "Pw0"
+staged="$(cat "${__repo}/configs/cleanuparr/secrets/password.txt.new")"
+# Run again with that file still there: it may be the password Cleanuparr
+# holds now, so it is not overwritten.
+rule 'cleanuparr curl -sS -X PUT .*/cleanuparr/api/account/password$' 0 $'{}\n200'
+run cleanuparr
+check "a staged password left behind stops the next rotation" 1 err \
+  "[Cleanuparr] An earlier rotation left configs/cleanuparr/secrets/password.txt.new, which may be the password Cleanuparr holds now."
+check "and is kept as it was" 1 configs/cleanuparr/secrets/password.txt.new "${staged}"
+
+# Cleanuparr takes the new password, but it cannot be moved into place.
+deployment
+cat >"${__bin}/mv" <<'EOF'
+#!/usr/bin/env bash
+[[ "${1}" == *password.txt.new ]] && exit 1
+exec /bin/mv "$@"
+EOF
+chmod +x "${__bin}/mv"
+run cleanuparr
+rm "${__bin}/mv"
+check "a password Cleanuparr took but that could not be saved is named" 1 err \
+  "[Cleanuparr] Cleanuparr took the new password, but it could not be moved over configs/cleanuparr/secrets/password.txt: it is in configs/cleanuparr/secrets/password.txt.new."
 
 deployment
 rule 'cleanuparr curl -sS -X GET .*/cleanuparr/api/configuration/download_client$' 0 $'{"clients": []}\n200'

@@ -815,9 +815,16 @@ cleanuparr_keyed() {
 # leaves the saved password as it was. The change itself has no time limit: a
 # deadline could give up on a change Cleanuparr then applies. When it is not
 # accepted the staged file stays, in case Cleanuparr applied it anyway, and
-# the error names it.
+# the error names it. A staged file left by an earlier run stops this one,
+# since it may be the password Cleanuparr now holds and a new one would
+# overwrite it.
 rotate_cleanuparr() {
   local new_password body response staged="${CLEANUPARR_PASSWORD_SECRET}.new"
+  if [[ -e "$staged" ]]; then
+    echo "[Cleanuparr] An earlier rotation left ${staged}, which may be the password Cleanuparr holds now." >&2
+    echo "[Cleanuparr] If it logs in, move it over ${CLEANUPARR_PASSWORD_SECRET}; if not, delete it. Then rotate again." >&2
+    exit 1
+  fi
   new_password=$(gen_password)
   body=$(jq -cn --arg current "$(cat "$CLEANUPARR_PASSWORD_SECRET")" --arg new "$new_password" '{currentPassword: $current, newPassword: $new}')
   # Only the scripts read it, as the host user.
@@ -829,7 +836,10 @@ rotate_cleanuparr() {
     echo "[Cleanuparr] Run 'make wire_connections' if its API key or password file is out of date." >&2
     exit 1
   fi
-  mv "$staged" "$CLEANUPARR_PASSWORD_SECRET"
+  if ! mv "$staged" "$CLEANUPARR_PASSWORD_SECRET"; then
+    echo "[Cleanuparr] Cleanuparr took the new password, but it could not be moved over ${CLEANUPARR_PASSWORD_SECRET}: it is in ${staged}." >&2
+    exit 1
+  fi
   SUMMARY_CLEANUPARR_USER="$CLEANUPARR_USER"
   SUMMARY_CLEANUPARR_NEW="$new_password"
 }

@@ -2359,10 +2359,11 @@ ensure_cleanuparr_account() {
   if [[ "$(jq -r '.setupCompleted' <<<"$status")" == true ]]; then
     return 0
   fi
+  # Only the scripts read it, as the host user, so it is private from the
+  # moment it exists, and one of the user's own is made private too.
   if [[ ! -s "$CLEANUPARR_PASSWORD_FILE" || "$(cat "$CLEANUPARR_PASSWORD_FILE")" == "$CLEANUPARR_USERNAME" ]]; then
-    openssl rand -hex 16 | tr -d '\n' >"$CLEANUPARR_PASSWORD_FILE"
+    (umask 077 && openssl rand -hex 16 | tr -d '\n' >"$CLEANUPARR_PASSWORD_FILE")
   fi
-  # Only the scripts read it, as the host user.
   chmod 600 "$CLEANUPARR_PASSWORD_FILE"
   echo "[Cleanuparr] Creating its login..."
   cleanuparr_api POST auth/setup/account -H "Content-Type: application/json" -d "$(cleanuparr_credentials)" >/dev/null || true
