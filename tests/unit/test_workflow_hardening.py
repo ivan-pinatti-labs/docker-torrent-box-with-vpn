@@ -8,6 +8,7 @@ so the two properties below hold whatever zizmor is told.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -61,13 +62,17 @@ def test_registry_secret_reaches_the_suite_as_a_step_output(name, jobs):
     workflow = _workflow(name)
     for job in jobs:
         steps = workflow["jobs"][job]["steps"]
-        logins = [step for step in steps if step.get("id") == "login"]
+        logins = [i for i, step in enumerate(steps) if step.get("id") == "login"]
         assert len(logins) == 1, f"{name} {job}: one step with id login"
-        assert 'echo "secret=$name" >> "$GITHUB_OUTPUT"' in logins[0]["run"]
-        readers = [
-            step
-            for step in steps
-            if step.get("env", {}).get("NESTED_REGISTRY_SECRET") == LOGIN_OUTPUT
+        assert 'echo "secret=$name" >> "$GITHUB_OUTPUT"' in steps[logins[0]]["run"]
+        # The step that runs the suite through make, not merely some step.
+        suites = [
+            i
+            for i, step in enumerate(steps)
+            if re.search(r"(^|[\s(])make\s", step.get("run", ""), re.M)
         ]
-        assert len(readers) == 1, f"{name} {job}: one step reads the login output"
+        assert len(suites) == 1, f"{name} {job}: one step runs the suite"
+        suite = steps[suites[0]]
+        assert suite.get("env", {}).get("NESTED_REGISTRY_SECRET") == LOGIN_OUTPUT
+        assert logins[0] < suites[0], f"{name} {job}: the login runs first"
     assert "NESTED_REGISTRY_SECRET=" not in (WORKFLOWS / name).read_text()
