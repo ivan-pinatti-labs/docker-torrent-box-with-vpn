@@ -575,6 +575,8 @@ def test_nginx_serves_the_error_pages_with_their_status():
         html = (REPO_ROOT / f"configs/nginx/errors/{page}.html").read_text()
         assert f'<!--# echo var="app_name" --> {words}' in html
         assert '<!--# echo var="app_profile" -->' in html
+        # The head both share is written once (configs/nginx/errors/head.html).
+        assert '<!--# include file="head.html" -->' in html
 
 
 def test_nginx_mounts_the_error_pages_and_the_disabled_list():
