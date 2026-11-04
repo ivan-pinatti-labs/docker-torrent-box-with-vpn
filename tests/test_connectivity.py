@@ -21,6 +21,7 @@ from conftest import (
     container_name,
     env,
     is_enabled,
+    nginx_map,
     port,
     skip_if_not_running,
 )
@@ -237,10 +238,11 @@ def test_servarr_redirect_keeps_the_original_scheme_and_port(
 NGINX_GENERATED = REPO_ROOT / "configs/nginx/generated"
 
 
-def _nginx(path: str, method: str = "GET") -> requests.Response:
+def _nginx(path: str, method: str = "GET", headers=None) -> requests.Response:
     return requests.request(
         method,
         f"https://{HOST}:{NGINX_HTTPS_PORT}{path}",
+        headers=headers,
         allow_redirects=False,
         verify=False,  # nosec B501 - the stack's own self-signed certificate
         timeout=CONNECT_TIMEOUT,
@@ -300,6 +302,37 @@ def test_nginx_names_a_disabled_app(method, running_containers):
     # The probe matches no app of its own, so the page names Homepage's.
     assert "<h1>Homepage is disabled</h1>" in response.text
     assert "<code>HOMEPAGE_PROFILE=enabled</code>" in response.text
+
+
+APP_PROXY_DOMAIN = env("APP_PROXY_DOMAIN", "invalid")
+APP_HOST_NAMES = {
+    host.replace("${APP_PROXY_DOMAIN}", APP_PROXY_DOMAIN): path
+    for host, path in nginx_map("app_proxy_path").items()
+    if host != "default"
+}
+
+
+@pytest.mark.parametrize("host", sorted(APP_HOST_NAMES))
+def test_nginx_sends_an_app_host_name_to_its_path(host, running_containers):
+    """<app>.${APP_PROXY_DOMAIN}/ answers 302 to the app's path (#413).
+
+    Sent as a Host header to nginx's own address, so nothing has to resolve
+    it. Ahead of the disabled check, so it holds whichever apps are enabled.
+    """
+    if APP_PROXY_DOMAIN in ("", "invalid"):
+        pytest.skip("APP_PROXY_DOMAIN is not configured")
+    skip_if_not_running("nginx", running_containers)
+    response = _nginx("/", headers={"Host": f"{host}:{NGINX_HTTPS_PORT}"})
+    assert response.status_code == 302
+    assert response.headers["Location"] == (
+        f"https://{host}:{NGINX_HTTPS_PORT}{APP_HOST_NAMES[host]}"
+    )
+
+
+def test_nginx_leaves_the_shared_host_name_on_homepage(running_containers):
+    skip_if_not_running("nginx", running_containers)
+    location = _nginx("/").headers.get("Location", "")
+    assert not location.endswith(tuple(APP_HOST_NAMES.values())), location
 
 
 def test_nginx_keeps_its_error_pages_internal(running_containers):

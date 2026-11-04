@@ -34,8 +34,8 @@ $(if $(VERSION_VARS),$(eval export $(VERSION_VARS)))
 JELLYFIN_BASE_URL ?= /jellyfin
 JELLYFIN_KNOWN_PROXY ?= $(NGINX_MEDIA_IP)
 
-# The apps subnet, nginx's two trusted addresses, Readarr's services address
-# and Cleanuparr's settings arrived after most .env files were seeded, and
+# The apps subnet, nginx's two trusted addresses, Readarr's services address,
+# Cleanuparr's settings and the app host name domain arrived after most .env files were seeded, and
 # seed-configs.sh never rewrites an existing .env. A .env without them takes
 # .env.example's values instead of handing `network create --subnet`, an
 # `ipv4_address:` or Cleanuparr's `user:` an empty string. Exported so
@@ -51,8 +51,9 @@ CLEANUPARR_UID ?= $(call env_example_default,CLEANUPARR_UID)
 CLEANUPARR_GID ?= $(call env_example_default,CLEANUPARR_GID)
 CLEANUPARR_PROFILE ?= $(call env_example_default,CLEANUPARR_PROFILE)
 CLEANUPARR_HTTP_PORT ?= $(call env_example_default,CLEANUPARR_HTTP_PORT)
+APP_PROXY_DOMAIN ?= $(call env_example_default,APP_PROXY_DOMAIN)
 export APPS_SUBNET APPS_DYNAMIC_IP_RANGE NGINX_APPS_IP NGINX_SERVICES_IP READARR_SERVICES_IP \
-	CLEANUPARR_UID CLEANUPARR_GID CLEANUPARR_PROFILE CLEANUPARR_HTTP_PORT
+	CLEANUPARR_UID CLEANUPARR_GID CLEANUPARR_PROFILE CLEANUPARR_HTTP_PORT APP_PROXY_DOMAIN
 
 # CONTAINER_RUNTIME can be set in .env to 'podman' or 'docker'.
 # If not set, auto-detect: Podman takes priority when available.
@@ -685,7 +686,7 @@ generate_certificate:
 	@echo -n "Generating self-signed certificate..."
 	@openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 \
 		-subj "/C=${CERT_COUNTRY}/ST=${CERT_STATE}/L=${CERT_CITY}/O=${CERT_ORGANIZATION}/OU=${CERT_OU}/CN=${CERT_FQDN}" \
-		-addext "subjectAltName = DNS:${CERT_FQDN}, DNS:${JELLYFIN_PROXY_DOMAIN}, DNS:localhost, IP:127.0.0.1, IP:${LAN_IP}, IP:${GLUETUN_SERVICES_IP}, IP:${GLUETUN_OBSERVABILITY_IP}" \
+		-addext "subjectAltName = DNS:${CERT_FQDN}, DNS:${JELLYFIN_PROXY_DOMAIN}, DNS:*.${APP_PROXY_DOMAIN}, DNS:localhost, IP:127.0.0.1, IP:${LAN_IP}, IP:${GLUETUN_SERVICES_IP}, IP:${GLUETUN_OBSERVABILITY_IP}" \
 		-keyout certs/server.key -out certs/server.crt
 	@openssl pkcs12 -export -out ${CERTIFICATES_FOLDER}/server.pfx -inkey ${CERTIFICATES_FOLDER}/server.key -in ${CERTIFICATES_FOLDER}/server.crt -password pass:${CERT_PASSWORD}
 	# openssl writes server.key and server.pfx as 600 regardless of umask,

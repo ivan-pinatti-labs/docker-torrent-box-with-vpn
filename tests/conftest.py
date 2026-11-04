@@ -660,6 +660,24 @@ def cleanuparr_failed_import_patterns() -> list[str]:
     return json.loads(match.group(1))
 
 
+NGINX_TEMPLATE = REPO_ROOT / "configs/nginx/templates/default.conf.template"
+
+
+def nginx_map(name: str) -> dict[str, str]:
+    """A `map <source> $<name>` of the nginx template, key to value, quotes dropped."""
+    block = re.search(
+        rf"^map \S+ \${name} \{{\n(.*?)^\}}",
+        NGINX_TEMPLATE.read_text(),
+        re.M | re.S,
+    )
+    assert block, f"no ${name} map in {NGINX_TEMPLATE.name}"
+    entries = {}
+    for line in block.group(1).splitlines():
+        key, value = line.split(None, 1)
+        entries[key.strip('"')] = value.rstrip(";").strip('"')
+    return entries
+
+
 # What Cleanuparr calls each arr app it holds an instance of, which is also
 # the instance's name, and what its API answers in place of a stored password
 # or key. Sent back in a connection test, the placeholder tests the stored one.

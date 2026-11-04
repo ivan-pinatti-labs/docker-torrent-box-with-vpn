@@ -23,6 +23,27 @@ use `/jellyfin` too. If you set `JELLYFIN_BASE_URL=` for clean root access on
 direct/domain URLs, the main `/jellyfin/` proxy path is no longer Jellyfin's
 canonical URL.
 
+## One host name per app
+
+Set `APP_PROXY_DOMAIN`, for example `example.com`, and every other app behind
+Nginx also answers on a host name of its own: `https://sonarr.example.com/`
+redirects to `https://sonarr.example.com/sonarr/`, and the app works from there.
+The name is the app's path with `_` as `-` (`calibre-web` for `/calibre_web/`),
+and the `/admin/` apps go by their bare name (`grafana`, `prometheus`,
+`cadvisor`). The paths of the shared host keep working, and its `/` still opens
+Homepage. Left at its default, `invalid`, nothing changes.
+
+- **DNS.** Point each name, or `*.example.com`, at this host in your own
+  resolver.
+- **Certificate.** `make generate_certificate` and `make rotate_certificate`
+  add `*.${APP_PROXY_DOMAIN}` to the self signed certificate. A certificate of
+  your own has to cover it too. A wildcard covers one label only:
+  `sonarr.box.example.com` needs `*.box.example.com`, not `*.example.com`.
+- **Password managers.** This is what the host names are for: a password
+  manager tells logins apart by address, and Android's autofill only sees the
+  host name. Match each login on the host (the "Host" match in Bitwarden),
+  not the base domain, or every app's login is offered on every app again.
+
 ## **HTTP**
 
 | **App**        | **Link**                         | **User**     | **Password** |

@@ -170,6 +170,10 @@ services:
       JELLYFIN_UPSTREAM_PORT: "${JELLYFIN_UPSTREAM_PORT:-8096}"
       GLUETUN_SERVICES_IP: "${GLUETUN_SERVICES_IP}"
       HOMEPAGE_HTTP_PORT: "${HOMEPAGE_HTTP_PORT}"
+      # The domain under which every app answers on its own host name. A .env
+      # seeded before it existed takes .env.example's placeholder, which never
+      # resolves, rather than leaving the name unsubstituted in the template.
+      APP_PROXY_DOMAIN: "${APP_PROXY_DOMAIN:-invalid}"
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${CACHE_FOLDER}/nginx:/var/cache/nginx:z

@@ -317,8 +317,8 @@ recreate command for the affected containers at the end; run it for the new
 certificate to take effect.
 
 Subject and SAN fields come from `certs/cert.conf` and `.env`
-(`JELLYFIN_PROXY_DOMAIN`, `LAN_IP`, `GLUETUN_SERVICES_IP`,
-`GLUETUN_OBSERVABILITY_IP`). For the initial certificate use
+(`JELLYFIN_PROXY_DOMAIN`, `*.` plus `APP_PROXY_DOMAIN`, `LAN_IP`,
+`GLUETUN_SERVICES_IP`, `GLUETUN_OBSERVABILITY_IP`). For the initial certificate use
 `make generate_certificate` instead; the rotate script is for replacing an
 existing one.
 
