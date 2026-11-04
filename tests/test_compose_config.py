@@ -468,6 +468,31 @@ def test_readarr_has_its_fixed_services_address():
     assert services == {"ipv4_address": "${READARR_SERVICES_IP}"}
 
 
+def test_gluetun_logs_in_to_set_the_qbittorrent_port():
+    """gluetun's up command logs in, since only Readarr skips the login (#419).
+
+    The command is set in the compose file so it overrides the one a seeded
+    configs/gluetun/.env still carries from before.
+    """
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose-vpn.yml").read_text())
+    gluetun = compose["services"]["gluetun"]
+
+    assert gluetun["environment"]["VPN_PORT_FORWARDING_UP_COMMAND"] == (
+        "/bin/sh /scripts/qbittorrent-port-forward.sh {{PORTS}}"
+    )
+    assert gluetun["secrets"] == ["qbittorrent_username", "qbittorrent_password"]
+    assert (
+        "./scripts/qbittorrent-port-forward.sh:/scripts/qbittorrent-port-forward.sh:ro,z"
+        in gluetun["volumes"]
+    )
+    assert compose["secrets"] == {
+        "qbittorrent_username": {"file": "./configs/qbittorrent/secrets/username.txt"},
+        "qbittorrent_password": {"file": "./configs/qbittorrent/secrets/password.txt"},
+    }
+    example = (REPO_ROOT / "configs/gluetun/.env.example").read_text()
+    assert "\nVPN_PORT_FORWARDING_UP_COMMAND=" not in example
+
+
 # The services given longer than the default ten seconds between SIGTERM and
 # SIGKILL. docs/CONTAINER_LIMITS.md, "Shutdown grace periods", says why each
 # needs it and which ways of stopping the stack honour it.

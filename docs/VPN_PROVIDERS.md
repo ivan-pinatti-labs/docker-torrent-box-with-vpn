@@ -99,9 +99,12 @@ HTTPPROXY_LOG=off
 indexers through; see
 [docs/NETWORKING.md](NETWORKING.md#routing-selected-prowlarr-indexers-through-the-vpn).
 
-Keep the existing `VPN_PORT_FORWARDING_UP_COMMAND` from `configs/gluetun/.env`; it updates
-qBittorrent whenever Proton changes the forwarded port automatically, no manual steps
-required. If upgrading from the old dedicated ProtonVPN container, do not delete the old
+qBittorrent follows the forwarded port on its own: `docker-compose-vpn.yml` sets
+gluetun's `VPN_PORT_FORWARDING_UP_COMMAND` to `scripts/qbittorrent-port-forward.sh`, which
+logs in to qBittorrent with its compose secrets and sets the listen port whenever Proton
+changes it, no manual steps required. The compose value overrides an older command still
+in `configs/gluetun/.env`. The script's lines start with `[PORTFWD]` in gluetun's log.
+If upgrading from the old dedicated ProtonVPN container, do not delete the old
 values until they are migrated. Copy the legacy Proton WireGuard private key or
 old `PROTONVPN_KEY` value into `configs/gluetun/.secret`. Move the old
 `PROTONVPN_SERVER` / `PROTONVPN_COUNTRY_AND_SERVER` selection into a Gluetun
