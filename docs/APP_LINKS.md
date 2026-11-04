@@ -25,12 +25,15 @@ canonical URL.
 
 ## One host name per app
 
-Set `APP_PROXY_DOMAIN`, for example `example.com`, and every other app behind
-Nginx also answers on a host name of its own: `https://sonarr.example.com/`
-redirects to `https://sonarr.example.com/sonarr/`, and the app works from there.
-The name is the app's path with `_` as `-` (`calibre-web` for `/calibre_web/`),
-and the `/admin/` apps go by their bare name (`grafana`, `prometheus`,
-`cadvisor`). The paths of the shared host keep working, and its `/` still opens
+Set `APP_PROXY_DOMAIN`, for example `example.com`, and every app with a web UI
+behind Nginx also answers on a host name of its own:
+`https://sonarr.example.com/` redirects to `https://sonarr.example.com/sonarr/`,
+and the app works from there. The name is the app's path with `_` as `-`
+(`calibre-web` for `/calibre_web/`), and the `/admin/` apps go by their bare
+name (`grafana`, `prometheus`, `cadvisor`). Jellyfin uses
+`JELLYFIN_PROXY_DOMAIN` instead, and the paths that are not a UI (FlareSolverr,
+Gluetun, KOReader Sync, the Calibre content server, Node Exporter) have no host
+name. The paths of the shared host keep working, and its `/` still opens
 Homepage. Left at its default, `invalid`, nothing changes.
 
 - **DNS.** Point each name, or `*.example.com`, at this host in your own
@@ -39,6 +42,12 @@ Homepage. Left at its default, `invalid`, nothing changes.
   add `*.${APP_PROXY_DOMAIN}` to the self signed certificate. A certificate of
   your own has to cover it too. A wildcard covers one label only:
   `sonarr.box.example.com` needs `*.box.example.com`, not `*.example.com`.
+- **Changing it on a running stack.** A certificate made before the setting
+  does not name the new host names, and nginx reads the setting only when its
+  container is created (`make start` keeps a running one). Run
+  `make rotate_certificate`, then the recreate command it prints, which
+  includes nginx. With a certificate of your own, recreate nginx alone the same
+  way.
 - **Password managers.** This is what the host names are for: a password
   manager tells logins apart by address, and Android's autofill only sees the
   host name. Match each login on the host (the "Host" match in Bitwarden),

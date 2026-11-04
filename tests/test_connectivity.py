@@ -331,8 +331,13 @@ def test_nginx_sends_an_app_host_name_to_its_path(host, running_containers):
 
 def test_nginx_leaves_the_shared_host_name_on_homepage(running_containers):
     skip_if_not_running("nginx", running_containers)
-    location = _nginx("/").headers.get("Location", "")
+    response = _nginx("/")
+    location = response.headers.get("Location", "")
     assert not location.endswith(tuple(APP_HOST_NAMES.values())), location
+    # Homepage answers it, unless `make start` listed Homepage as disabled.
+    listing = (NGINX_GENERATED / "disabled-apps.conf").read_text()
+    if "default 0;" in listing.splitlines():
+        assert response.status_code not in (502, 503, 504), response.status_code
 
 
 def test_nginx_keeps_its_error_pages_internal(running_containers):
