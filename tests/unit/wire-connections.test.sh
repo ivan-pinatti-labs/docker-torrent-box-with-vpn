@@ -325,10 +325,15 @@ check "Cleanuparr is set up from nothing" 0 out \
   "[Cleanuparr] Connecting qBittorrent..." "[Cleanuparr] Connecting Lidarr..." "[Cleanuparr] Connecting Radarr..." \
   "[Cleanuparr] Connecting Readarr..." "[Cleanuparr] Connecting Sonarr..." "[Cleanuparr] Connecting Whisparr..." \
   "[Cleanuparr] Striking failed imports of the excluded file types..." "[Cleanuparr] Done."
-check "a deployment that never ran the seed gets the placeholder password" 0 \
-  configs/cleanuparr/secrets/password.txt cleanuparr
-check "Cleanuparr's login is that placeholder" 0 log '{"username":"cleanuparr","password":"cleanuparr"}' # pragma: allowlist secret
+check "a Cleanuparr with no password file gets a random password" 0 \
+  configs/cleanuparr/secrets/password.txt 0001ffffffffffffffffffffffffffff                                                  # pragma: allowlist secret
+check "Cleanuparr's login is that password" 0 log '{"username":"cleanuparr","password":"0001ffffffffffffffffffffffffffff"}' # pragma: allowlist secret
 check "and its key is saved" 0 configs/cleanuparr/secrets/api_key.txt new-cleanuparr-key
+for secret in password.txt api_key.txt; do
+  if [[ "$(stat -c %a "${__repo}/configs/cleanuparr/secrets/${secret}")" != 600 ]]; then
+    fail "Cleanuparr's ${secret} is readable only by its owner"
+  fi
+done
 check "Cleanuparr accepts the stack's certificate" 0 log '"httpCertificateValidation":"DisabledForLocalAddresses"'
 check "Cleanuparr logs in to qBittorrent on the services address" 0 log \
   '{"enabled":true,"name":"qBittorrent","typeName":"qBittorrent","host":"https://10.0.0.2:8443","username":"qbittorrent","password":"qbittorrent-password","urlBase":""}' # pragma: allowlist secret
@@ -1064,6 +1069,33 @@ check "a refused login is reported" 0 out \
   "[Cleanuparr] WARNING: could not log in as 'cleanuparr' with configs/cleanuparr/secrets/password.txt: {\"title\": \"Invalid credentials\"}" \
   "[Cleanuparr] WARNING: no usable login, nothing else was wired."
 refute "and nothing else is tried" log "/cleanuparr/api/configuration/"
+
+# A first setup keeps a password of the user's own, but never the username,
+# which anyone could guess.
+for given in my-own-password cleanuparr; do
+  deployment
+  containers cleanuparr
+  put configs/cleanuparr/secrets/password.txt "${given}"
+  rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/auth/status$" 0 $'{"setupCompleted": false}\n200'
+  rule "${CLEANUPARR} POST .*${CLEANUPARR_API}/auth/setup/(account|complete)$" 0 $'{}\n201'
+  run
+  expected=my-own-password                                                    # pragma: allowlist secret
+  [[ "${given}" == cleanuparr ]] && expected=0001ffffffffffffffffffffffffffff # pragma: allowlist secret
+  check "a first setup with '${given}' in the password file logs in with ${expected}" 0 log \
+    "{\"username\":\"cleanuparr\",\"password\":\"${expected}\"}"
+done
+
+# Logged in, but no key in the answer.
+deployment
+containers cleanuparr
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/account$" 0 $'{"title": "Unauthorized"}\n401'
+rule "${CLEANUPARR} POST .*${CLEANUPARR_API}/auth/login$" 0 $'{"tokens": {"accessToken": "t"}}\n200'
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/account/api-key$" 0 $'{"title": "Server error"}\n500'
+run
+check "a key that cannot be read is not saved" 0 out \
+  "[Cleanuparr] WARNING: logged in, but could not read its API key." \
+  "[Cleanuparr] WARNING: no usable login, nothing else was wired."
+check "and the old key file stays" 0 configs/cleanuparr/secrets/api_key.txt key-cleanuparr
 
 # Every other part failing, in two runs, each failure reported and none
 # stopping the rest.

@@ -263,12 +263,14 @@ in its own database, so `wire_cleanuparr` makes them through its API, at
 `/cleanuparr/api` with its own API key:
 
 - **Login and API key**: on the first run it completes Cleanuparr's setup
-  with the `cleanuparr` login and the password in
-  `configs/cleanuparr/secrets/password.txt` (seeded as `cleanuparr`, rotated
-  by `make bootstrap`), then saves its API key to
-  `configs/cleanuparr/secrets/api_key.txt`. Its setup endpoints answer anyone
-  until setup is complete, which is why this runs on the first wiring after
-  the container starts.
+  with the `cleanuparr` login and a random password it writes to
+  `configs/cleanuparr/secrets/password.txt` (one already there is used
+  instead), then saves its API key to `configs/cleanuparr/secrets/api_key.txt`.
+  Both files are mode 600: only the scripts read them. Its setup endpoints
+  answer anyone until setup is complete, which is why this runs on the first
+  wiring after the container starts, and why the password is never a
+  placeholder: `make update` adds Cleanuparr to a deployment without the
+  rotation `make bootstrap` ends with.
 - **Certificates**: self-signed certificates are accepted on local addresses
   only (`httpCertificateValidation: DisabledForLocalAddresses`), as the arr
   apps already are, since qBittorrent and the arr apps serve this stack's
@@ -307,8 +309,9 @@ folder path, which holds no extension, so none of these patterns strikes it.
 release that ends up with nothing importable, such as a RAR only pack; add it
 in the UI if you prefer that trade.
 
-Cleanuparr has no VPN route: it talks to the arr apps and qBittorrent inside
-the stack and to nothing outside it. Rotating an arr app's API key or
+Cleanuparr has no VPN route: the arr apps and qBittorrent it works with are
+inside the stack, and like the other direct apps it sits on `apps`, whose
+egress is not routed through the VPN. Rotating an arr app's API key or
 qBittorrent's password updates Cleanuparr's copy through its API
 ([ROTATION.md](ROTATION.md)).
 

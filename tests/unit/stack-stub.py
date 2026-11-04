@@ -460,6 +460,9 @@ FILTERS = {
     ".setupCompleted": lambda d, a: [d.get("setupCompleted")],
     ".tokens.accessToken": lambda d, a: [d["tokens"]["accessToken"]],
     ".apiKey": lambda d, a: [d.get("apiKey")],
+    ".apiKey // empty": lambda d, a: (
+        [d["apiKey"]] if d.get("apiKey") not in (None, False) else []
+    ),
     ".httpCertificateValidation": lambda d, a: [d.get("httpCertificateValidation")],
     '.httpCertificateValidation = "DisabledForLocalAddresses"': lambda d, a: [
         set_keys(d, httpCertificateValidation="DisabledForLocalAddresses")

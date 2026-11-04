@@ -403,12 +403,22 @@ run cleanuparr
 check "a refused Cleanuparr password stops its rotation" 1 err \
   "[Cleanuparr] Password change refused: {\"title\": \"Current password is incorrect\"}"
 check "and the password file is left as it was" 1 configs/cleanuparr/secrets/password.txt cleanuparr-old
+check "the password tried is kept, and named" 1 err \
+  "[Cleanuparr] The password tried is in configs/cleanuparr/secrets/password.txt.new, in case Cleanuparr took it anyway."
+check "in a file of its own" 1 configs/cleanuparr/secrets/password.txt.new "Pw0"
 
 deployment
 rule 'cleanuparr curl -sS -X GET .*/cleanuparr/api/configuration/download_client$' 0 $'{"clients": []}\n200'
 run qbittorrent
 check "a Cleanuparr without a qBittorrent client is left alone" 0 out \
   "[Cleanuparr] No qBittorrent download client to update, skipping."
+
+deployment
+rule 'cleanuparr curl -sS -X GET .*/cleanuparr/api/configuration/download_client$' 0 $'{"title": "Unauthorized"}\n401'
+run qbittorrent
+check "a client list Cleanuparr will not give is reported" 0 err \
+  "[Cleanuparr] WARNING: could not list its download clients, so its qBittorrent password was not updated; run 'make wire_connections' to save it."
+check "and each call has a deadline" 0 log "cleanuparr curl -sS -X GET -w \n%{http_code} --max-time 30 "
 
 deployment
 rule 'cleanuparr curl -sS -X PUT .*/cleanuparr/api/configuration/download_client/qbt-id$' 0 $'{"title": "refused"}\n500'

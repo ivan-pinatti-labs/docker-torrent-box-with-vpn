@@ -182,6 +182,10 @@ check "all validates every new key" 0 out \
   "$(ok sonarr)" "$(ok radarr)" "$(ok lidarr)" "$(ok readarr)" "$(ok whisparr)" "$(ok prowlarr)" \
   "$(ok bazarr)" "$(ok lazylibrarian)" "$(ok mylar)" "$(ok nzbhydra2)" "$(ok jellyfin)" "$(ok cleanuparr)"
 check "Cleanuparr's new key is saved" 0 configs/cleanuparr/secrets/api_key.txt new-cleanuparr
+if [[ "$(stat -c %a "${__repo}/configs/cleanuparr/secrets/api_key.txt")" != 600 ]]; then
+  fail "Cleanuparr's key is readable only by its owner"
+fi
+check "its regeneration has no deadline" 0 log "cleanuparr curl -sS -X POST -w \n%{http_code} -H X-Api-Key: old-cleanuparr"
 check "Cleanuparr's arr instances get the new keys" 0 out \
   "[Cleanuparr] Updating Sonarr's API key..." "[Cleanuparr] Updating Whisparr's API key..." \
   "[Cleanuparr] No Lidarr instance to update, skipping."
@@ -394,6 +398,13 @@ rule 'cleanuparr curl -sS -X PUT .*/configuration/radarr/instances/radarr-id$' 0
 run radarr
 check "an instance that will not take the key is reported" 0 err \
   "[Cleanuparr] WARNING: could not update Radarr's API key; run 'make wire_connections' to save it."
+check "and each update call has a deadline" 0 log "cleanuparr curl -sS -X PUT -w \n%{http_code} --max-time 30 "
+deployment
+rule 'cleanuparr curl -sS -X GET .*/cleanuparr/api/configuration/radarr$' 0 $'{"title": "Unauthorized"}\n401'
+run radarr
+check "an instance list Cleanuparr will not give is reported" 0 err \
+  "[Cleanuparr] WARNING: could not list its Radarr instances, so their API key was not updated; run 'make wire_connections' to save it."
+refute "and nothing is sent" log "cleanuparr curl -sS -X PUT"
 
 # Keys the services do not accept afterwards.
 deployment

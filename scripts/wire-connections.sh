@@ -2346,16 +2346,24 @@ cleanuparr_credentials() {
 
 # Cleanuparr has no account until the first-run setup makes one, and its setup
 # endpoints answer anyone until then, so this runs on the first wiring after
-# the container starts. The password is the seeded placeholder, which `make
-# bootstrap` rotates right after wiring (rotate-passwords.sh). A failed
-# account request is left to the login below to report: it is a 409 when an
-# earlier run made the account and stopped before completing setup.
+# the container starts. The password is a random one, made here unless the
+# file already holds one of the user's own: nginx serves Cleanuparr to anyone
+# who reaches it, and `make update` brings it to a deployment without the
+# rotation `make bootstrap` ends with, so a password anyone could guess would
+# stay. A failed account request is left to the login below to report: it is
+# a 409 when an earlier run made the account and stopped before completing
+# setup.
 ensure_cleanuparr_account() {
   local status
   status=$(cleanuparr_api GET auth/status) || return 1
   if [[ "$(jq -r '.setupCompleted' <<<"$status")" == true ]]; then
     return 0
   fi
+  if [[ ! -s "$CLEANUPARR_PASSWORD_FILE" || "$(cat "$CLEANUPARR_PASSWORD_FILE")" == "$CLEANUPARR_USERNAME" ]]; then
+    openssl rand -hex 16 | tr -d '\n' >"$CLEANUPARR_PASSWORD_FILE"
+  fi
+  # Only the scripts read it, as the host user.
+  chmod 600 "$CLEANUPARR_PASSWORD_FILE"
   echo "[Cleanuparr] Creating its login..."
   cleanuparr_api POST auth/setup/account -H "Content-Type: application/json" -d "$(cleanuparr_credentials)" >/dev/null || true
   cleanuparr_api POST auth/setup/complete >/dev/null
@@ -2375,10 +2383,15 @@ ensure_cleanuparr_api_key() {
     return 1
   fi
   token=$(jq -r '.tokens.accessToken' <<<"$login")
-  key=$(cleanuparr_api GET account/api-key -H "Authorization: Bearer ${token}" | jq -r '.apiKey')
-  # No trailing newline, like every other secret file (seed-secrets.sh).
+  key=$(cleanuparr_api GET account/api-key -H "Authorization: Bearer ${token}" | jq -r '.apiKey // empty') || key=""
+  if [[ -z "$key" ]]; then
+    echo "[Cleanuparr] WARNING: logged in, but could not read its API key."
+    return 1
+  fi
+  # No trailing newline, like every other secret file (seed-secrets.sh), and
+  # only the scripts read it, as the host user.
   printf '%s' "$key" >"$CLEANUPARR_API_KEY_FILE"
-  chmod 644 "$CLEANUPARR_API_KEY_FILE"
+  chmod 600 "$CLEANUPARR_API_KEY_FILE"
 }
 
 # qBittorrent's WebUI and the arr apps serve this stack's self-signed
@@ -2503,12 +2516,6 @@ wire_cleanuparr() {
   if ! retry 180 "[Cleanuparr]" container_curl cleanuparr -sf -o /dev/null "http://127.0.0.1:${CLEANUPARR_HTTP_PORT}/cleanuparr/health"; then
     echo "[Cleanuparr] Not reachable, skipping."
     return 0
-  fi
-  # Bootstrap seeds this from password.txt.example. A deployment updated to
-  # the version that added Cleanuparr never ran that seed.
-  if [[ ! -f "$CLEANUPARR_PASSWORD_FILE" ]]; then
-    printf '%s' "$CLEANUPARR_USERNAME" >"$CLEANUPARR_PASSWORD_FILE"
-    chmod 644 "$CLEANUPARR_PASSWORD_FILE"
   fi
   if ! ensure_cleanuparr_account || ! ensure_cleanuparr_api_key; then
     echo "[Cleanuparr] WARNING: no usable login, nothing else was wired."

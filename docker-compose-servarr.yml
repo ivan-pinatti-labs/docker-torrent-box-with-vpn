@@ -308,9 +308,10 @@ services:
   # Clears the downloads qBittorrent's excluded file names leave stuck in the
   # arr queues: removed, blocklisted and searched again after three strikes.
   # Its settings live in its own database and are made by
-  # scripts/wire-connections.sh (wire_cleanuparr). No VPN route: it talks to
-  # the arr apps and to qBittorrent's WebUI on gluetun's services address, and
-  # nothing outside the stack. See docs/CONNECTIONS.md, "Cleanuparr".
+  # scripts/wire-connections.sh (wire_cleanuparr). No VPN route: what it works
+  # with, the arr apps and qBittorrent's WebUI on gluetun's services address,
+  # is inside the stack, and its egress on apps is direct like the other
+  # direct apps'. See docs/CONNECTIONS.md, "Cleanuparr".
   cleanuparr:
     <<: *limit-servarr
     image: ghcr.io/cleanuparr/cleanuparr:${CLEANUPARR_VERSION}

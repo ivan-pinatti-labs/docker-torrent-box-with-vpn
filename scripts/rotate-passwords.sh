@@ -795,11 +795,12 @@ PYEOF
 
 # Cleanuparr's API, as its own saved key, from inside its own container.
 # Prints the body and succeeds only on a 2xx. Mirrors wire-connections.sh's
-# cleanuparr_keyed. Args: method path [body]
+# cleanuparr_keyed. Bounded by CLEANUPARR_MAX_TIME seconds when a caller sets
+# it. Args: method path [body]
 cleanuparr_keyed() {
   local key out code
   key=$(cat "$CLEANUPARR_API_KEY_SECRET" 2>/dev/null) || key=""
-  out=$(container_curl cleanuparr -sS -X "$1" -w '\n%{http_code}' -H "X-Api-Key: ${key}" -H "Content-Type: application/json" ${3+-d "$3"} "http://127.0.0.1:${CLEANUPARR_HTTP_PORT}/cleanuparr/api/$2" 2>&1) || true
+  out=$(container_curl cleanuparr -sS -X "$1" -w '\n%{http_code}' ${CLEANUPARR_MAX_TIME:+--max-time "$CLEANUPARR_MAX_TIME"} -H "X-Api-Key: ${key}" -H "Content-Type: application/json" ${3+-d "$3"} "http://127.0.0.1:${CLEANUPARR_HTTP_PORT}/cleanuparr/api/$2" 2>&1) || true
   code=${out##*$'\n'}
   printf '%s' "${out%$'\n'*}"
   [[ "$code" == 2?? ]]
@@ -808,18 +809,27 @@ cleanuparr_keyed() {
 # Through Cleanuparr's live API, which needs the current password and its API
 # key (wire-connections.sh saves both). Nothing else logs in to Cleanuparr,
 # so there is no consumer to update.
+#
+# The new password is staged beside the saved one before the change, and
+# renamed over it only once Cleanuparr has accepted it, so a write that fails
+# leaves the saved password as it was. The change itself has no time limit: a
+# deadline could give up on a change Cleanuparr then applies. When it is not
+# accepted the staged file stays, in case Cleanuparr applied it anyway, and
+# the error names it.
 rotate_cleanuparr() {
-  local new_password body response
+  local new_password body response staged="${CLEANUPARR_PASSWORD_SECRET}.new"
   new_password=$(gen_password)
   body=$(jq -cn --arg current "$(cat "$CLEANUPARR_PASSWORD_SECRET")" --arg new "$new_password" '{currentPassword: $current, newPassword: $new}')
+  # Only the scripts read it, as the host user.
+  (umask 077 && printf '%s' "$new_password" >"$staged")
   echo "[Cleanuparr] Setting new password..."
   if ! response=$(cleanuparr_keyed PUT account/password "$body"); then
     echo "[Cleanuparr] Password change refused: ${response:0:300}" >&2
+    echo "[Cleanuparr] The password tried is in ${staged}, in case Cleanuparr took it anyway." >&2
     echo "[Cleanuparr] Run 'make wire_connections' if its API key or password file is out of date." >&2
     exit 1
   fi
-  printf '%s' "$new_password" >"$CLEANUPARR_PASSWORD_SECRET"
-  chmod 644 "$CLEANUPARR_PASSWORD_SECRET"
+  mv "$staged" "$CLEANUPARR_PASSWORD_SECRET"
   SUMMARY_CLEANUPARR_USER="$CLEANUPARR_USER"
   SUMMARY_CLEANUPARR_NEW="$new_password"
 }
@@ -828,13 +838,21 @@ rotate_cleanuparr() {
 # its live API, so Cleanuparr is not stopped; a stored password it never
 # returns is replaced while the rest of the client is sent back as read. A
 # Cleanuparr that is not there, or not wired yet, has nothing to update.
-# Args: new_password
+#
+# Both calls have a deadline: rotate_qbittorrent has the arr apps stopped
+# while this runs, and a Cleanuparr that took the connection and never
+# answered would keep them down. A late PUT only ever applies the password
+# meant. Args: new_password
 update_cleanuparr_qbittorrent() {
-  local client
+  local listing client CLEANUPARR_MAX_TIME=30
   if ! podman container exists "$(cname cleanuparr)" 2>/dev/null; then
     return 0
   fi
-  client=$(cleanuparr_keyed GET configuration/download_client | jq --arg key clients --arg name qBittorrent '.[$key] | map(select(.name == $name)) | first') || client=null
+  if ! listing=$(cleanuparr_keyed GET configuration/download_client); then
+    echo "[Cleanuparr] WARNING: could not list its download clients, so its qBittorrent password was not updated; run 'make wire_connections' to save it." >&2
+    return 0
+  fi
+  client=$(jq --arg key clients --arg name qBittorrent '.[$key] | map(select(.name == $name)) | first' <<<"$listing")
   if [[ "$client" == null ]]; then
     echo "[Cleanuparr] No qBittorrent download client to update, skipping."
     return 0

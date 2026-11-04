@@ -534,11 +534,12 @@ PYEOF
 
 # Cleanuparr's API, as its own saved key, from inside its own container.
 # Prints the body and succeeds only on a 2xx. Mirrors wire-connections.sh's
-# cleanuparr_keyed. Args: method path [body]
+# cleanuparr_keyed. Bounded by CLEANUPARR_MAX_TIME seconds when a caller sets
+# it. Args: method path [body]
 cleanuparr_keyed() {
   local key out code
   key=$(cat "$CLEANUPARR_API_KEY_SECRET" 2>/dev/null) || key=""
-  out=$(container_curl cleanuparr -sS -X "$1" -w '\n%{http_code}' -H "X-Api-Key: ${key}" -H "Content-Type: application/json" ${3+-d "$3"} "http://127.0.0.1:${CLEANUPARR_HTTP_PORT}/cleanuparr/api/$2" 2>&1) || true
+  out=$(container_curl cleanuparr -sS -X "$1" -w '\n%{http_code}' ${CLEANUPARR_MAX_TIME:+--max-time "$CLEANUPARR_MAX_TIME"} -H "X-Api-Key: ${key}" -H "Content-Type: application/json" ${3+-d "$3"} "http://127.0.0.1:${CLEANUPARR_HTTP_PORT}/cleanuparr/api/$2" 2>&1) || true
   code=${out##*$'\n'}
   printf '%s' "${out%$'\n'*}"
   [[ "$code" == 2?? ]]
@@ -547,14 +548,21 @@ cleanuparr_keyed() {
 # Cleanuparr's instance of an arr app holds that app's key too, so it is
 # updated through Cleanuparr's live API, which never returns the stored key:
 # the instance is sent back as read with the new one. A Cleanuparr that is
-# not there, or not wired yet, has nothing to update.
-# Args: app name new_key
+# not there, or not wired yet, has nothing to update. Both calls have a
+# deadline, so a Cleanuparr that took the connection and never answered
+# cannot hold the rotation; a late PUT only ever applies the key meant. Not
+# the regeneration in rotate_cleanuparr, which a deadline could give up on
+# after Cleanuparr made the new key. Args: app name new_key
 update_cleanuparr_instance() {
-  local app="$1" name="$2" instance
+  local app="$1" name="$2" listing instance CLEANUPARR_MAX_TIME=30
   if ! podman container exists "$(cname cleanuparr)" 2>/dev/null; then
     return 0
   fi
-  instance=$(cleanuparr_keyed GET "configuration/${app}" | jq --arg key instances --arg name "$name" '.[$key] | map(select(.name == $name)) | first') || instance=null
+  if ! listing=$(cleanuparr_keyed GET "configuration/${app}"); then
+    echo "[Cleanuparr] WARNING: could not list its ${name} instances, so their API key was not updated; run 'make wire_connections' to save it." >&2
+    return 0
+  fi
+  instance=$(jq --arg key instances --arg name "$name" '.[$key] | map(select(.name == $name)) | first' <<<"$listing")
   if [[ "$instance" == null ]]; then
     echo "[Cleanuparr] No ${name} instance to update, skipping."
     return 0
@@ -578,6 +586,9 @@ rotate_cleanuparr() {
   fi
   new_key=$(jq -r '.apiKey' <<<"$response")
   write_secret_file "$CLEANUPARR_API_KEY_SECRET" "$new_key"
+  # Unlike the keys write_secret_file is made for, no container reads this
+  # one: only the scripts do, as the host user.
+  chmod 600 "$CLEANUPARR_API_KEY_SECRET"
 
   SUMMARY_CLEANUPARR_OLD="$old_key"
   SUMMARY_CLEANUPARR_NEW="$new_key"

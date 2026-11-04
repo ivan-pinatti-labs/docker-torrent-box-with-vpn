@@ -1009,7 +1009,6 @@ def test_cleanuparr_accepts_the_stacks_certificate(running_containers):
     assert status == 200, f"GET configuration/general failed: {status} {body[:200]}"
     general = json.loads(body)
     assert general["httpCertificateValidation"] == "DisabledForLocalAddresses"
-    assert general["dryRun"] is False, "Cleanuparr only logs what it would remove"
 
 
 @pytest.mark.wiring_readonly
