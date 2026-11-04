@@ -329,6 +329,28 @@ def test_nginx_sends_an_app_host_name_to_its_path(host, running_containers):
     )
 
 
+def test_nginx_proxies_the_korsync_host_name_to_korsync(running_containers):
+    """korsync.${APP_PROXY_DOMAIN} is KOReader Sync's server address (#418).
+
+    KOReader calls its paths under that address and follows no redirect, so
+    they answer from korsync itself, and the path address keeps working.
+    """
+    if APP_PROXY_DOMAIN in ("", "invalid"):
+        pytest.skip("APP_PROXY_DOMAIN is not configured")
+    if env("KORSYNC_PROFILE", "disabled").lower() != "enabled":
+        pytest.skip("korsync profile is disabled")
+    skip_if_not_running("korsync", running_containers)
+    skip_if_not_running("nginx", running_containers)
+    host = {"Host": f"korsync.{APP_PROXY_DOMAIN}:{NGINX_HTTPS_PORT}"}
+    assert _nginx("/health", headers=host).status_code == 200
+    # A login with no credentials gets korsync's answer, the same as through
+    # the path address, not a redirect to Homepage.
+    auth = _nginx("/users/auth", headers=host)
+    assert auth.status_code != 302
+    assert auth.status_code == _nginx("/korsync/users/auth").status_code
+    assert _nginx("/korsync/health").status_code == 200
+
+
 def test_nginx_leaves_the_shared_host_name_on_homepage(running_containers):
     skip_if_not_running("nginx", running_containers)
     response = _nginx("/")

@@ -618,6 +618,35 @@ def test_nginx_redirects_an_app_host_name_before_refusing_a_disabled_app():
     assert text.index(redirect) < text.index("if ($app_refused) {")
 
 
+# KOReader Sync at the root of a host name of its own (#418).
+def _nginx_block(text: str, opening: str) -> str:
+    """The block that `opening` starts, up to its closing brace at its indent."""
+    start = text.index(opening)
+    indent = opening[: len(opening) - len(opening.lstrip())]
+    return text[start : text.index(f"\n{indent}}}\n", start) + len(indent) + 2]
+
+
+def test_nginx_proxies_the_korsync_host_name_like_its_path():
+    text = NGINX_TEMPLATE.read_text()
+    server = _nginx_block(text[text.rindex("\nserver {") + 1 :], "server {")
+    assert "server_name korsync.${APP_PROXY_DOMAIN};" in server
+    assert "listen ${NGINX_HTTPS_PORT} ssl;" in server
+    location = _nginx_block(server, "  location / {")
+    path_location = _nginx_block(text, "  location /korsync/ {")
+    # The same upstream, headers and logs as /korsync/, without the rewrite
+    # that strips the path, and no redirect (KOReader does not follow one).
+    assert location.replace("location / {", "location /korsync/ {") == (
+        path_location.replace(
+            "    rewrite                     ^/korsync(/.*)$ $1 break;\n", ""
+        )
+    )
+    upstream = re.search(r"^  set \$korsync_upstream +(\S+);$", text, re.M)
+    assert f"  set $korsync_upstream {upstream.group(1)};" in server
+    assert "return" not in server
+    # Its own server block, so not one of #413's redirects.
+    assert "korsync.${APP_PROXY_DOMAIN}" not in nginx_map("app_proxy_path")
+
+
 def test_app_proxy_domain_defaults_to_a_name_that_never_resolves():
     compose = yaml.safe_load((REPO_ROOT / "docker-compose-proxy.yml").read_text())
     environment = compose["services"]["nginx"]["environment"]

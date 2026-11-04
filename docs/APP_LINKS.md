@@ -31,9 +31,11 @@ behind Nginx also answers on a host name of its own:
 and the app works from there. The name is the app's path with `_` as `-`
 (`calibre-web` for `/calibre_web/`), and the `/admin/` apps go by their bare
 name (`grafana`, `prometheus`, `cadvisor`). Jellyfin uses
-`JELLYFIN_PROXY_DOMAIN` instead, and the paths that are not a UI (FlareSolverr,
-Gluetun, KOReader Sync, the Calibre content server, Node Exporter) have no host
-name. The paths of the shared host keep working, and its `/` still opens
+`JELLYFIN_PROXY_DOMAIN` instead. KOReader Sync answers at the root of
+`https://korsync.example.com` with no redirect, since KOReader does not follow
+one (see [KORSYNC.md](KORSYNC.md#koreader-device-setup)). The other paths that
+are not a UI (FlareSolverr, Gluetun, the Calibre content server, Node
+Exporter) have no host name. The paths of the shared host keep working, and its `/` still opens
 Homepage. Left at its default, `invalid`, nothing changes.
 
 - **DNS.** Point each name, or `*.example.com`, at this host in your own
