@@ -708,6 +708,7 @@ def test_every_compose_service_is_registered_or_excused():
     """
     compose = set(_compose_profiles())
     assert not SERVICES.keys() & NOT_IN_SERVICES.keys()
+    assert all(reason.strip() for reason in NOT_IN_SERVICES.values())
     assert sorted(compose - SERVICES.keys() - NOT_IN_SERVICES.keys()) == []
     assert sorted((SERVICES.keys() | NOT_IN_SERVICES.keys()) - compose) == []
 
