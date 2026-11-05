@@ -337,6 +337,12 @@ def _env_example(key: str) -> str:
             "https://{ip}:{qbt}",
         ),
         (
+            "configs/mylar/config/mylar/config.ini.example",
+            "DDL",
+            "jd2_url",
+            "http://{ip}:3128",
+        ),
+        (
             "configs/lazylibrarian/config/config.ini.example",
             "SABNZBD",
             "sab_host",

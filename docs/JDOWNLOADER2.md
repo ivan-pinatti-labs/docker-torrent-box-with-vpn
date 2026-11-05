@@ -6,7 +6,8 @@ jDownloader2 is exposed on `JDOWNLOADER2_HTTP_PORT=5800` (VNC web interface) and
 ## Mylar connectivity
 
 Mylar reaches jDownloader2 at `jd2_url = http://<gluetun IP>:3128` (set in
-`configs/mylar/config/mylar/config.ini.example`) and its connection test hits
+`configs/mylar/config/mylar/config.ini.example`, and moved to
+`GLUETUN_SERVICES_IP` by `make wire_connections` when `.env` differs) and its connection test hits
 `/jd/version`, part of jDownloader2's older `/jd` namespace. That namespace
 only answers once `deprecatedapienabled` is on, and by default jDownloader2
 also restricts both that namespace and its main REST API
