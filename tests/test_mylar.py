@@ -13,7 +13,7 @@ import subprocess  # nosec B404 - podman CLI with fixed arguments
 
 import pytest
 
-from conftest import REPO_ROOT, container_name, env, read_secret, skip_if_not_running
+from conftest import REPO_ROOT, container_name, env, skip_if_not_running
 
 pytestmark = pytest.mark.connectivity
 
@@ -47,12 +47,12 @@ def _config_value(key: str) -> str | None:
     return None
 
 
-def _connect(host: str, ignore_ssl: str) -> str:
+def _connect(host: str, user: str, password: str, ignore_ssl: str) -> str:
     environment = {
         **os.environ,
         "QBT_HOST": host,
-        "QBT_USER": read_secret("qbittorrent", "username.txt") or "",
-        "QBT_PASS": read_secret("qbittorrent", "password.txt") or "",
+        "QBT_USER": user,
+        "QBT_PASS": password,
         "QBT_IGNORE_SSL": ignore_ssl,
     }
     result = subprocess.run(  # nosec B603 B607 - fixed arguments
@@ -89,16 +89,21 @@ def test_mylar_logs_in_to_qbittorrent_over_its_self_signed_https(running_contain
     skip_if_not_running("mylar", running_containers)
     skip_if_not_running("qbittorrent", running_containers)
 
+    # Everything as Mylar has it, credentials included, since those are what
+    # its downloads log in with.
     host = _config_value("qbittorrent_host")
+    user = _config_value("qbittorrent_username")
+    password = _config_value("qbittorrent_password")
     ignore_ssl = _config_value("qbittorrent_ignore_ssl")
     assert host and host.startswith("https://"), f"qbittorrent_host is {host!r}"
+    assert user and password, "Mylar's qBittorrent credentials are missing"
     assert ignore_ssl == "True", f"qbittorrent_ignore_ssl is {ignore_ssl!r}"
 
-    output = _connect(host, ignore_ssl)
+    output = _connect(host, user, password, ignore_ssl)
     assert "STATUS True" in output, output
 
     # Verification on fails at the TLS handshake, before any login is sent,
     # so it costs nothing against qBittorrent's failed login ban.
-    output = _connect(host, "False")
+    output = _connect(host, user, password, "False")
     assert "STATUS False" in output, output
     assert "CERTIFICATE_VERIFY_FAILED" in output, output
