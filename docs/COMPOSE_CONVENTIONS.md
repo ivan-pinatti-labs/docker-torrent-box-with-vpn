@@ -199,8 +199,8 @@ Rules that are easy to get wrong:
   silently kept authenticating with the old password). When neither an env
   convention nor a shim will do, bind-mount a patched version of the
   specific cont-init.d script that reads the secret file directly, the same
-  idiom `patches/mylar/` already uses for source patches (see
-  `docs/MYLAR.md`). On SELinux hosts such a volume mount needs `:ro,z` like
+  idiom `patches/sabnzbd/` uses for the image's own s6 service script (see
+  `patches/README.md`). On SELinux hosts such a volume mount needs `:ro,z` like
   any other bind mount, not just the `x-podman.relabel: z` on the `secrets:`
   declaration.
 

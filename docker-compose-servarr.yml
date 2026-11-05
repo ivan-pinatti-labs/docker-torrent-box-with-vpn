@@ -418,7 +418,10 @@ services:
 
   mylar:
     <<: [*servarr-common, *limit-servarr]
-    image: mylar-pyopenssl:${MYLAR_VERSION}
+    # `local`, not ${MYLAR_VERSION}, for the same reason as lazylibrarian's
+    # above: a locally built image can only be given a tag, so the variable
+    # names the base alone and can carry a digest.
+    image: mylar-pyopenssl:local
     build:
       context: ./build/mylar
       args:
@@ -439,11 +442,6 @@ services:
       - ${CERTIFICATES_FOLDER}:/certs:ro,z
       - ${CONFIG_FOLDER}/mylar/config:/config:z
       - ${DATA_FOLDER}:/data${DATA_VOLUME_FLAGS}
-      - ./patches/mylar/lib/qbittorrent/client.py:/app/mylar3/lib/qbittorrent/client.py:ro,z
-      - ./patches/mylar/mylar/torrent/clients/qbittorrent.py:/app/mylar3/mylar/torrent/clients/qbittorrent.py:ro,z
-      - ./patches/mylar/mylar/config.py:/app/mylar3/mylar/config.py:ro,z
-      - ./patches/mylar/data/interfaces/default/config.html:/app/mylar3/data/interfaces/default/config.html:ro,z
-      - ./patches/mylar/mylar/webserve.py:/app/mylar3/mylar/webserve.py:ro,z
     healthcheck:
       <<: *healthcheck-defaults
       test: >

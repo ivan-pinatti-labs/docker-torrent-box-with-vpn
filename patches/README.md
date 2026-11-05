@@ -12,21 +12,16 @@ under those terms. See [NOTICE.md](../NOTICE.md).
 
 | Directory | Upstream project | Upstream license | Contents |
 | --- | --- | --- | --- |
-| `mylar/` | [MylarComics/mylar3](https://github.com/mylarcomics/mylar3) | GPL-3.0-or-later | Five complete source files, modified to add qBittorrent HTTPS support (self-signed certificate handling in the torrent client and its config UI) |
 | `sabnzbd/` | [linuxserver/docker-sabnzbd](https://github.com/linuxserver/docker-sabnzbd) | GPL-3.0 | `svc-sabnzbd/run`, the image's own s6 service script, changed to pass `--server` only when the configured host is missing, loopback or `::` (the image's own default). Upstream passes it unconditionally, and it overrides `host` in `sabnzbd.ini` and is persisted back into it, so `host = 0.0.0.0` cannot survive a start |
 
-`mylar/mylar/config.py` and `mylar/mylar/webserve.py` carry their original GPL
-headers. Do not strip them. Because these are complete GPL-3.0 files rather
-than small excerpts, anyone redistributing this repository is bound by GPL-3.0
-for the contents of `mylar/`, regardless of the Apache License 2.0 covering
-the rest.
+`mylar/` was here until Mylar v0.11.0 shipped its qBittorrent HTTPS fix
+(MylarComics/mylar3#23), and went with #106.
 
 ## Why these are vendored rather than forked
 
 Each patch tracks a specific upstream fix that is not yet in a release the
-stack can pin. `docs/MYLAR.md` records the upstream commit each Mylar patch
-corresponds to, so the whole directory can be deleted once a release carries
-the change. An issue labelled `upstream-blocked` tracks each removal.
+stack can pin, so the directory can be deleted once a release carries the
+change. An issue labelled `upstream-blocked` tracks each removal.
 
 ## Tooling
 
