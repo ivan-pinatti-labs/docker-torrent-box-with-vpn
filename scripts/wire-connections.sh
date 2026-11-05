@@ -46,11 +46,12 @@ set -euo pipefail
 #     config.yaml.example already ships ip/port/base_url/ssl plus the same
 #     placeholder API key sonarr/radarr's own config.xml.example uses, so
 #     they match by construction.
-#   - Mylar/LazyLibrarian's qBittorrent/SABnzbd connections: their
-#     config.ini.example files are pre-filled the same way, since both apps
-#     are configured from a flat file rather than a database. The one thing
-#     done for them here is moving those addresses when GLUETUN_SERVICES_IP
-#     is not .env.example's (ensure_ini_client_addresses).
+#   - Mylar/LazyLibrarian's qBittorrent/SABnzbd connections, and Mylar's
+#     jDownloader2 one: their config.ini.example files are pre-filled the
+#     same way, since both apps are configured from a flat file rather than
+#     a database. The one thing done for them here is moving those addresses
+#     when GLUETUN_SERVICES_IP is not .env.example's
+#     (ensure_ini_client_addresses).
 # See docs/CONNECTIONS.md for the full picture.
 #
 # Idempotent: every creation is preceded by a check for an existing entry, so
@@ -871,11 +872,11 @@ ensure_ini_client_addresses() {
     [[ "$current" == "$value" ]] || stale+=("$pair")
   done
   if [[ ${#stale[@]} -eq 0 ]]; then
-    echo "[${display_name}] qBittorrent/SABnzbd addresses already match GLUETUN_SERVICES_IP, skipping."
+    echo "[${display_name}] Download client addresses already match GLUETUN_SERVICES_IP, skipping."
     return 0
   fi
 
-  echo "[${display_name}] qBittorrent/SABnzbd addresses stale, correcting to ${GLUETUN_SERVICES_IP}..."
+  echo "[${display_name}] Download client addresses stale, correcting to ${GLUETUN_SERVICES_IP}..."
   local running=false
   if podman container inspect -f '{{.State.Running}}' "$(cname "$service")" 2>/dev/null | grep -q '^true$'; then
     running=true
@@ -2558,10 +2559,13 @@ echo " First-run setup, download client wiring, and Prowlarr registration"
 echo " (running concurrently; each line is prefixed with its own app name)"
 echo "======================================================================"
 # Before the jobs, not among them: these may restart Mylar and LazyLibrarian,
-# which wire_prowlarr_apps is about to check connectivity against.
+# which wire_prowlarr_apps is about to check connectivity against. 3128 is
+# jDownloader2's own API port inside gluetun's namespace, which nothing
+# publishes or remaps, so only its address can move.
 ensure_ini_client_addresses mylar Mylar "$MYLAR_INI" \
   "sab_host=https://${GLUETUN_SERVICES_IP}:${SABNZBD_HTTPS_PORT}/sabnzbd" \
-  "qbittorrent_host=https://${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}"
+  "qbittorrent_host=https://${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}" \
+  "jd2_url=http://${GLUETUN_SERVICES_IP}:3128"
 ensure_ini_client_addresses lazylibrarian LazyLibrarian "$LAZYLIBRARIAN_INI" \
   "sab_host=https://${GLUETUN_SERVICES_IP}" "sab_port=${SABNZBD_HTTPS_PORT}" \
   "qbittorrent_host=https://${GLUETUN_SERVICES_IP}" "qbittorrent_port=${QBITTORRENT_HTTPS_PORT}"

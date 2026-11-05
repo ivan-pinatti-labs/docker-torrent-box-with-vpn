@@ -170,6 +170,8 @@ api_key = key-mylar
 sab_host = https://10.0.0.2:8090/sabnzbd
 [qBittorrent]
 qbittorrent_host = https://10.0.0.2:8443
+[DDL]
+jd2_url = http://10.0.0.2:3128
 EOF
   put configs/qbittorrent/secrets/username.txt qbittorrent
   put configs/qbittorrent/secrets/password.txt qbittorrent-password # pragma: allowlist secret
@@ -423,8 +425,8 @@ check "a wired stack is left alone" 0 out \
   "[qBittorrent] Already trusts only nginx (10.0.0.5) as its reverse proxy, skipping." \
   "[qBittorrent] Already lets Readarr (10.0.0.13) in without a login, skipping." \
   "[readarr] qBittorrent download client already exists, skipping." \
-  "[Mylar] qBittorrent/SABnzbd addresses already match GLUETUN_SERVICES_IP, skipping." \
-  "[LazyLibrarian] qBittorrent/SABnzbd addresses already match GLUETUN_SERVICES_IP, skipping." \
+  "[Mylar] Download client addresses already match GLUETUN_SERVICES_IP, skipping." \
+  "[LazyLibrarian] Download client addresses already match GLUETUN_SERVICES_IP, skipping." \
   "[Cleanuparr] qBittorrent already connected, skipping." "[Cleanuparr] Sonarr already connected, skipping." \
   "[Cleanuparr] Whisparr already connected, skipping." "[Cleanuparr] Done."
 check "a wired Cleanuparr still has its stored secrets tested" 0 log \
@@ -480,6 +482,8 @@ api_key = key-mylar
 sab_host = https://172.28.0.10:8087/sabnzbd
 [qBittorrent]
 qbittorrent_host = https://10.0.0.2:8443
+[DDL]
+jd2_url = http://172.28.0.10:3128
 EOF
 put configs/lazylibrarian/config/config.ini <<'EOF'
 api_key = key-lazylibrarian
@@ -492,12 +496,12 @@ EOF
 stopped lazylibrarian
 run
 check "stale addresses are corrected" 0 out \
-  "[Mylar] qBittorrent/SABnzbd addresses stale, correcting to 10.0.0.2..." \
-  "[Mylar]   sab_host = https://10.0.0.2:8090/sabnzbd" "[Mylar] Updated." \
+  "[Mylar] Download client addresses stale, correcting to 10.0.0.2..." \
+  "[Mylar]   sab_host = https://10.0.0.2:8090/sabnzbd" "[Mylar]   jd2_url = http://10.0.0.2:3128" "[Mylar] Updated." \
   "[LazyLibrarian]   sab_host = https://10.0.0.2" "[LazyLibrarian]   sab_port = 8090" \
   "[LazyLibrarian]   qbittorrent_host = https://10.0.0.2" "[LazyLibrarian] Updated."
 check "Mylar's file holds the new address" 0 configs/mylar/config/mylar/config.ini \
-  "sab_host = https://10.0.0.2:8090/sabnzbd" "qbittorrent_host = https://10.0.0.2:8443"
+  "sab_host = https://10.0.0.2:8090/sabnzbd" "qbittorrent_host = https://10.0.0.2:8443" "jd2_url = http://10.0.0.2:3128"
 check "LazyLibrarian's file holds the new address" 0 configs/lazylibrarian/config/config.ini \
   "sab_host = https://10.0.0.2" "sab_port = 8090" "qbittorrent_host = https://10.0.0.2"
 refute "a key the file lacks is not added" configs/lazylibrarian/config/config.ini "qbittorrent_port"
@@ -518,8 +522,8 @@ check "missing containers are skipped" 0 out \
   "[Prowlarr] Container doesn't exist (PROWLARR_PROFILE=disabled), skipping." \
   "[Mylar] Container doesn't exist, skipping." "[qBittorrent] Container doesn't exist, skipping." \
   "[Cleanuparr] Container doesn't exist, skipping." \
-  "[Mylar] qBittorrent/SABnzbd addresses already match GLUETUN_SERVICES_IP, skipping."
-refute "a missing config is left to the seed" out "[LazyLibrarian] qBittorrent/SABnzbd"
+  "[Mylar] Download client addresses already match GLUETUN_SERVICES_IP, skipping."
+refute "a missing config is left to the seed" out "[LazyLibrarian] Download client"
 
 # Run D: most things fail.
 deployment

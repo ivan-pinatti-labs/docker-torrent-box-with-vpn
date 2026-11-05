@@ -16,7 +16,7 @@ Sonar grading against an older interpreter keeps passing, and a lock resolved
 for another version installs until a wheel is missing. This test is what
 makes a Python bump touch all of them together.
 
-The python image PODMAN_LIMITS_EXPORTER_VERSION in .env.example is not one of
+The python image PODMAN_LIMITS_EXPORTER_VERSION in versions.env is not one of
 them: it runs scripts/podman-limits-exporter.py inside the stack and moves with
 the observability group on its own schedule (docs/DEPENDENCY_UPDATES.md).
 """

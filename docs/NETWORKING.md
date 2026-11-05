@@ -473,6 +473,24 @@ upstream resolver is Cloudflare with malicious-domain blocking enabled.
    `configs/nginx/templates/default.conf.template`, so its error pages name it (see
    below). `tests/test_compose_config.py` fails for a `location` without one.
 
+### Changing the subnets
+
+`scripts/seed-configs.sh` copies each `.example` as it is, so the seeded app configs carry
+`.env.example`'s addresses. What reads them from `.env` afterwards:
+
+- Mylar and LazyLibrarian's download client addresses, Mylar's `jd2_url` included:
+  `make wire_connections` (see [CONNECTIONS.md](CONNECTIONS.md)).
+- Jellyfin's `KnownProxies`: `make configure_jellyfin_network`, which `bootstrap` runs.
+
+Two stay literal deliberately, and are edited by hand:
+
+- `FIREWALL_OUTBOUND_SUBNETS` in `configs/gluetun/.env`, seeded once by
+  `seed-gluetun-secret.sh`, when a bridge subnet moves outside what it allows:
+  `172.16.0.0/12`, Podman's `10.89.0.0/16` and `192.168.0.0/16`.
+- `ControlIP` in `configs/nzbget/config/nzbget.conf` whenever `GLUETUN_SERVICES_IP` changes,
+  even within the same subnet, since it is that exact address. nzbget is legacy and its
+  profile ships disabled.
+
 ### Error pages
 
 nginx resolves every app's name per request, which is how it starts without every app,
