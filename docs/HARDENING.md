@@ -248,8 +248,9 @@ not zero, so that failure mode cannot come back silently.
 
 `Security Reports` publishes trivy, checkov, gitleaks, hadolint and zizmor
 output to GitHub code scanning as SARIF. That is reporting, not a gate: the
-`Code Check` job already fails the pull request on anything the first four
-report, so the job is not a required check and nothing depends on it.
+`Code Check` job, which is required, already fails the pull request on
+anything the five of them report, so the job is not a required check and
+nothing depends on it.
 
 What it adds is history. Code scanning deduplicates a finding across runs,
 tracks when it appeared and when it went away, and lets one be dismissed with a
@@ -257,11 +258,30 @@ reason that sticks, none of which a job log does. Checks skipped inline with
 `#checkov:skip=` arrive carrying SARIF `suppressions` and show as dismissed
 rather than open.
 
-zizmor runs only there and gates nothing. It audits the workflows themselves
-for template injection, credential persistence and overly broad permissions.
-Its current findings are hardening opportunities rather than defects, and some
-need a policy decision (pinning actions to a hash rather than a tag), so they
-are reported without blocking a merge.
+zizmor audits the workflows themselves for template injection, dangerous
+triggers, credential persistence and overly broad permissions. It used to run
+only in `Security Reports` and gate nothing, while its findings waited on a
+policy decision that has since been made (every action is pinned by commit
+SHA). Its remaining findings were fixed or, where safe, ignored inline, and
+it became a pre-commit hook like the others (#116). It runs `--offline`, so
+it reads nothing but the workflow files and a new upstream advisory cannot
+fail a pull request that did not touch one.
+
+Whether `Security Reports` itself should gate was weighed in #116 and left
+as it is: every finding it can report is already a `Code Check` failure, so
+requiring it would add nothing but a second way for a slow upload to block a
+merge. Two things would change that answer. A scanner that runs only in
+`Security Reports` again, with no hook behind it, would need either a hook or
+the job made required. And a scanner reading something this repository does
+not own (an image, an online advisory feed), whose findings then appear on a
+schedule rather than with a change, would need the suppression files below to
+be deliberate before any gate depends on it.
+
+A finding that is safe here is suppressed beside the line it is about, with a
+comment saying why: `# zizmor: ignore[...]` in a workflow, `#checkov:skip=` in
+a Dockerfile or workflow, `.trivyignore.yaml` and `.gitleaksignore` for the
+other two. Those are the pressure valve for every gate above, so a
+suppression without its reason is a review finding.
 
 Pull requests from forks skip the job. A fork's token cannot write
 `security-events`, and their findings still block the merge through `Code

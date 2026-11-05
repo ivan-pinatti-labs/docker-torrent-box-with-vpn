@@ -49,6 +49,12 @@ reviews:
     #
     # The reviews this saves are on fixup commits, which is real, but a
     # review that silently stops is worse than one that costs a slot.
+    #
+    # Confirmed that 0 turns the pause off rather than falling back to 5
+    # (#115): #141 got automatic reviews on seven separate heads, the only
+    # manual request coming before the first, and no pull request has shown
+    # a pause notice since this was set. A pause would no longer be silent
+    # either way: `Review Verified` (#114) fails until the head is reviewed.
     auto_pause_after_reviewed_commits: 0
 
     # CodeRabbit is a GitHub App posting a check, not a workflow job, so it

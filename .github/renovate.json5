@@ -26,13 +26,13 @@
   //
   // The fourth customManager, for the `additional_dependencies` pins in
   // .pre-commit-config.yaml, is a different case and worth being exact about:
-  // the native `pre-commit` manager switched on below does read those two
-  // dependencies (`gitleaks-history`'s Go module, `checkov`'s pypi package,
-  // the only two hooks combining `additional_dependencies` with a
-  // `language:` it recognizes), from the very manifest file it already owns
-  // for `rev:`. It is disabled from acting on them by a packageRule further
-  // down instead, so the customManager stays the one manager that proposes
-  // updates for those two pins; see that packageRule's own comment for why
+  // the native `pre-commit` manager switched on below does read those three
+  // dependencies (`gitleaks-history`'s Go module, the `checkov` and `zizmor`
+  // pypi packages, the only three hooks combining `additional_dependencies`
+  // with a `language:` it recognizes), from the very manifest file it already
+  // owns for `rev:`. It is disabled from acting on them by a packageRule
+  // further down instead, so the customManager stays the one manager that
+  // proposes updates for those three pins; see that packageRule's own comment for why
   // leaving both live risked two managers proposing updates for the same
   // line.
   extends: ["config:recommended"],
@@ -96,14 +96,14 @@
   // it. The manager's own extractor walks every hook in the file, `repo: local`
   // included, and additionally parses `additional_dependencies` wherever a
   // hook declares `language: golang`, `python` or `node`, which describes
-  // exactly two hooks here: `gitleaks-history` (`language: golang`) and
-  // `checkov` (`language: python`). Both are already read by name below, by
-  // the customManager built for them, with the annotation as the sole
-  // authority for datasource and depName because the two dependencies do not
-  // share one; see that customManager's own comment for why a shared
-  // `datasourceTemplate` silently broke both lookups for weeks the one time
-  // this was tried. Leaving the native manager free to extract the same two
-  // dependencies a second way risks exactly that regressing, or two
+  // exactly three hooks here: `gitleaks-history` (`language: golang`),
+  // `checkov` and `zizmor` (`language: python`). All three are already read
+  // by name below, by the customManager built for them, with the annotation
+  // as the sole authority for datasource and depName because the
+  // dependencies do not share one; see that customManager's own comment for
+  // why a shared `datasourceTemplate` silently broke both lookups for weeks
+  // the one time this was tried. Leaving the native manager free to extract
+  // the same dependencies a second way risks exactly that regressing, or two
   // competing pull requests for the one line, so its output for those three
   // depTypes is disabled rather than merely left alongside the customManager.
   "pre-commit": {
@@ -633,8 +633,8 @@
     // same way.
     // Turns off the native pre-commit manager's own reading of
     // `additional_dependencies`, which the `"pre-commit"` block above
-    // explains: it covers exactly the two dependencies (gitleaks-history,
-    // checkov) the customManager below already reads by annotation, and
+    // explains: it covers exactly the three dependencies (gitleaks-history,
+    // checkov, zizmor) the customManager below already reads by annotation, and
     // leaving both live would risk two managers proposing updates for the
     // one line. `enabled: false` here stops this manager from ever offering
     // an update under these three depTypes; it does not stop it from
@@ -808,7 +808,7 @@
     {
       customType: "regex",
       // The `additional_dependencies` pins in .pre-commit-config.yaml: gitleaks
-      // (a Go module) and checkov (a pypi package). Neither is a container
+      // (a Go module), checkov and zizmor (pypi packages). None is a container
       // image, which is the whole reason this is its own manager.
       //
       // These used to sit alongside the image patterns below, under that
@@ -841,15 +841,13 @@
       //
       // The native `pre-commit` manager enabled above updates the `rev:` of a
       // hosted hook repository and nothing else, so these pins are invisible
-      // to it: the `additional_dependencies` entries (gitleaks, checkov) and
-      // the container image tags inside a `repo: local` hook's `entry:`
+      // to it: the container image tags inside a `repo: local` hook's `entry:`
       // (trivy, dotenv-linter, hadolint, lychee). Dependabot's own
       // pre-commit ecosystem had the identical blind spot before it managed
       // this file at all. Before the MegaLinter removal they were all
       // carried by one single pinned image, and Dependabot did keep that one
       // current. Without this manager they would silently rot, which for a
-      // secret scanner and two security scanners is the worst place to have
-      // a stale pin.
+      // security scanner like trivy is the worst place to have a stale pin.
       //
       // The image patterns tolerate lines between the annotation and the tag,
       // because `entry:` is a folded block scalar and a comment cannot live
