@@ -27,6 +27,7 @@ repo="${__scratch}/repo"
 bin="${__scratch}/bin"
 mkdir -p "${repo}/scripts" "${bin}"
 ln -s "${__script}" "${repo}/scripts/disk-status.sh"
+ln -s "$(dirname "${__script}")/lib" "${repo}/scripts/lib"
 for tool in dirname awk find sort head; do
   ln -s "$(command -v "${tool}")" "${bin}/${tool}"
 done

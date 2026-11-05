@@ -29,46 +29,10 @@ set -euo pipefail
 
 # One key from .env, else from versions.env (the pin .env holds back on
 # purpose, if there is one; see the header of versions.env), read the way
-# compose reads it: whitespace (a CRLF file's carriage return too) around the
-# key and the value dropped, the quotes around a quoted value dropped, a
-# " # comment" after an unquoted one dropped, and the last assignment in each
-# file winning, as it does for compose and make. The program is a here
-# document because kcov counts each line of a multi line quoted argument as
-# a command that never runs.
-env_value() {
-  # Only the files that are there: some awk builds stop at a missing one before END.
-  local files=() file
-  for file in .env versions.env; do
-    [[ -f "$file" ]] && files+=("$file")
-  done
-  [[ ${#files[@]} -gt 0 ]] || return 0
-  awk -F= -v key="$1" -f /dev/stdin "${files[@]}" <<'AWK'
-{
-  name = $1
-  gsub(/^[ \t\r]+|[ \t\r]+$/, "", name)
-}
-name == key {
-  sub(/^[^=]*=/, "")
-  gsub(/^[ \t\r]+|[ \t\r]+$/, "")
-  if (/^"/) {
-    sub(/^"/, ""); sub(/".*$/, "")
-  } else if (/^'/) {
-    sub(/^'/, ""); sub(/'.*$/, "")
-  } else {
-    sub(/[ \t]+#.*$/, "")
-  }
-  if (FILENAME == ".env") {
-    from_env = $0; in_env = 1
-  } else {
-    from_versions = $0; in_versions = 1
-  }
-}
-END {
-  if (in_env) print from_env
-  else if (in_versions) print from_versions
-}
-AWK
-}
+# compose reads it (scripts/lib/dotenv.sh), and empty when neither sets it.
+# shellcheck source=scripts/lib/dotenv.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/dotenv.sh"
+env_value() { dotenv_get "$1" .env versions.env || true; }
 
 # The folders compose mounts, read the way compose reads them: the
 # environment first, then .env. A moved DATA_FOLDER moves the library this

@@ -28,6 +28,7 @@ repo="${__scratch}/repo"
 bin="${__scratch}/bin"
 mkdir -p "${repo}/scripts" "${bin}"
 ln -s "${__script}" "${repo}/scripts/prune-nginx-cache.sh"
+ln -s "$(dirname "${__script}")/lib" "${repo}/scripts/lib"
 for tool in dirname awk grep find rm mkdir cat; do
   ln -s "$(command -v "${tool}")" "${bin}/${tool}"
 done

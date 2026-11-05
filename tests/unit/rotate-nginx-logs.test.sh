@@ -25,6 +25,7 @@ __failures=0
 
 mkdir "${__scratch}/scripts"
 ln -s "${__script}" "${__scratch}/scripts/rotate-nginx-logs.sh"
+ln -s "$(dirname "${__script}")/lib" "${__scratch}/scripts/lib"
 
 run() {
   __status=0

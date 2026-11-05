@@ -208,6 +208,7 @@ services:
     volumes:
       - ${LOGS_FOLDER}/nginx:/logs/nginx:z
       - ./scripts/rotate-nginx-logs.sh:/scripts/rotate-nginx-logs.sh:ro,z
+      - ./scripts/lib/dotenv.sh:/scripts/lib/dotenv.sh:ro,z
   prometheus:
     <<: *limit-telemetry
     image: docker.io/prom/prometheus:${PROMETHEUS_VERSION}

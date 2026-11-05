@@ -62,6 +62,7 @@ fresh_repo() {
   rm -rf "${__repo}" "${__state:?}"/* "${__fstab}" "${__bin}/ln.fail" "${__bin}/mktemp.fail"
   mkdir -p "${__repo}/scripts" "${__repo}/configs/storage" "${__repo}/data"
   ln -s "${__script}" "${__repo}/scripts/storage-mount.sh"
+  ln -s "$(dirname "${__script}")/lib" "${__repo}/scripts/lib"
   echo "username=someone" >"${__repo}/configs/storage/.smbcredentials"
   if [[ $# -gt 0 ]]; then
     printf '%s\n' "$@" >"${__repo}/.env"

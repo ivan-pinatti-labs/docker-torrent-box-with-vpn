@@ -19,26 +19,11 @@ FSTAB="${FSTAB:-/etc/fstab}"
 SUDO="${SUDO-sudo}"
 FSTAB_MARKER="# docker-torrent-box-with-vpn external storage"
 
-# Reads one key from .env, stripping surrounding quotes. Deliberately not a
-# `source`: .env defines UID, which is a readonly bash builtin, so sourcing it
-# fails outright. Same approach as scripts/disk-status.sh.
-env_value() {
-  local key="$1" value
-  [[ -f .env ]] || return 1
-  value="$(
-    awk -v key="$key" '
-      index($0, key "=") == 1 {
-        sub("^[^=]*=", "")
-        sub(/^"/, ""); sub(/"$/, "")
-        sub(/^'\''/, ""); sub(/'\''$/, "")
-        print
-        exit
-      }
-    ' .env
-  )"
-  [[ -n "$value" ]] || return 1
-  printf '%s' "$value"
-}
+# A value from .env, read the way compose reads it, failing when it is unset
+# or empty so the caller's default applies.
+# shellcheck source=scripts/lib/dotenv.sh
+. scripts/lib/dotenv.sh
+env_value() { dotenv_get -n "$1" .env; }
 
 # .env expresses several paths in terms of other variables, e.g.
 # STORAGE_MOUNTPOINT="${DATA_FOLDER}". env_value returns that literally, so a
