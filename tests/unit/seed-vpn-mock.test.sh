@@ -40,7 +40,7 @@ fresh_bin() {
   local bin="${__scratch}/bin"
   rm -rf "${bin}"
   mkdir -p "${bin}"
-  for tool in grep cut basename awk sed cat cp mkdir; do
+  for tool in grep cut basename dirname awk sed cat cp mkdir; do
     ln -s "$(command -v "${tool}")" "${bin}/${tool}"
   done
   for name in "$@"; do

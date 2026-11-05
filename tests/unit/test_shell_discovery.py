@@ -42,6 +42,7 @@ KNOWN_SCRIPTS = {
     "scripts/disk-status.sh",
     "scripts/enable-test-profiles.sh",
     "scripts/korsync-users.sh",
+    "scripts/lib/dotenv.sh",
     "scripts/podman-down.sh",
     "scripts/prune-nginx-cache.sh",
     "scripts/rotate-all.sh",

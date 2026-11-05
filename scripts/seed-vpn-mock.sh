@@ -17,9 +17,10 @@ readonly GLUETUN_ENV="configs/gluetun/.env"
 readonly PLACEHOLDER="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" # pragma: allowlist secret
 readonly PEER_CONF="configs/vpn_mock/config/peer1/peer1.conf"
 
-env_value() {
-  grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2-
-}
+# A value from .env, read the way compose reads it, failing when unset.
+# shellcheck source=scripts/lib/dotenv.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/dotenv.sh"
+env_value() { dotenv_get "$1" "$ENV_FILE"; }
 
 # The four shared networks are named ${COMPOSE_PROJECT_NAME}_<name>, so the
 # ones seeded here have to carry the name compose will later look them up

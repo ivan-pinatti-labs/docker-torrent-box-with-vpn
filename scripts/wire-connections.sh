@@ -63,31 +63,15 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 readonly REPO_ROOT
 cd "$REPO_ROOT"
 
-# Read a variable from .env without sourcing it (.env defines UID, which is a
-# readonly bash builtin, so `source .env` fails). A .env seeded before a key
-# existed takes the value make passed down, else .env.example's, the default
-# make and compose would apply. A key found nowhere is named before the script
-# stops: a bare grep miss under pipefail used to end it before its first line
-# of output (#299).
-env_value() {
-  local key="$1"
-  if grep -q "^${key}=" .env 2>/dev/null; then
-    grep -m1 "^${key}=" .env | cut -d= -f2-
-  elif [[ -n "${!key+set}" ]]; then
-    printf '%s\n' "${!key}"
-  elif grep -q "^${key}=" .env.example 2>/dev/null; then
-    grep -m1 "^${key}=" .env.example | cut -d= -f2-
-  else
-    echo "ERROR: ${key} is set in neither .env nor .env.example, nor in the environment." >&2
-    return 1
-  fi
-}
+# Read a variable from .env, else the environment, else .env.example (see
+# dotenv_lookup).
+# shellcheck source=scripts/lib/dotenv.sh
+. scripts/lib/dotenv.sh
+env_value() { dotenv_lookup "$1" .env; }
 
 # An image pin: the one .env holds back on purpose if there is one, else the
 # committed one in versions.env (see its header).
-pin_value() {
-  awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' .env versions.env
-}
+pin_value() { dotenv_get "$1" .env versions.env || true; }
 
 # Container names carry CONTAINER_PREFIX, which is empty for a deployment and
 # set in a second checkout's .env so its containers do not collide with the

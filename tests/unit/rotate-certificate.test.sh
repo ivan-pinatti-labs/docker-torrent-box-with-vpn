@@ -32,7 +32,7 @@ stub() {
 
 bin="${__scratch}/bin"
 mkdir -p "${bin}"
-for tool in dirname grep cut tr sed chmod; do
+for tool in dirname awk grep cut tr sed chmod; do
   ln -s "$(command -v "${tool}")" "${bin}/${tool}"
 done
 stub "${bin}" openssl "echo \"openssl \$*\" >>'${__scratch}/log'
@@ -63,6 +63,7 @@ fresh_repo() {
   rm -rf "${repo}" "${__scratch}/log" "${__scratch}/stuck"
   mkdir -p "${repo}/scripts" "${repo}/certs"
   ln -s "${__script}" "${repo}/scripts/rotate-certificate.sh"
+  ln -s "$(dirname "${__script}")/lib" "${repo}/scripts/lib"
   printf '%s\n' CERT_COUNTRY=US CERT_STATE=NY CERT_CITY=NYC CERT_ORGANIZATION=Org \
     CERT_OU=Unit CERT_FQDN=box.example CERT_PASSWORD=previous >"${repo}/certs/cert.conf"
   printf '%s\n' UID=1000 JELLYFIN_PROXY_DOMAIN=jf.example APP_PROXY_DOMAIN=apps.example LAN_IP=192.0.2.10 \

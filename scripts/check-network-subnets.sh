@@ -60,9 +60,10 @@ network_subnet() {
   done
 }
 
-env_value() {
-  grep -m1 "^${1}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' || true
-}
+# A value from .env, read the way compose reads it, and empty when unset.
+# shellcheck source=scripts/lib/dotenv.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/dotenv.sh"
+env_value() { dotenv_get "$1" "$ENV_FILE" || true; }
 
 project="$(env_value COMPOSE_PROJECT_NAME)"
 [[ -n "$project" ]] || project="$(basename "$PWD")"

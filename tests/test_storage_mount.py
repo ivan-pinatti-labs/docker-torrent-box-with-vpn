@@ -43,9 +43,13 @@ STORAGE_SELINUX_CONTEXT=system_u:object_r:container_file_t:s0
 
 @pytest.fixture
 def fake_repo(tmp_path):
-    """A throwaway repository root holding a copy of the script."""
-    (tmp_path / "scripts").mkdir()
+    """A throwaway repository root holding a copy of the script and the
+    .env reader it sources."""
+    (tmp_path / "scripts/lib").mkdir(parents=True)
     shutil.copy2(SCRIPT, tmp_path / "scripts/storage-mount.sh")
+    shutil.copy2(
+        REPO_ROOT / "scripts/lib/dotenv.sh", tmp_path / "scripts/lib/dotenv.sh"
+    )
     (tmp_path / "configs/storage").mkdir(parents=True)
     (tmp_path / "data").mkdir()
     return tmp_path

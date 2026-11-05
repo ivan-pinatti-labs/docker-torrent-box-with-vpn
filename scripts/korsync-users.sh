@@ -6,26 +6,11 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-env_value() {
-  local key="$1"
-  local value
-  [[ -f .env ]] || return 1
-  value="$(
-    awk -v key="$key" '
-      index($0, key "=") == 1 {
-        sub("^[^=]*=", "")
-        sub(/^"/, "")
-        sub(/"$/, "")
-        sub(/^'\''/, "")
-        sub(/'\''$/, "")
-        print
-        exit
-      }
-    ' .env
-  )"
-  [[ -n "$value" ]] || return 1
-  printf '%s' "$value"
-}
+# A value from .env, read the way compose reads it, failing when it is unset
+# or empty so the caller's default applies.
+# shellcheck source=scripts/lib/dotenv.sh
+. scripts/lib/dotenv.sh
+env_value() { dotenv_get -n "$1" .env; }
 
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-$(env_value CONTAINER_RUNTIME || printf 'podman')}"
 # Compose names the container ${CONTAINER_PREFIX}korsync. The prefix is empty

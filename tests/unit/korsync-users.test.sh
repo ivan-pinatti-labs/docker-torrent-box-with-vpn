@@ -28,6 +28,7 @@ repo="${__scratch}/repo"
 bin="${__scratch}/bin"
 mkdir -p "${repo}/scripts" "${bin}"
 ln -s "${__script}" "${repo}/scripts/korsync-users.sh"
+ln -s "$(dirname "${__script}")/lib" "${repo}/scripts/lib"
 for tool in dirname awk cat; do
   ln -s "$(command -v "${tool}")" "${bin}/${tool}"
 done
@@ -98,9 +99,9 @@ check "refuses an empty password" 1 out "password cannot be empty"
 
 # Compose names the container ${CONTAINER_PREFIX}korsync (#417).
 : >"${__scratch}/in"
-printf 'CONTAINER_PREFIX=live-\n' >>"${repo}/.env"
+printf 'CONTAINER_PREFIX=live- # local stack\n' >>"${repo}/.env"
 run list
-check "takes the container prefix from .env" 0 log "args exec live-korsync bun -e"
+check "takes the container prefix from .env, without its comment (#434)" 0 log "args exec live-korsync bun -e"
 run remove alice
 check "removes through the prefixed container" 0 log "args exec -e USERNAME live-korsync bun"
 __extra_env=(CONTAINER_PREFIX=dev-)

@@ -30,7 +30,7 @@ __failures=0
 
 tools="${__scratch}/tools"
 mkdir -p "${tools}"
-for tool in grep cut tr basename cat; do
+for tool in grep cut tr basename dirname awk cat; do
   ln -s "$(command -v "${tool}")" "${tools}/${tool}"
 done
 

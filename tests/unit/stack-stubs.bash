@@ -42,6 +42,7 @@ fresh_repo() {
   rm -rf "${__repo}" "${__state}"
   mkdir -p "${__repo}/scripts" "${__state}/rules" "${__state}/health"
   ln -s "${__script}" "${__repo}/scripts/${__script_name}"
+  ln -s "$(dirname "${__script}")/lib" "${__repo}/scripts/lib"
   ln -s "$(dirname "${__script}")/live_db.py" "${__repo}/scripts/live_db.py"
   printf '#!/usr/bin/env bash\necho "permissions.py $*" >>"%s/log"\n' "${__state}" >"${__repo}/scripts/permissions.py"
   chmod +x "${__repo}/scripts/permissions.py"
