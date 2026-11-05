@@ -48,7 +48,9 @@ check() {
     'BARE= # only a comment' \
     'EMPTY=' \
     'DOUBLE="a # b" # comment' \
-    'ESCAPED="./media \"archive\" \\ end\n" # comment' \
+    'ESCAPED="./media \"archive\" \\ tab\there\x" # comment' \
+    'NEWLINES="a\nb\rc"' \
+    "SINGLE_ESCAPED='./media\\'s \\\\ x' # comment" \
     "SINGLE='a \"b\" c' # comment" \
     'UNCLOSED="no end' \
     '  SPACED  =  padded value  ' \
@@ -66,7 +68,9 @@ check "a # with no whitespace before it stays" 0 'x#y' dotenv_get HASH .env
 check "a value that is only a comment is empty" 0 '' dotenv_get BARE .env
 check "an empty value is set" 0 '' dotenv_get EMPTY .env
 check "a double quoted value keeps its #, the comment after it goes" 0 'a # b' dotenv_get DOUBLE .env
-check "a double quoted value unescapes \\\" and \\\\, and keeps other escapes" 0 './media "archive" \ end\n' dotenv_get ESCAPED .env
+check "a double quoted value decodes its escapes and keeps unknown ones" 0 $'./media "archive" \\ tab\there\\x' dotenv_get ESCAPED .env
+check "a double quoted value decodes a newline and a carriage return" 0 $'a\nb\rc' dotenv_get NEWLINES .env
+check "a single quoted value decodes an escaped quote, not a backslash" 0 "./media's \\\\ x" dotenv_get SINGLE_ESCAPED .env
 check "a single quoted value keeps double quotes inside it" 0 'a "b" c' dotenv_get SINGLE .env
 check "an unclosed quote runs to the end of the line" 0 'no end' dotenv_get UNCLOSED .env
 check "whitespace around the key and the value is dropped" 0 'padded value' dotenv_get SPACED .env

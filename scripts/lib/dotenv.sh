@@ -10,20 +10,20 @@
 #   - whitespace around the key and the value is dropped, a CRLF file's
 #     carriage return too, and an `export ` before the key is ignored;
 #   - a value in double or single quotes is what is inside the first pair, and
-#     anything after the closing quote is dropped. Inside double quotes \" is
-#     a quote and \\ a backslash; single quotes take everything literally;
+#     anything after the closing quote is dropped. Inside double quotes \",
+#     \\, \n, \t and \r become the character they name; inside single quotes
+#     \' is a quote and \\ stays two backslashes. Any other backslash comes
+#     back as written;
 #   - an unquoted value ends where whitespace followed by # starts a comment.
 #     A # with nothing but the value before it stays part of the value;
 #   - within one file the last assignment wins, as it does for compose and
 #     make.
 # Nothing is expanded: a ${VAR} inside a value comes back as written.
 #
-# Two deliberate differences, both on lines compose would not use as they
-# are. Other backslash escapes inside double quotes (\n, \t) come back as
-# written rather than as the character. A quote that is never closed runs to
-# the end of the line rather than being an error: compose refuses such a
-# .env outright, so the stack is not running on a value a script could
-# disagree with, and the script still gets the most likely meaning.
+# One deliberate difference: a quote that is never closed runs to the end of
+# the line rather than being an error. Compose refuses such a .env outright,
+# so the stack is not running on a value a script could disagree with, and
+# the script still gets the most likely meaning.
 #
 # POSIX sh rather than bash, because scripts/rotate-nginx-logs.sh sources it
 # too, inside the log_rotator container. The awk program is a here document
@@ -89,28 +89,33 @@ _dotenv_read() {
   quote = value
   sub(/^[ \t]+/, "", quote)
   quote = substr(quote, 1, 1)
-  if (quote == "\"") {
+  if (quote == "\"" || quote == "'") {
     sub(/^[ \t]+/, "", value)
+    # The escapes each kind of quote decodes, and what each becomes.
+    split("", escape)
+    if (quote == "\"") {
+      escape["\""] = "\""
+      escape["\\"] = "\\"
+      escape["n"] = "\n"
+      escape["t"] = "\t"
+      escape["r"] = "\r"
+    } else {
+      escape["'"] = "'"
+      escape["\\"] = "\\\\"
+    }
     out = ""
     for (i = 2; i <= length(value); i++) {
       c = substr(value, i, 1)
-      if (c == "\\") {
-        next_c = substr(value, i + 1, 1)
-        if (next_c == "\"" || next_c == "\\") {
-          out = out next_c
-          i++
-          continue
-        }
+      next_c = substr(value, i + 1, 1)
+      if (c == "\\" && next_c in escape) {
+        out = out escape[next_c]
+        i++
+        continue
       }
-      if (c == "\"") break
+      if (c == quote) break
       out = out c
     }
     value = out
-  } else if (quote == "'") {
-    sub(/^[ \t]+/, "", value)
-    value = substr(value, 2)
-    end = index(value, quote)
-    if (end > 0) value = substr(value, 1, end - 1)
   } else {
     sub(/[ \t]+#.*$/, "", value)
     sub(/^[ \t]+/, "", value)
