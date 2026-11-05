@@ -513,6 +513,12 @@ pattern (another app rotating, another indexer wiring); see
 `running_containers`, `skip_if_not_running_fresh`, `SERVICES`, and so on)
 before writing your own container/HTTP helpers.
 
+A new compose service goes into `SERVICES`, which gives it the containers
+tier (running, healthy, no restart loop), or into `NOT_IN_SERVICES` beside
+it with what covers it instead. `tests/test_compose_config.py` fails for a
+service in neither, and for a `profile_var` that is not the profile compose
+reads.
+
 ---
 
 See also: [README.md](../README.md), [docs/MERGE_PIPELINE.md](MERGE_PIPELINE.md),
