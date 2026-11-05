@@ -69,28 +69,19 @@ FLOATING = {
     ),
 }
 
-# Annotated pins that must not carry a digest. Both are consumed twice, as the
-# tag of a locally built wrapper image (`image: lazylibrarian-calibre:${...}`
-# and `image: mylar-pyopenssl:${...}` in docker-compose-servarr.yml) and as the
-# BASE_VERSION build arg the wrapper's Dockerfile pulls its base with. A
-# reference carrying both a tag and a digest cannot name a locally built image:
-# `podman build -t probe:1.0@sha256:0000...` exits 125 with "Docker references
-# with both a tag and digest are currently not supported", and `podman tag`
-# refuses the same reference with "tag by digest not supported". A digest in
-# either value would therefore break the build rather than pin anything, which
-# is why pinDigests has to be allowed to leave these two alone.
-NO_DIGEST = {
-    # LAZYLIBRARIAN_VERSION was here until 2026-09-03 for exactly this reason,
-    # and came off by splitting the two uses: the wrapper's own image is now
-    # tagged `local` in docker-compose-servarr.yml, leaving the variable to
-    # name only the base, which can then carry a digest. MYLAR_VERSION has the
-    # identical shape and the same fix applies to it, once its patch clears
-    # and there is a reason to touch the file; see issue #106.
-    "MYLAR_VERSION": (
-        "also the BASE_VERSION build arg and the local wrapper image's own tag, "
-        "and a container runtime rejects a reference with both a tag and a digest"
-    ),
-}
+# Annotated pins that must not carry a digest, each with the reason, and each
+# backed by a `pinDigests: false` rule in renovate.json5. The case that has
+# come up is a variable used both as the tag of a locally built wrapper image
+# and as the BASE_VERSION build arg the wrapper's Dockerfile pulls its base
+# with. A reference carrying both a tag and a digest cannot name a locally
+# built image: `podman build -t probe:1.0@sha256:0000...` exits 125 with
+# "Docker references with both a tag and digest are currently not supported".
+#
+# Empty now. LAZYLIBRARIAN_VERSION (2026-09-03) and MYLAR_VERSION (#106) both
+# came off by splitting the two uses: each wrapper's own image is tagged
+# `local` in docker-compose-servarr.yml, leaving the variable to name only the
+# base, which can then carry a digest.
+NO_DIGEST: dict[str, str] = {}
 
 # Pins with no service in any compose file, so there is no image reference to
 # check an annotation's depName against. Kept as an explicit exemption rather
@@ -676,12 +667,12 @@ def _digest_exempt_dependency_names() -> set[str]:
 
 def test_patched_services_were_found():
     """Guard the parametrize below: an empty sweep would pass every case."""
-    assert len(_patched_service_variables()) >= 2, (
+    assert len(_patched_service_variables()) >= 1, (
         f"only {len(_patched_service_variables())} services mount a patch, and "
-        f"two do: sabnzbd and mylar. lazylibrarian and jdownloader2 dropped "
-        f"theirs on 2026-09-02 once the fixes reached their images (#109, #107); "
-        f"if this count falls further, check that was deliberate rather than a "
-        f"mount going missing"
+        f"one does: sabnzbd. lazylibrarian and jdownloader2 dropped theirs on "
+        f"2026-09-02 once the fixes reached their images (#109, #107), and mylar "
+        f"with #106; if this count falls further, check that was deliberate "
+        f"rather than a mount going missing"
     )
 
 

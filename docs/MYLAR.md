@@ -56,45 +56,15 @@ the very next request; with the rewrite in place both stay logged in.
 
 ## qBittorrent with self-signed certificates
 
-Mylar does not support self-signed certificates for qBittorrent connections out
-of the box. A patch adds an "Ignore SSL warnings" toggle to the Settings UI. The
-patched files are bind-mounted as read-only volumes in `docker-compose-servarr.yml`:
+Mylar talks to qBittorrent over HTTPS with this stack's self-signed
+certificate through the "Ignore SSL warnings" toggle in its qBittorrent
+settings (`qbittorrent_ignore_ssl` in `config.ini`), which the seeded
+`config.ini.example` turns on.
 
-```yaml
-- ./patches/mylar/lib/qbittorrent/client.py:/app/mylar3/lib/qbittorrent/client.py:ro,z
-- ./patches/mylar/mylar/torrent/clients/qbittorrent.py:/app/mylar3/mylar/torrent/clients/qbittorrent.py:ro,z
-- ./patches/mylar/mylar/config.py:/app/mylar3/mylar/config.py:ro,z
-- ./patches/mylar/data/interfaces/default/config.html:/app/mylar3/data/interfaces/default/config.html:ro,z
-- ./patches/mylar/mylar/webserve.py:/app/mylar3/mylar/webserve.py:ro,z
-```
-
-Enable the toggle in Mylar under Settings after start. The upstream pull request
-tracking this fix is [MylarComics/mylar3#23](https://github.com/MylarComics/mylar3/pull/23).
-
-### Status: merged upstream, waiting on a stable release
-
-PR #23 merged into mylar3's `nightly` branch on 2026-07-23 (commit
-`70ff41c3014e48daf88763134d976ef042244db`). Diffing our five patched files
-against `nightly`'s current tip confirms the qBittorrent SSL logic is
-byte-for-byte identical to what we carry, so the patch can be deleted
-outright once the base image contains it.
-
-`MYLAR_VERSION=latest` in `.env` pulls `linuxserver/mylar3:latest`, which
-tracks the `stable` branch, not `nightly`. As of 2026-07-24, `stable`'s HEAD
-(`70edba407fff224dba292f1e3b721215d26cd96e`, dated 2026-05-27) is 9 commits
-behind the fix, so it is not yet in a stable release.
-
-Before removing the patch, re-check whether `stable` has caught up:
-
-```shell
-gh api repos/MylarComics/mylar3/compare/stable...70ff41c3014e48daf88763134d976ef042244db
-```
-
-Once the fix commit is an ancestor of `stable` (`ahead_by: 0`), the next
-`linuxserver/mylar3` stable image release will contain it. At that point:
-
-1. Delete `patches/mylar/`.
-2. Remove the five bind-mounted volumes from `docker-compose-servarr.yml`.
-3. Delete this "Status" section, and the related lines in `README.md` known
-   issue #3, and close issue #106.
-4. Recreate the `mylar` container to pick up the base image's built-in fix.
+The toggle is Mylar's own since v0.11.0
+([MylarComics/mylar3#23](https://github.com/MylarComics/mylar3/pull/23)).
+Before that, this stack bind mounted five patched source files over the image
+to add it, and held `MYLAR_VERSION` at `v0.9.0-ls252` so an upstream bump could
+not land under them; both went with issue #106. The wrapper image above is
+still needed: the base image does not ship `pyOpenSSL`, which Mylar uses for
+that HTTPS connection.

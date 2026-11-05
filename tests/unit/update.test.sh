@@ -133,6 +133,7 @@ make backup-full
 git merge bbbbbbbbbb
 make migrate_versions
 make pull_docker_images
+make build_images
 make start
 make wire_connections"
 check "names the old commit" 0 "${out}" "Commit: aaaaaaa subject of aaaaaaa"
@@ -209,6 +210,11 @@ fresh
 touch "${__state}/fail-pull_docker_images"
 run
 check "stops when the image pull fails" 1 "${out}" "make pull_docker_images failed."
+
+fresh
+touch "${__state}/fail-build_images"
+run
+check "stops when the wrapper build fails" 1 "${out}" "make build_images failed."
 
 fresh
 touch "${__state}/fail-start"

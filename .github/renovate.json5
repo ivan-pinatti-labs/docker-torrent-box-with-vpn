@@ -316,47 +316,26 @@
       matchDatasources: ["docker"],
       addLabels: ["docker"],
     },
-    // The two base images this repository builds a wrapper over, held out of
-    // pinDigests. Each is consumed twice from one variable: as the base the
-    // wrapper is built on (`BASE_VERSION` in build/lazylibrarian/Dockerfile and
-    // build/mylar/Dockerfile) and as the tag of the locally built result
-    // (`image: lazylibrarian-calibre:${LAZYLIBRARIAN_VERSION}` and
-    // `image: mylar-pyopenssl:${MYLAR_VERSION}` in
-    // docker-compose-servarr.yml). A digest is legal in the first position and
-    // not in the second, because an image being built can only be given a tag:
-    // `podman build -t name:tag@sha256:...` is not a valid reference, so a
-    // digest appended to either variable stops the wrapper building at all.
+    // The two base images this repository builds a wrapper over,
+    // docker.io/linuxserver/lazylibrarian and docker.io/linuxserver/mylar3,
+    // used to be held out of pinDigests here. Each variable was both the base
+    // the wrapper is built on and the tag of the locally built result, and an
+    // image being built can only be given a tag. Both wrappers are now tagged
+    // `local` in docker-compose-servarr.yml instead (lazylibrarian on
+    // 2026-09-03, mylar with #106), so each variable names only its base and
+    // carries a digest like every other pin.
     //
-    // Not hypothetical for lazylibrarian. It has carried an annotation with no
-    // digest since the other pins got theirs, with pinDigests on globally, so
-    // the pinDigest update that breaks it was already pending; an earlier note
-    // read that gap the other way round and asked for the digest to be added. mylar
-    // would have joined it the moment its annotation landed.
-    //
-    // Kept separate from the hold below, which switches both of these off for a
-    // different and temporary reason. This constraint is permanent: it is a
-    // property of building a wrapper image, not of the patches those two happen
-    // to carry today, so it has to outlive the hold rather than be folded into
-    // it. tests/test_renovate_pins.py carries the matching exemption, so the
-    // missing digest cannot be mistaken for an oversight.
-    {
-      matchPackageNames: [
-        "docker.io/linuxserver/mylar3",
-      ],
-      pinDigests: false,
-    },
     // The images whose containers run a file bind mounted out of patches/,
     // held at a fixed version until the patch that made them special is gone.
-    // sabnzbd and mylar today, matching the `./patches/` volumes in
-    // docker-compose-nzb.yml and docker-compose-servarr.yml. lazylibrarian is
-    // on the list without a patch; see the note further down for why.
+    // sabnzbd today, matching the `./patches/` volume in
+    // docker-compose-nzb.yml.
     //
     // A patch shadows one file inside the image, and nothing in this repository
     // can tell whether the shadowing copy still matches the file it replaces.
     // An unattended bump therefore pairs patched old source with new upstream
     // code, and the result starts, reports healthy and passes the suite while
-    // being subtly wrong. mylar makes the size of that concrete: its first
-    // offered bump is v0.9.0-ls252 to v0.11.0-ls268, which `loose` versioning
+    // being subtly wrong. mylar made the size of that concrete: its first
+    // offered bump was v0.9.0-ls252 to v0.11.0-ls268, which `loose` versioning
     // calls a minor because both share major 0, so it would have merged
     // unattended across two upstream minor releases with five patched files
     // mounted over it.
@@ -368,9 +347,8 @@
     //
     // The alternative was chasing each upstream release with a fresh patch,
     // which is work with no end date and no test that would catch getting it
-    // wrong. Each patch has an open issue for dropping it (#106 mylar, #108
-    // sabnzbd), and dropping one is what unfreezes its pin. Until then the pin
-    // is
+    // wrong. Each patch has an open issue for dropping it (#108 sabnzbd), and
+    // dropping one is what unfreezes its pin. Until then the pin is
     // deliberately fixed rather than accidentally frozen, which is the whole
     // distinction the rest of this file is about, and
     // tests/test_renovate_pins.py fails when a service grows a patch mount
@@ -396,10 +374,14 @@
     // Renovate refreshes the digest as the tag moves and never has to rank
     // anything. That needed the variable to stop doubling as the wrapper's
     // own image tag first; see docker-compose-servarr.yml.
+    //
+    // mylar came off this list with #106. Mylar v0.11.0 carries the
+    // qBittorrent HTTPS fix its five patched files added, so the patch went,
+    // and the pin moved to v0.11.0 with a digest. Its tags order under
+    // `loose` versioning, so it needs nothing lazylibrarian did.
     {
       matchPackageNames: [
         "docker.io/linuxserver/sabnzbd",
-        "docker.io/linuxserver/mylar3",
       ],
       enabled: false,
     },

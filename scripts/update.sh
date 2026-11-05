@@ -14,8 +14,9 @@ set -euo pipefail
 #   5. make migrate_versions, so pins an older .env still carries stop
 #      overriding versions.env (holds stay, see versions.env)
 #   6. make pull_docker_images
-#   7. make start
-#   8. make wire_connections
+#   7. make build_images, for the LazyLibrarian and Mylar wrappers
+#   8. make start
+#   9. make wire_connections
 #
 # and then prints the old and new commit, the images that changed, the backup
 # and the commands that roll all of it back. Every make step is a new make,
@@ -111,6 +112,11 @@ step "make migrate_versions"
 
 step "make pull_docker_images"
 "$MAKE_CMD" --no-print-directory pull_docker_images || fail "make pull_docker_images failed."
+
+# The two wrappers built here are tagged `local`, not with their base's
+# version, so `make start` would reuse the old build after a base bump.
+step "make build_images"
+"$MAKE_CMD" --no-print-directory build_images || fail "make build_images failed."
 
 step "make start"
 "$MAKE_CMD" --no-print-directory start || fail "make start failed."

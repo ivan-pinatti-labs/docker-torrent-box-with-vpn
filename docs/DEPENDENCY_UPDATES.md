@@ -392,14 +392,15 @@ actually parse are not the same set.
 
 ## Images held at a fixed version
 
-Four containers run a file bind mounted out of `patches/`: sabnzbd, lazylibrarian, mylar, and
-jdownloader-2. Their images are held at a fixed version in `.github/renovate.json5`, with
-`enabled: false`, until the patch that made each one special is gone.
+Four containers ran a file bind mounted out of `patches/` when this hold was set up: sabnzbd,
+lazylibrarian, mylar, and jdownloader-2. Their images were held at a fixed version in
+`.github/renovate.json5`, with `enabled: false`, until the patch that made each one special was
+gone; sabnzbd's still is.
 
 The reason is that a patch shadows one file inside an image, and nothing in this repository can
 tell whether the shadowing copy still matches the file it replaces. An unattended bump pairs
 patched old source with new upstream code, and the result starts, reports healthy, and passes the
-suite while being subtly wrong. mylar shows the scale of it: its first offered bump is
+suite while being subtly wrong. mylar showed the scale of it: its first offered bump was
 `v0.9.0-ls252` to `v0.11.0-ls268`, which `loose` versioning calls a minor because both share
 major `0`, so it would have merged unattended across two upstream minor releases with five
 patched files mounted over it. The alternative to holding the pin is re-deriving each patch
@@ -415,6 +416,8 @@ Two of the four patches are gone as of 2026-09-02, both because the fix reached 
 argument, which the pinned image already carried (#107), and `patches/lazylibrarian/` went when
 upstream !1832 reached the image, which needed a pin bump to collect (#109). jdownloader-2 came
 off the hold with its patch; lazylibrarian did not, for the reason under "Remaining gaps" below.
+`patches/mylar/` went with #106, once Mylar v0.11.0 shipped the qBittorrent HTTPS fix it
+carried, and mylar came off the hold with it, leaving sabnzbd the only one held.
 
 Worth being explicit about the cost: sabnzbd and jdownloader-2 were both flowing, and merging
 unattended, before this. It costs less than it looks like, because, as the section above says,
@@ -451,10 +454,10 @@ BusyBox is a far smaller surface than our Python against a new interpreter.
 
 `tests/test_renovate_pins.py` closes the loop in the other direction: it derives the patched set
 from the `./patches/` volumes in the compose files rather than from a list, so a service that
-grows a patch mount whose image is not held fails the suite. Each remaining patch has an open
-issue for dropping it (#106 mylar, #108 sabnzbd), and dropping one is what unfreezes its pin, as
-issues #107 and #109 already showed. That is the distinction this whole page turns on: these
-pins are deliberately fixed, not accidentally frozen.
+grows a patch mount whose image is not held fails the suite. The remaining patch has an open
+issue for dropping it (#108 sabnzbd), and dropping it is what unfreezes its pin, as the issues
+for the other three (#106, #107 and #109) already showed. That is the distinction this whole
+page turns on: these pins are deliberately fixed, not accidentally frozen.
 
 ## Images outside Docker Hub
 
@@ -544,19 +547,14 @@ build back, as [docs/MANUAL_IMAGE_RELEASES.md](MANUAL_IMAGE_RELEASES.md) describ
 still has to pass before one merges, and this pin has no ordering to fall back on if a future
 build is bad again.
 
-`MYLAR_VERSION` carries no digest, and cannot as it stands. It is read twice out of one
-variable: as the base image the wrapper in `build/` is built on, and as the tag of the locally
-built result. A digest is legal in the first position and not in the second, because an image
-being built can only be given a tag, so `pinDigests` is turned off for it in
-`.github/renovate.json5` and the test exempts it by name. An earlier note recorded this the
-other way round, asking for a digest to be added; adding one would have stopped the wrapper
-building.
-
-`LAZYLIBRARIAN_VERSION` was the other half of that pair until 2026-09-03, and it is the worked
-example of the way out. The wrapper's own image is now tagged `local` rather than with the
-version, which leaves the variable naming only the base, which can then carry a digest. **The
-same fix applies to mylar** whenever its patch clears and there is reason to touch that file;
-issue #106 records it.
+`MYLAR_VERSION` and `LAZYLIBRARIAN_VERSION` both used to carry no digest, and could not. Each
+was read twice out of one variable: as the base image the wrapper in `build/` is built on, and
+as the tag of the locally built result. A digest is legal in the first position and not in the
+second, because an image being built can only be given a tag, so `pinDigests` was turned off
+for both. The way out was the same for both: the wrapper's own image is tagged `local` rather
+than with the version, which leaves the variable naming only the base, which can then carry a
+digest. LazyLibrarian moved on 2026-09-03; Mylar moved with issue #106, once Mylar v0.11.0
+shipped the qBittorrent HTTPS fix its patch had carried, which also took it off the patch hold.
 
 Splitting it also settled issue #119, which was the harder half. The tag is a composite:
 `82aad29e-ls342` is the upstream LazyLibrarian commit and linuxserver's own build revision,
