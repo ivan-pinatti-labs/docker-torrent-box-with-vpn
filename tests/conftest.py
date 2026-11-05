@@ -208,6 +208,67 @@ SERVICES = {
         "api_key_source": None,
         "password_var": None,
     },
+    # From here to the observability stack, and the exporters and collectors
+    # after it, entries carry only their profile: what they get is the
+    # containers tier (running, healthy, no restart loop), which their compose
+    # healthchecks give meaning to. Their own behaviour is tested elsewhere
+    # (test_mylar.py, test_jdownloader2.py, test_homepage.py, the korsync cases
+    # in test_connectivity.py) or not at all, but an image bump that leaves one
+    # crash looping or unhealthy fails here (#122).
+    "lazylibrarian": {
+        "profile_var": "LAZYLIBRARIAN_PROFILE",
+        "api_health_path": None,
+        "api_key_source": None,
+        "password_var": None,
+    },
+    "mylar": {
+        "profile_var": "MYLAR_PROFILE",
+        "api_health_path": None,
+        "api_key_source": None,
+        "password_var": None,
+    },
+    "nzbhydra2": {
+        "profile_var": "NZBHYDRA2_PROFILE",
+        "api_health_path": None,
+        "api_key_source": None,
+        "password_var": None,
+    },
+    "jdownloader2": {
+        "profile_var": "JDOWNLOADER2_PROFILE",
+        "api_health_path": None,
+        "api_key_source": None,
+        "password_var": None,
+    },
+    "audiobookshelf": {
+        "profile_var": "AUDIOBOOKSHELF_PROFILE",
+        "api_health_path": None,
+        "api_key_source": None,
+        "password_var": None,
+    },
+    "calibre": {
+        "profile_var": "CALIBRE_PROFILE",
+        "api_health_path": None,
+        "api_key_source": None,
+        "password_var": None,
+    },
+    "calibre-web": {
+        "profile_var": "CALIBREWEB_PROFILE",
+        "api_health_path": None,
+        "api_key_source": None,
+        "password_var": None,
+    },
+    "korsync": {
+        "profile_var": "KORSYNC_PROFILE",
+        "api_health_path": None,
+        "api_key_source": None,
+        "password_var": None,
+    },
+    "homepage": {
+        "profile_var": "HOMEPAGE_PROFILE",
+        "api_health_path": None,
+        "api_key_source": None,
+        "password_var": None,
+    },
     # Observability stack
     "grafana": {
         "profile_var": "GRAFANA_PROFILE",
@@ -260,6 +321,47 @@ SERVICES = {
         "api_key_source": None,
         "password_var": None,
     },
+    "nginx_exporter": {
+        "profile_var": "NGINX_EXPORTER_PROFILE",
+        "api_health_path": None,
+        "api_key_source": None,
+        "password_var": None,
+    },
+    "cadvisor": {
+        "profile_var": "CADVISOR_PROFILE",
+        "api_health_path": None,
+        "api_key_source": None,
+        "password_var": None,
+    },
+    "alloy": {
+        "profile_var": "ALLOY_PROFILE",
+        "api_health_path": None,
+        "api_key_source": None,
+        "password_var": None,
+    },
+    "loki": {
+        "profile_var": "LOKI_PROFILE",
+        "api_health_path": None,
+        "api_key_source": None,
+        "password_var": None,
+    },
+    # The one service with no compose healthcheck, so it gets the running and
+    # restart loop checks only.
+    "log_rotator": {
+        "profile_var": "LOG_ROTATOR_PROFILE",
+        "api_health_path": None,
+        "api_key_source": None,
+        "password_var": None,
+    },
+}
+
+# Compose services deliberately left out of SERVICES, each covered another
+# way, so an entry would duplicate rather than close a gap (#122).
+# test_compose_config.py fails for a compose service in neither.
+NOT_IN_SERVICES = {
+    "gluetun": "the vpn and killswitch tiers, and test_vpn_container_running",
+    "vpn_mock": "the killswitch tier, whose tunnel ends at it in CI",
+    "nginx": "every proxy_path case, which reaches its service through it",
 }
 
 # Services that run in the Gluetun network namespace by default.

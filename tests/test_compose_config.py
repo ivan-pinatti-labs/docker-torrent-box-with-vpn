@@ -8,8 +8,10 @@ from dotenv import dotenv_values
 
 from conftest import (
     NGINX_TEMPLATE,
+    NOT_IN_SERVICES,
     QBITTORRENT_EXCLUDED_FILE_NAMES,
     QBITTORRENT_QUEUEING,
+    SERVICES,
     cleanuparr_failed_import_patterns,
     nginx_map,
 )
@@ -685,3 +687,35 @@ def test_app_proxy_domain_defaults_to_a_name_that_never_resolves():
     assert _env_example("APP_PROXY_DOMAIN") == "invalid"
     tests = dotenv_values(REPO_ROOT / ".env.tests")
     assert tests["APP_PROXY_DOMAIN"] == "apps.test"
+
+
+def _compose_profiles() -> dict[str, list[str]]:
+    """Every compose service in the stack, with the profiles it declares."""
+    services = {}
+    for path in sorted(REPO_ROOT.glob("docker-compose*.yml")):
+        compose = yaml.safe_load(path.read_text())
+        for name, definition in (compose.get("services") or {}).items():
+            services[name] = definition.get("profiles", [])
+    return services
+
+
+def test_every_compose_service_is_registered_or_excused():
+    """SERVICES parametrizes the containers tier, so a service missing from it
+    is never checked for running, healthy or crash looping. Seventeen went
+    unnoticed that way, korsync among them, which Renovate bumps on its own
+    (#122). A new service goes into SERVICES, or into NOT_IN_SERVICES with
+    what covers it instead.
+    """
+    compose = set(_compose_profiles())
+    assert not SERVICES.keys() & NOT_IN_SERVICES.keys()
+    assert all(reason.strip() for reason in NOT_IN_SERVICES.values())
+    assert sorted(compose - SERVICES.keys() - NOT_IN_SERVICES.keys()) == []
+    assert sorted((SERVICES.keys() | NOT_IN_SERVICES.keys()) - compose) == []
+
+
+@pytest.mark.parametrize("service", sorted(SERVICES))
+def test_registered_profile_is_the_one_compose_reads(service):
+    """is_enabled reads profile_var, so a wrong name skips the service as
+    disabled, quietly, in every tier."""
+    profile_var = SERVICES[service]["profile_var"]
+    assert _compose_profiles()[service] == [f"${{{profile_var}}}"]
