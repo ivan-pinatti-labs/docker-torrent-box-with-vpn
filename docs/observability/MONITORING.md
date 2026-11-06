@@ -8,7 +8,7 @@ Grafana Alloy to Loki, and surfaces everything in Grafana.
 | Service                | Role                                                                                    | Profile                          |
 | ---------------------- | --------------------------------------------------------------------------------------- | -------------------------------- |
 | podman_exporter        | Per-container metrics from the Podman socket                                            | `PODMAN_EXPORTER_PROFILE`        |
-| podman_limits_exporter | Per-container CPU/memory limits from the Podman socket                                  | `PODMAN_LIMITS_EXPORTER_PROFILE` |
+| podman_limits_exporter | Per-container CPU and PIDs limits, and swap usage and limit from each cgroup            | `PODMAN_LIMITS_EXPORTER_PROFILE` |
 | node_exporter          | Host OS and hardware metrics                                                            | `NODE_EXPORTER_PROFILE`          |
 | nginx_exporter         | Nginx stub_status metrics                                                               | `NGINX_EXPORTER_PROFILE`         |
 | qbittorrent_exporter   | qBittorrent-specific metrics (free disk, etc.)                                          | `QBITTORRENT_EXPORTER_PROFILE`   |
@@ -32,11 +32,22 @@ Grafana Alloy to Loki, and surfaces everything in Grafana.
 
 `podman_limits_exporter` does not use a published exporter image. It runs
 `scripts/podman-limits-exporter.py` inside a stock Python container, with the
-script and the rootless Podman socket both mounted read-only. The script
-queries the libpod API and exposes two gauges on port `9889`:
+script, the rootless Podman socket and the host's `/sys/fs/cgroup` all mounted
+read-only. The script queries the libpod API and exposes four gauges on port `9889`:
 
 - `podman_container_cpu_limit_vcpus`: configured CPU limit in vCPUs (`0` means unlimited).
 - `podman_container_pids_limit`: configured `pids_limit` (`0` means unlimited or unset).
+- `podman_container_swap_usage_bytes` and `podman_container_swap_limit_bytes`: swap in
+  use and its limit, read from `memory.swap.current` and `memory.swap.max` in the
+  container's cgroup (cgroup v2), found from the `CgroupPath` Podman reports. Neither the
+  Podman API nor cAdvisor reports swap per container under rootless Podman. The limit is
+  absent when unlimited; this stack sets no `memswap_limit`, so it equals the memory
+  limit (see [CONTAINER_LIMITS.md](../CONTAINER_LIMITS.md)).
+
+The whole cgroup tree is mounted, rather than only the user's own containers, because
+the path differs by cgroup manager: systemd puts containers under the user's
+`user@<uid>.service`, cgroupfs (as in CI's nested runner) under `/user`. The mount is
+read only and the script reads the two swap files of the containers Podman lists.
 
 Responses are cached for 30 seconds so Prometheus scrapes do not hammer the
 Podman socket.

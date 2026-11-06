@@ -121,6 +121,9 @@ services:
     volumes:
       - /run/user/${UID}/podman/podman.sock:/var/run/podman/podman.sock:ro
       - ${CONFIG_FOLDER}/../scripts/podman-limits-exporter.py:/exporter.py:ro
+      # Per-container swap, which neither the Podman API nor cAdvisor reports
+      # under rootless Podman, read from each container's cgroup (#459).
+      - /sys/fs/cgroup:/host-cgroup:ro
     healthcheck:
       <<: *healthcheck-defaults
       test: wget -q -O /dev/null http://127.0.0.1:9889/metrics || exit 1

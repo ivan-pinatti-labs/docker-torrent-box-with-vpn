@@ -310,6 +310,39 @@ def test_podman_exporter_cpu_metrics(running_containers, prometheus_url):
     assert data["data"]["result"], "No CPU metrics from podman_exporter"
 
 
+def test_podman_limits_exporter_reports_swap(running_containers, prometheus_url):
+    """Neither the Podman API nor cAdvisor (root cgroup only under rootless
+    Podman) reports swap per container, so the exporter reads it from each
+    container's cgroup, under the host's /sys/fs/cgroup mounted read only, and
+    the backends dashboard's Swap panels query it (#459). CI's nested runner
+    uses cgroupfs (CgroupPath /user/<id>); a desktop host uses systemd."""
+    if not is_enabled("podman_limits_exporter"):
+        pytest.skip("PODMAN_LIMITS_EXPORTER_PROFILE is disabled")
+    skip_if_not_running("podman_limits_exporter", running_containers)
+    skip_if_not_running("sonarr", running_containers)
+    if not is_enabled("prometheus"):
+        pytest.skip("prometheus profile is disabled")
+    _skip_if_no_cgroups()
+
+    for metric in (
+        "podman_container_swap_usage_bytes",
+        "podman_container_swap_limit_bytes",
+    ):
+        data = _prom_get(
+            prometheus_url, "/query", {"query": f'{metric}{{name=~".*sonarr"}}'}
+        )
+        assert data["status"] == "success"
+        assert data["data"]["result"], f"No {metric} for sonarr"
+    # The stack sets no memswap_limit, so the limit is the memory limit again
+    # (docs/CONTAINER_LIMITS.md): above zero, never unset.
+    limit = _prom_get(
+        prometheus_url,
+        "/query",
+        {"query": 'podman_container_swap_limit_bytes{name=~".*sonarr"}'},
+    )["data"]["result"][0]["value"][1]
+    assert float(limit) > 0
+
+
 # podman_limits_exporter is the one exporter here whose application this
 # repository wrote: the image is a bare Python interpreter and
 # scripts/podman-limits-exporter.py is bind mounted in as /exporter.py. Its pin

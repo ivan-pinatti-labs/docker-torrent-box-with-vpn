@@ -100,6 +100,65 @@ def test_build_metrics(exporter, podman_api):
     assert "# TYPE podman_container_pids_limit gauge" in lines
 
 
+USER_SERVICE = "/user.slice/user-1000.slice/user@1000.service"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        # systemd, as on a desktop host
+        f"{USER_SERVICE}/user.slice/libpod-aaaa.scope/container",
+        # cgroupfs, as in CI's nested runner
+        "/user/3d6eaf152c7d",
+    ],
+)
+def test_cgroup_dir_maps_the_path_under_the_mounted_root(exporter, path):
+    expected = exporter.CGROUP_ROOT.joinpath(*path.strip("/").split("/"))
+    assert exporter.cgroup_dir(path) == expected
+
+
+def test_cgroup_dir_refuses_no_path_and_a_way_out(exporter):
+    assert exporter.cgroup_dir("") is None
+    assert exporter.cgroup_dir("/user/../../etc") is None
+
+
+def test_read_swap(exporter, tmp_path):
+    (tmp_path / "memory.swap.current").write_text("4096\n")
+    (tmp_path / "memory.swap.max").write_text("1073741824\n")
+    assert exporter.read_swap(tmp_path) == (4096, 1073741824)
+    (tmp_path / "memory.swap.max").write_text("max\n")
+    assert exporter.read_swap(tmp_path) == (4096, None)
+    (tmp_path / "memory.swap.current").unlink()
+    assert exporter.read_swap(tmp_path) == (None, None)
+    assert exporter.read_swap(None) == (None, None)
+
+
+def test_build_metrics_reads_swap_from_the_cgroup(
+    exporter, podman_api, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(exporter, "CGROUP_ROOT", tmp_path)
+    scope = tmp_path / "user" / "aaaa"
+    scope.mkdir(parents=True)
+    (scope / "memory.swap.current").write_text("2048\n")
+    (scope / "memory.swap.max").write_text("536870912\n")
+    podman_api["/v4.0.0/libpod/containers/json?all=false"] = [
+        {"Id": "aaaa", "Names": ["sonarr"]},
+        {"Id": "bbbb", "Names": ["gone"]},
+    ]
+    podman_api["/v4.0.0/libpod/containers/aaaa/json"] = {
+        "State": {"CgroupPath": "/user/aaaa"}
+    }
+    # Its cgroup is not there (stopped between the listing and the read).
+    podman_api["/v4.0.0/libpod/containers/bbbb/json"] = {
+        "State": {"CgroupPath": "/user/bbbb"}
+    }
+    lines = exporter.build_metrics().decode().splitlines()
+    assert 'podman_container_swap_usage_bytes{name="sonarr"} 2048' in lines
+    assert 'podman_container_swap_limit_bytes{name="sonarr"} 536870912' in lines
+    assert not [line for line in lines if 'name="gone"' in line and "swap" in line]
+    assert "# TYPE podman_container_swap_usage_bytes gauge" in lines
+
+
 def test_get_metrics_caches_for_the_ttl(exporter, monkeypatch):
     calls = []
 

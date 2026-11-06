@@ -6175,7 +6175,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*gluetun\"} - podman_container_mem_usage_bytes{name=~\".*gluetun\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*gluetun\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -6184,7 +6184,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*gluetun\"} - podman_container_mem_limit_bytes{name=~\".*gluetun\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*gluetun\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -6715,7 +6715,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*jdownloader2\"} - podman_container_mem_usage_bytes{name=~\".*jdownloader2\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*jdownloader2\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -6724,7 +6724,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*jdownloader2\"} - podman_container_mem_limit_bytes{name=~\".*jdownloader2\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*jdownloader2\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -7252,7 +7252,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*qbittorrent\"} - podman_container_mem_usage_bytes{name=~\".*qbittorrent\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*qbittorrent\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -7261,7 +7261,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*qbittorrent\"} - podman_container_mem_limit_bytes{name=~\".*qbittorrent\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*qbittorrent\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -7789,7 +7789,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*sabnzbd\"} - podman_container_mem_usage_bytes{name=~\".*sabnzbd\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*sabnzbd\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -7798,7 +7798,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*sabnzbd\"} - podman_container_mem_limit_bytes{name=~\".*sabnzbd\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*sabnzbd\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -8329,7 +8329,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*bazarr\"} - podman_container_mem_usage_bytes{name=~\".*bazarr\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*bazarr\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -8338,7 +8338,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*bazarr\"} - podman_container_mem_limit_bytes{name=~\".*bazarr\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*bazarr\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -8855,7 +8855,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*flaresolverr\"} - podman_container_mem_usage_bytes{name=~\".*flaresolverr\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*flaresolverr\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -8864,7 +8864,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*flaresolverr\"} - podman_container_mem_limit_bytes{name=~\".*flaresolverr\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*flaresolverr\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -9381,7 +9381,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*lazylibrarian\"} - podman_container_mem_usage_bytes{name=~\".*lazylibrarian\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*lazylibrarian\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -9390,7 +9390,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*lazylibrarian\"} - podman_container_mem_limit_bytes{name=~\".*lazylibrarian\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*lazylibrarian\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -9918,7 +9918,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*lidarr\"} - podman_container_mem_usage_bytes{name=~\".*lidarr\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*lidarr\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -9927,7 +9927,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*lidarr\"} - podman_container_mem_limit_bytes{name=~\".*lidarr\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*lidarr\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -10444,7 +10444,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*mylar\"} - podman_container_mem_usage_bytes{name=~\".*mylar\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*mylar\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -10453,7 +10453,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*mylar\"} - podman_container_mem_limit_bytes{name=~\".*mylar\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*mylar\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -10981,7 +10981,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*nzbhydra2\"} - podman_container_mem_usage_bytes{name=~\".*nzbhydra2\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*nzbhydra2\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -10990,7 +10990,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*nzbhydra2\"} - podman_container_mem_limit_bytes{name=~\".*nzbhydra2\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*nzbhydra2\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -11518,7 +11518,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*prowlarr\"} - podman_container_mem_usage_bytes{name=~\".*prowlarr\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*prowlarr\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -11527,7 +11527,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*prowlarr\"} - podman_container_mem_limit_bytes{name=~\".*prowlarr\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*prowlarr\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -12055,7 +12055,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*radarr\"} - podman_container_mem_usage_bytes{name=~\".*radarr\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*radarr\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -12064,7 +12064,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*radarr\"} - podman_container_mem_limit_bytes{name=~\".*radarr\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*radarr\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -12592,7 +12592,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*readarr\"} - podman_container_mem_usage_bytes{name=~\".*readarr\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*readarr\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -12601,7 +12601,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*readarr\"} - podman_container_mem_limit_bytes{name=~\".*readarr\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*readarr\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -13107,7 +13107,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*recyclarr\"} - podman_container_mem_usage_bytes{name=~\".*recyclarr\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*recyclarr\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -13116,7 +13116,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*recyclarr\"} - podman_container_mem_limit_bytes{name=~\".*recyclarr\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*recyclarr\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -13644,7 +13644,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*sonarr\"} - podman_container_mem_usage_bytes{name=~\".*sonarr\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*sonarr\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -13653,7 +13653,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*sonarr\"} - podman_container_mem_limit_bytes{name=~\".*sonarr\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*sonarr\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -14181,7 +14181,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*whisparr\"} - podman_container_mem_usage_bytes{name=~\".*whisparr\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*whisparr\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -14190,7 +14190,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*whisparr\"} - podman_container_mem_limit_bytes{name=~\".*whisparr\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*whisparr\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -14606,7 +14606,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*cleanuparr\"} - podman_container_mem_usage_bytes{name=~\".*cleanuparr\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*cleanuparr\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -14615,7 +14615,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*cleanuparr\"} - podman_container_mem_limit_bytes{name=~\".*cleanuparr\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*cleanuparr\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -15157,7 +15157,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*nginx\"} - podman_container_mem_usage_bytes{name=~\".*nginx\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*nginx\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -15166,7 +15166,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*nginx\"} - podman_container_mem_limit_bytes{name=~\".*nginx\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*nginx\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -15708,7 +15708,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*jellyfin\"} - podman_container_mem_usage_bytes{name=~\".*jellyfin\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*jellyfin\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -15717,7 +15717,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*jellyfin\"} - podman_container_mem_limit_bytes{name=~\".*jellyfin\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*jellyfin\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -16245,7 +16245,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*calibre\"} - podman_container_mem_usage_bytes{name=~\".*calibre\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*calibre\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -16254,7 +16254,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*calibre\"} - podman_container_mem_limit_bytes{name=~\".*calibre\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*calibre\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -16782,7 +16782,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*calibre-web\"} - podman_container_mem_usage_bytes{name=~\".*calibre-web\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*calibre-web\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -16791,7 +16791,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*calibre-web\"} - podman_container_mem_limit_bytes{name=~\".*calibre-web\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*calibre-web\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -17319,7 +17319,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*audiobookshelf\"} - podman_container_mem_usage_bytes{name=~\".*audiobookshelf\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*audiobookshelf\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -17328,7 +17328,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*audiobookshelf\"} - podman_container_mem_limit_bytes{name=~\".*audiobookshelf\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*audiobookshelf\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -17800,7 +17800,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*korsync\"} - podman_container_mem_usage_bytes{name=~\".*korsync\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*korsync\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -17809,7 +17809,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*korsync\"} - podman_container_mem_limit_bytes{name=~\".*korsync\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*korsync\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -18340,7 +18340,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*alloy\"} - podman_container_mem_usage_bytes{name=~\".*alloy\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*alloy\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -18349,7 +18349,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*alloy\"} - podman_container_mem_limit_bytes{name=~\".*alloy\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*alloy\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -18866,7 +18866,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*cadvisor\"} - podman_container_mem_usage_bytes{name=~\".*cadvisor\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*cadvisor\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -18875,7 +18875,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*cadvisor\"} - podman_container_mem_limit_bytes{name=~\".*cadvisor\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*cadvisor\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -19392,7 +19392,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*grafana\"} - podman_container_mem_usage_bytes{name=~\".*grafana\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*grafana\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -19401,7 +19401,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*grafana\"} - podman_container_mem_limit_bytes{name=~\".*grafana\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*grafana\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -19918,7 +19918,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*loki\"} - podman_container_mem_usage_bytes{name=~\".*loki\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*loki\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -19927,7 +19927,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*loki\"} - podman_container_mem_limit_bytes{name=~\".*loki\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*loki\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -20444,7 +20444,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*nginx_exporter\"} - podman_container_mem_usage_bytes{name=~\".*nginx_exporter\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*nginx_exporter\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -20453,7 +20453,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*nginx_exporter\"} - podman_container_mem_limit_bytes{name=~\".*nginx_exporter\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*nginx_exporter\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -20970,7 +20970,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*node_exporter\"} - podman_container_mem_usage_bytes{name=~\".*node_exporter\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*node_exporter\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -20979,7 +20979,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*node_exporter\"} - podman_container_mem_limit_bytes{name=~\".*node_exporter\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*node_exporter\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -21496,7 +21496,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*podman_exporter\"} - podman_container_mem_usage_bytes{name=~\".*podman_exporter\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*podman_exporter\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -21505,7 +21505,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*podman_exporter\"} - podman_container_mem_limit_bytes{name=~\".*podman_exporter\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*podman_exporter\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -22022,7 +22022,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*prometheus\"} - podman_container_mem_usage_bytes{name=~\".*prometheus\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*prometheus\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -22031,7 +22031,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*prometheus\"} - podman_container_mem_limit_bytes{name=~\".*prometheus\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*prometheus\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -22548,7 +22548,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*qbittorrent_exporter\"} - podman_container_mem_usage_bytes{name=~\".*qbittorrent_exporter\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*qbittorrent_exporter\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -22557,7 +22557,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*qbittorrent_exporter\"} - podman_container_mem_limit_bytes{name=~\".*qbittorrent_exporter\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*qbittorrent_exporter\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -22973,7 +22973,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*sabnzbd_exporter\"} - podman_container_mem_usage_bytes{name=~\".*sabnzbd_exporter\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*sabnzbd_exporter\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -22982,7 +22982,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*sabnzbd_exporter\"} - podman_container_mem_limit_bytes{name=~\".*sabnzbd_exporter\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*sabnzbd_exporter\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -23350,7 +23350,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*podman_limits_exporter\"} - podman_container_mem_usage_bytes{name=~\".*podman_limits_exporter\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*podman_limits_exporter\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -23359,7 +23359,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*podman_limits_exporter\"} - podman_container_mem_limit_bytes{name=~\".*podman_limits_exporter\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*podman_limits_exporter\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -23727,7 +23727,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*log_rotator\"} - podman_container_mem_usage_bytes{name=~\".*log_rotator\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*log_rotator\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -23736,7 +23736,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*log_rotator\"} - podman_container_mem_limit_bytes{name=~\".*log_rotator\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*log_rotator\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }
@@ -24219,7 +24219,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*homepage\"} - podman_container_mem_usage_bytes{name=~\".*homepage\"}",
+              "expr": "podman_container_swap_usage_bytes{name=~\".*homepage\"}",
               "legendFormat": "swap used",
               "refId": "A"
             },
@@ -24228,7 +24228,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*homepage\"} - podman_container_mem_limit_bytes{name=~\".*homepage\"}",
+              "expr": "podman_container_swap_limit_bytes{name=~\".*homepage\"}",
               "legendFormat": "swap limit",
               "refId": "B"
             }

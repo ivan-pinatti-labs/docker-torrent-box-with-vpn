@@ -609,7 +609,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(podman_container_mem_swap_usage_bytes - podman_container_mem_usage_bytes) * on(id) group_left(name) podman_container_info{name=~\".*jdownloader2\"}",
+          "expr": "podman_container_swap_usage_bytes{name=~\".*jdownloader2\"}",
           "legendFormat": "{{name}} Swap Used",
           "refId": "A"
         },
@@ -618,7 +618,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(podman_container_mem_swap_limit_bytes - podman_container_mem_limit_bytes) * on(id) group_left(name) podman_container_info{name=~\".*jdownloader2\"}",
+          "expr": "podman_container_swap_limit_bytes{name=~\".*jdownloader2\"}",
           "legendFormat": "{{name}} Swap Limit",
           "refId": "B"
         }
