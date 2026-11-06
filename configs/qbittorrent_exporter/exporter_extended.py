@@ -239,11 +239,13 @@ class QbittorrentMetricsCollector:
         # gluetun has no metrics endpoint, so its forwarded port is reported
         # here, next to the listen port it should match (#462). A failed
         # request reports nothing rather than 0, which means "none forwarded".
+        # The timeout stays well inside Prometheus's 10s scrape timeout, so a
+        # stuck control server cannot cost the qBittorrent metrics their scrape.
         url = self.config["gluetun_control_url"]
         if not url:
             return []
         try:
-            with urlopen(url, timeout=10) as response:
+            with urlopen(url, timeout=2) as response:
                 ports = json.load(response).get("ports") or []
         except Exception as e:
             logger.error("Couldn't get gluetun's forwarded port: %s", e)
