@@ -117,3 +117,9 @@ def test_port_mismatch_outlasts_a_port_forward_retry():
     assert interval and pending, (group["interval"], _port_mismatch_rule()["for"])
     retry = _script_default("QBITTORRENT_PORT_FORWARD_DELAY")
     assert int(pending.group(1)) * 60 > retry + int(interval.group(1)) * 60
+
+
+def test_port_mismatch_alerts_after_15_minutes():
+    # The test above holds the floor; this holds the chosen value, so a return
+    # to the old 30m fails here.
+    assert _port_mismatch_rule()["for"] == "15m"
