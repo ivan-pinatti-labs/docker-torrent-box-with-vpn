@@ -1,4 +1,5 @@
 import faulthandler
+import json
 import logging
 import os
 import signal
@@ -7,6 +8,7 @@ import time
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import Any, Iterable
+from urllib.request import urlopen
 
 from prometheus_client import start_http_server
 from prometheus_client.core import REGISTRY, CounterMetricFamily, GaugeMetricFamily
@@ -54,6 +56,7 @@ def get_config() -> dict[str, Any]:
         "exporter_port": int(_get_config_value("EXPORTER_PORT", "8000")),
         "log_level": _get_config_value("EXPORTER_LOG_LEVEL", "INFO"),
         "metrics_prefix": _get_config_value("METRICS_PREFIX", "qbittorrent"),
+        "gluetun_control_url": _get_config_value("GLUETUN_CONTROL_URL"),
         "verify_webui_certificate": (
             _get_config_value("VERIFY_WEBUI_CERTIFICATE", "True") == "True"
         ),
@@ -88,6 +91,7 @@ class QbittorrentMetricsCollector:
         metrics: list[Metric] = []
         metrics.extend(self._get_status_metrics())
         metrics.extend(self._get_preference_metrics())
+        metrics.extend(self._get_forwarded_port_metrics())
         metrics.extend(self._get_torrent_count_metrics())
         metrics.extend(self._get_per_torrent_metrics())
         return metrics
@@ -229,6 +233,28 @@ class QbittorrentMetricsCollector:
                 labels=labels,
                 help_text="Currently active upload rate limit in bytes per second.",
             ),
+        ]
+
+    def _get_forwarded_port_metrics(self) -> list[Metric]:
+        # gluetun has no metrics endpoint, so its forwarded port is reported
+        # here, next to the listen port it should match (#462). A failed
+        # request reports nothing rather than 0, which means "none forwarded".
+        url = self.config["gluetun_control_url"]
+        if not url:
+            return []
+        try:
+            with urlopen(url, timeout=10) as response:
+                ports = json.load(response).get("ports") or []
+        except Exception as e:
+            logger.error("Couldn't get gluetun's forwarded port: %s", e)
+            return []
+
+        return [
+            Metric(
+                name="gluetun_forwarded_port",
+                value=ports[0] if ports else 0,
+                help_text="Port gluetun forwards through the VPN, 0 when it forwards none.",
+            )
         ]
 
     def _fetch_categories(self) -> dict[str, dict[str, Any]]:

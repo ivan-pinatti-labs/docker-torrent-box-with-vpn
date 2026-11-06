@@ -11,7 +11,7 @@ Grafana Alloy to Loki, and surfaces everything in Grafana.
 | podman_limits_exporter | Per-container CPU and PIDs limits, and swap usage and limit from each cgroup            | `PODMAN_LIMITS_EXPORTER_PROFILE` |
 | node_exporter          | Host OS and hardware metrics                                                            | `NODE_EXPORTER_PROFILE`          |
 | nginx_exporter         | Nginx stub_status metrics                                                               | `NGINX_EXPORTER_PROFILE`         |
-| qbittorrent_exporter   | qBittorrent-specific metrics (free disk, etc.)                                          | `QBITTORRENT_EXPORTER_PROFILE`   |
+| qbittorrent_exporter   | qBittorrent metrics (free disk, listen port, etc.) and gluetun's forwarded port         | `QBITTORRENT_EXPORTER_PROFILE`   |
 | sabnzbd_exporter       | SABnzbd queue, status, and downloader metrics                                           | `SABNZBD_EXPORTER_PROFILE`       |
 | cAdvisor               | Root-cgroup metrics (limited under rootless Podman)                                     | `CADVISOR_PROFILE`               |
 | Prometheus             | Scrapes and stores time-series data                                                     | `PROMETHEUS_PROFILE`             |

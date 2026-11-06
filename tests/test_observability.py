@@ -10,6 +10,7 @@ Grafana           → datasource healthy, dashboards provisioned
 import json
 import re
 import subprocess  # nosec B404 - podman CLI, see _podman_cgroups_missing
+import time
 
 import pytest
 import requests
@@ -487,6 +488,32 @@ def test_qbittorrent_exporter_metrics_present(running_containers, prometheus_url
     )
 
 
+def test_qbittorrent_exporter_reports_gluetun_forwarded_port(
+    running_containers, prometheus_url
+):
+    """The exporter reaches gluetun's control server for its forwarded port.
+
+    The series is missing only when that request fails. vpn_mock forwards no
+    port, so its value here is 0; the comparison itself is unit tested.
+    """
+    if not is_enabled("qbittorrent_exporter"):
+        pytest.skip("QBITTORRENT_EXPORTER_PROFILE is disabled")
+    skip_if_not_running("qbittorrent_exporter", running_containers)
+    if not is_enabled("prometheus"):
+        pytest.skip("prometheus profile is disabled")
+
+    data = _prom_get(
+        prometheus_url,
+        "/query",
+        {"query": 'gluetun_forwarded_port{job="qbittorrent"}'},
+    )
+    assert data["status"] == "success"
+    assert data["data"]["result"], (
+        "gluetun_forwarded_port returned no series, so the exporter could not "
+        "read gluetun's /v1/portforward; see its log"
+    )
+
+
 # ---------------------------------------------------------------------------
 # SABnzbd exporter
 # ---------------------------------------------------------------------------
@@ -623,6 +650,44 @@ def test_grafana_dashboards_provisioned(
     }
     missing = expected - titles
     assert not missing, f"Grafana dashboards missing: {missing} (found: {titles})"
+
+
+def test_grafana_evaluates_the_port_mismatch_rule(
+    running_containers, grafana_url, grafana_session
+):
+    """Grafana runs the qBittorrent Port Mismatch rule without an error.
+
+    Its queries and math expression only reach Grafana here; the unit tier
+    reads the YAML alone. The group evaluates every minute, so this waits for
+    a first evaluation.
+    """
+    if not is_enabled("grafana"):
+        pytest.skip("grafana profile is disabled")
+    skip_if_not_running("grafana", running_containers)
+
+    rule = None
+    deadline = time.monotonic() + 150
+    while time.monotonic() < deadline:
+        resp = grafana_session.get(
+            grafana_url + "/prometheus/grafana/api/v1/rules",
+            timeout=TIMEOUT,
+        )
+        assert resp.status_code == 200, resp.text[:200]
+        rule = next(
+            (
+                r
+                for group in resp.json()["data"]["groups"]
+                for r in group["rules"]
+                if r["name"] == "qBittorrent Port Mismatch"
+            ),
+            None,
+        )
+        assert rule is not None, "qBittorrent Port Mismatch is not provisioned"
+        if not rule.get("lastEvaluation", "").startswith("0001-"):
+            break
+        time.sleep(10)
+    assert not rule["lastEvaluation"].startswith("0001-"), "never evaluated"
+    assert rule["health"] != "error", rule.get("lastError")
 
 
 def test_podman_dashboard_stack_filters_match_app_groups():

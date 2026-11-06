@@ -826,3 +826,70 @@ groups:
         labels:
           severity: warning
         isPaused: false
+
+      # Catches a listen port that never followed gluetun's forwarded port,
+      # whatever the cause (#462): neither rule above fires for it, since
+      # qBittorrent keeps reporting connected, not firewalled (#419). Both
+      # sides drop a 0, which means qBittorrent is unreachable or gluetun
+      # forwards nothing; other rules cover those, so no data is OK here.
+      # 30m outlasts qbittorrent-port-forward.sh's retries on a full start.
+      - uid: qbittorrent-port-mismatch
+        title: qBittorrent Port Mismatch
+        condition: E
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(qbittorrent_listen_port{job="qbittorrent"} > 0)
+              refId: A
+              instant: true
+              range: false
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(gluetun_forwarded_port{job="qbittorrent"} > 0)
+              refId: B
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              refId: C
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: D
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              refId: D
+              expression: B
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: E
+            datasourceUid: __expr__
+            model:
+              type: math
+              refId: E
+              expression: $C != $D
+        noDataState: OK
+        execErrState: Error
+        for: 30m
+        annotations:
+          summary: "qBittorrent is not listening on the forwarded port"
+          description: >-
+            qBittorrent listens on port {{ printf "%.0f" $values.C.Value }} but gluetun forwards
+            port {{ printf "%.0f" $values.D.Value }}, so peers cannot reach it. Check gluetun's
+            log for [PORTFWD] lines from scripts/qbittorrent-port-forward.sh.
+        labels:
+          severity: warning
+        isPaused: false
