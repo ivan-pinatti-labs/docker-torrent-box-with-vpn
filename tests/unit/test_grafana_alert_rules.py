@@ -103,12 +103,23 @@ def _script_default(name: str) -> int:
     return int(match.group(1))
 
 
-def test_port_mismatch_outlasts_the_port_forward_retries():
-    # qBittorrent starts minutes after gluetun, and the up command keeps
-    # retrying until it does. A mismatch inside that window is not a fault.
-    retries = _script_default("QBITTORRENT_PORT_FORWARD_ATTEMPTS") * _script_default(
-        "QBITTORRENT_PORT_FORWARD_DELAY"
+def test_port_mismatch_outlasts_a_port_forward_retry():
+    # The listen port only counts once qBittorrent answers, and the up command
+    # applies the forwarded port on its next retry after that. A mismatch
+    # shorter than one retry delay plus one evaluation is not a fault.
+    group = next(
+        g
+        for g in yaml.safe_load(RULES.read_text())["groups"]
+        if _port_mismatch_rule() in g["rules"]
     )
+    interval = re.fullmatch(r"(\d+)m", group["interval"])
     pending = re.fullmatch(r"(\d+)m", _port_mismatch_rule()["for"])
-    assert pending, _port_mismatch_rule()["for"]
-    assert int(pending.group(1)) * 60 >= retries
+    assert interval and pending, (group["interval"], _port_mismatch_rule()["for"])
+    retry = _script_default("QBITTORRENT_PORT_FORWARD_DELAY")
+    assert int(pending.group(1)) * 60 > retry + int(interval.group(1)) * 60
+
+
+def test_port_mismatch_alerts_after_15_minutes():
+    # The test above holds the floor; this holds the chosen value, so a return
+    # to the old 30m fails here.
+    assert _port_mismatch_rule()["for"] == "15m"

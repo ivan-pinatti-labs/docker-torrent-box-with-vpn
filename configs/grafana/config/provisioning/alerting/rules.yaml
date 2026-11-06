@@ -832,7 +832,9 @@ groups:
       # qBittorrent keeps reporting connected, not firewalled (#419). Both
       # sides drop a 0, which means qBittorrent is unreachable or gluetun
       # forwards nothing; other rules cover those, so no data is OK here.
-      # 30m outlasts qbittorrent-port-forward.sh's retries on a full start.
+      # The listen port only counts once qBittorrent answers, and
+      # qbittorrent-port-forward.sh's next retry then applies the port within
+      # its 10s delay, so 15m is far past any start without a real fault.
       - uid: qbittorrent-port-mismatch
         title: qBittorrent Port Mismatch
         condition: E
@@ -883,7 +885,7 @@ groups:
               expression: $C != $D
         noDataState: OK
         execErrState: Error
-        for: 30m
+        for: 15m
         annotations:
           summary: "qBittorrent is not listening on the forwarded port"
           description: >-

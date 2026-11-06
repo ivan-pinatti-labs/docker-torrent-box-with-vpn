@@ -27,7 +27,7 @@ conditions that only change over hours/days), and Gluetun Alerts (1m).
 | Gluetun Container Down | Gluetun container state is not `running`, or no state is reported for it | 2 m | critical |
 | Gluetun VPN Disconnected | qBittorrent reports no BitTorrent network connectivity | 5 m | critical |
 | Gluetun NAT PMP Port Lost | qBittorrent is firewalled, the forwarded-port lease may have expired | 15 m | warning |
-| qBittorrent Port Mismatch | qBittorrent's listen port is not the port gluetun forwards | 30 m | warning |
+| qBittorrent Port Mismatch | qBittorrent's listen port is not the port gluetun forwards | 15 m | warning |
 
 Container metrics come from `podman_exporter` rather than cAdvisor. In rootless Podman, cAdvisor
 only exposes the root cgroup and cannot provide per-container breakdowns. The CPU and memory
@@ -40,8 +40,9 @@ gluetun's built-in public role). It catches a listen port that never followed th
 one, which neither qBittorrent Firewalled nor Gluetun NAT PMP Port Lost sees: qBittorrent stays
 connected and not firewalled, only slower (#419). A port of 0 on either side is ignored and no
 data is OK, since qBittorrent Down and a VPN without port forwarding are not mismatches. The
-30 minutes outlast `scripts/qbittorrent-port-forward.sh`'s retries while qBittorrent starts
-after gluetun.
+listen port only counts once qBittorrent answers, and `scripts/qbittorrent-port-forward.sh`
+retries every 10 seconds, so a start that is not faulty clears the mismatch within seconds; the
+15 minutes leave ample margin over that.
 
 The `name` label is the real container name, so it carries `CONTAINER_PREFIX`. A rule never
 matches a container by its exact name: Gluetun Container Down matches `name=~".*gluetun"`.
