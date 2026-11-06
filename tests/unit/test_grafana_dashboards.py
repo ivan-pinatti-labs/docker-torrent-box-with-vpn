@@ -116,7 +116,6 @@ NOT_ON_DASHBOARDS = {
 # lands in a pull request of its own: CodeRabbit cannot load a dashboard diff
 # much over 600 lines, so one block goes in at a time (#447).
 BLOCK_PENDING = {
-    "sabnzbd_exporter": "#447, follow-up 1 of 3",
     "podman_limits_exporter": "#447, follow-up 2 of 3",
     "log_rotator": "#447, follow-up 3 of 3",
 }
