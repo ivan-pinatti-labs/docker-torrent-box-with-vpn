@@ -310,6 +310,46 @@ def test_podman_exporter_cpu_metrics(running_containers, prometheus_url):
     assert data["data"]["result"], "No CPU metrics from podman_exporter"
 
 
+@pytest.mark.parametrize(
+    "metric", ["container_memory_swap", "container_spec_memory_swap_limit_bytes"]
+)
+def test_cadvisor_reports_swap_by_container_name(
+    metric, running_containers, prometheus_url
+):
+    """The backends dashboard's Swap panels read these from cAdvisor (#459):
+    the podman exporter emits no swap metric at all. Matched by name suffix,
+    the way every dashboard query matches a container."""
+    if not is_enabled("cadvisor"):
+        pytest.skip("CADVISOR_PROFILE is disabled")
+    skip_if_not_running("cadvisor", running_containers)
+    skip_if_not_running("sonarr", running_containers)
+    if not is_enabled("prometheus"):
+        pytest.skip("prometheus profile is disabled")
+    _skip_if_no_cgroups()
+
+    data = _prom_get(
+        prometheus_url, "/query", {"query": f'{metric}{{name=~".*sonarr"}}'}
+    )
+    assert data["status"] == "success"
+    if not data["data"]["result"]:
+        names = _prom_get(
+            prometheus_url,
+            "/query",
+            {"query": 'count by (name) (container_last_seen{job="cadvisor"})'},
+        )["data"]["result"]
+        metrics = _prom_get(
+            prometheus_url,
+            "/query",
+            {"query": 'count by (__name__) ({job="cadvisor", name=~".*sonarr"})'},
+        )["data"]["result"]
+        pytest.fail(
+            f"cAdvisor reports no {metric} for sonarr. Names it reports: "
+            f"{sorted(r['metric'].get('name', '') for r in names)}. "
+            f"Its series for sonarr: "
+            f"{sorted(r['metric']['__name__'] for r in metrics)}"
+        )
+
+
 # podman_limits_exporter is the one exporter here whose application this
 # repository wrote: the image is a bare Python interpreter and
 # scripts/podman-limits-exporter.py is bind mounted in as /exporter.py. Its pin
