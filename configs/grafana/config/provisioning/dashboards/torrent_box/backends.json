@@ -23500,6 +23500,383 @@
               "mode": "multi"
             }
           }
+        },
+        {
+          "id": 431,
+          "type": "stat",
+          "title": "log_rotator | State",
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 195
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_state{name=~\".*log_rotator\"}",
+              "legendFormat": "{{name}}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "Down",
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Configured",
+                      "color": "blue",
+                      "index": 0
+                    },
+                    "1": {
+                      "text": "Created",
+                      "color": "blue",
+                      "index": 1
+                    },
+                    "2": {
+                      "text": "Up",
+                      "color": "green",
+                      "index": 2
+                    },
+                    "3": {
+                      "text": "Stopped",
+                      "color": "red",
+                      "index": 3
+                    },
+                    "4": {
+                      "text": "Paused",
+                      "color": "yellow",
+                      "index": 4
+                    },
+                    "5": {
+                      "text": "Exited",
+                      "color": "red",
+                      "index": 5
+                    },
+                    "6": {
+                      "text": "Removing",
+                      "color": "orange",
+                      "index": 6
+                    },
+                    "7": {
+                      "text": "Stopping",
+                      "color": "orange",
+                      "index": 7
+                    }
+                  }
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  }
+                ]
+              },
+              "color": {
+                "mode": "thresholds"
+              }
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "textMode": "value"
+          }
+        },
+        {
+          "id": 432,
+          "type": "timeseries",
+          "title": "log_rotator | CPU",
+          "gridPos": {
+            "h": 8,
+            "w": 9,
+            "x": 6,
+            "y": 195
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_cpu_seconds_total{name=~\".*log_rotator\"}[$interval]) * 100",
+              "legendFormat": "CPU %",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 433,
+          "type": "timeseries",
+          "title": "log_rotator | Memory",
+          "gridPos": {
+            "h": 8,
+            "w": 9,
+            "x": 15,
+            "y": 195
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_mem_usage_bytes{name=~\".*log_rotator\"}",
+              "legendFormat": "usage",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_mem_limit_bytes{name=~\".*log_rotator\"}",
+              "legendFormat": "limit",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 434,
+          "type": "timeseries",
+          "title": "log_rotator | Swap",
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 0,
+            "y": 203
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*log_rotator\"} - podman_container_mem_usage_bytes{name=~\".*log_rotator\"}",
+              "legendFormat": "swap used",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*log_rotator\"} - podman_container_mem_limit_bytes{name=~\".*log_rotator\"}",
+              "legendFormat": "swap limit",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 435,
+          "type": "timeseries",
+          "title": "log_rotator | Disk IO",
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 6,
+            "y": 203
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_block_input_total{name=~\".*log_rotator\"}[$interval])",
+              "legendFormat": "read",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_block_output_total{name=~\".*log_rotator\"}[$interval])",
+              "legendFormat": "write",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 436,
+          "type": "timeseries",
+          "title": "log_rotator | Network IO",
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 12,
+            "y": 203
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_net_input_total{name=~\".*log_rotator\"}[$interval])",
+              "legendFormat": "rx",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_net_output_total{name=~\".*log_rotator\"}[$interval])",
+              "legendFormat": "tx",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
         }
       ],
       "gridPos": {
