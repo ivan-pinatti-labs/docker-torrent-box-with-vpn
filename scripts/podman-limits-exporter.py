@@ -2,8 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2022 Ivan Pinatti
 """
-Prometheus exporter for per-container resource limits (CPU, PIDs) from the Podman API.
-Exposes podman_container_cpu_limit_vcpus and podman_container_pids_limit on :9889/metrics.
+Prometheus exporter for per-container resource limits (CPU, PIDs) from the Podman API,
+and per-container swap from each container's cgroup, which the Podman API does not
+report (#459).
+Exposes podman_container_cpu_limit_vcpus, podman_container_pids_limit,
+podman_container_swap_usage_bytes and podman_container_swap_limit_bytes on :9889/metrics.
 Results are cached for 30s to avoid hammering the Podman socket on every scrape.
 """
 
@@ -12,10 +15,15 @@ import signal
 import socket
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
 SOCK_PATH = "/var/run/podman/podman.sock"
 PORT = 9889
 CACHE_TTL = 30
+# The rootless user's own systemd service cgroup, mounted read only: the
+# user@<uid>.service directory, which holds every container that user runs
+# and nothing of the system's or of other users'.
+CGROUP_ROOT = Path("/host-cgroup")
 
 _cache: dict = {"body": b"", "ts": 0.0}
 
@@ -35,6 +43,33 @@ def podman_get(path: str) -> object:
     return json.loads(body)
 
 
+def cgroup_dir(cgroup_path: str) -> Path | None:
+    """The container's cgroup under CGROUP_ROOT, from the CgroupPath Podman
+    reports, which is absolute on the host. Only a path inside a
+    user@<uid>.service tree maps; any other is outside what is mounted."""
+    parts = [p for p in cgroup_path.split("/") if p]
+    for i, part in enumerate(parts):
+        if part.startswith("user@") and part.endswith(".service"):
+            return CGROUP_ROOT.joinpath(*parts[i + 1 :])
+    return None
+
+
+def read_swap(directory: Path | None) -> tuple[int | None, int | None]:
+    """memory.swap.current and memory.swap.max, each None when unreadable;
+    the limit is None too when it is "max", which means no limit."""
+    if directory is None:
+        return None, None
+    values = []
+    for name in ("memory.swap.current", "memory.swap.max"):
+        try:
+            text = (directory / name).read_text().strip()
+        except OSError:
+            values.append(None)
+            continue
+        values.append(int(text) if text.isdigit() else None)
+    return values[0], values[1]
+
+
 def build_metrics() -> bytes:
     containers = podman_get("/v4.0.0/libpod/containers/json?all=false")
     cpu_lines = [
@@ -45,6 +80,14 @@ def build_metrics() -> bytes:
         "# HELP podman_container_pids_limit Configured pids_limit per container (0 = unlimited or unset).",
         "# TYPE podman_container_pids_limit gauge",
     ]
+    swap_lines = [
+        "# HELP podman_container_swap_usage_bytes Swap in use, from the container's cgroup.",
+        "# TYPE podman_container_swap_usage_bytes gauge",
+    ]
+    swap_limit_lines = [
+        "# HELP podman_container_swap_limit_bytes Swap limit from the container's cgroup (absent when unlimited).",
+        "# TYPE podman_container_swap_limit_bytes gauge",
+    ]
     for c in containers:
         cid = c.get("Id", "")
         names = c.get("Names") or [cid[:12]]
@@ -54,15 +97,25 @@ def build_metrics() -> bytes:
             host = detail.get("HostConfig", {})
             nano = host.get("NanoCpus") or 0
             pids = host.get("PidsLimit") or 0
+            cgroup_path = detail.get("State", {}).get("CgroupPath") or ""
         except Exception:
             nano = 0
             pids = 0
+            cgroup_path = ""
         vcpus = int(nano) / 1_000_000_000
         cpu_lines.append(
             f'podman_container_cpu_limit_vcpus{{name="{name}"}} {vcpus:.4f}'
         )
         pids_lines.append(f'podman_container_pids_limit{{name="{name}"}} {int(pids)}')
-    return ("\n".join(cpu_lines + pids_lines) + "\n").encode()
+        used, limit = read_swap(cgroup_dir(cgroup_path))
+        if used is not None:
+            swap_lines.append(f'podman_container_swap_usage_bytes{{name="{name}"}} {used}')
+        if limit is not None:
+            swap_limit_lines.append(
+                f'podman_container_swap_limit_bytes{{name="{name}"}} {limit}'
+            )
+    lines = cpu_lines + pids_lines + swap_lines + swap_limit_lines
+    return ("\n".join(lines) + "\n").encode()
 
 
 def get_metrics() -> bytes:

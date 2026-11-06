@@ -310,44 +310,44 @@ def test_podman_exporter_cpu_metrics(running_containers, prometheus_url):
     assert data["data"]["result"], "No CPU metrics from podman_exporter"
 
 
-@pytest.mark.parametrize(
-    "metric", ["container_memory_swap", "container_spec_memory_swap_limit_bytes"]
-)
-def test_cadvisor_reports_swap_by_container_name(
-    metric, running_containers, prometheus_url
-):
-    """The backends dashboard's Swap panels read these from cAdvisor (#459):
-    the podman exporter emits no swap metric at all. Matched by name suffix,
-    the way every dashboard query matches a container."""
-    if not is_enabled("cadvisor"):
-        pytest.skip("CADVISOR_PROFILE is disabled")
-    skip_if_not_running("cadvisor", running_containers)
+def test_container_swap_is_readable_from_its_cgroup(running_containers):
+    """Neither the Podman API nor cAdvisor (root cgroup only under rootless
+    Podman) reports swap per container, so the Swap panels need it read from
+    each container's cgroup (#459). podman_limits_exporter is to mount only the
+    rootless user's user@<uid>.service tree, so the CgroupPath Podman reports
+    must sit inside one, with both swap files readable there."""
     skip_if_not_running("sonarr", running_containers)
-    if not is_enabled("prometheus"):
-        pytest.skip("prometheus profile is disabled")
     _skip_if_no_cgroups()
 
-    data = _prom_get(
-        prometheus_url, "/query", {"query": f'{metric}{{name=~".*sonarr"}}'}
+    def podman(*args):
+        return subprocess.run(  # nosec B607 - podman is a trusted, fixed CLI in this stack
+            ["podman", *args], capture_output=True, text=True, timeout=TIMEOUT
+        ).stdout.strip()
+
+    path = podman(
+        "container",
+        "inspect",
+        "--format",
+        "{{.State.CgroupPath}}",
+        container_name("sonarr"),
     )
-    assert data["status"] == "success"
-    if not data["data"]["result"]:
-        names = _prom_get(
-            prometheus_url,
-            "/query",
-            {"query": 'count by (name) (container_last_seen{job="cadvisor"})'},
-        )["data"]["result"]
-        metrics = _prom_get(
-            prometheus_url,
-            "/query",
-            {"query": 'count by (__name__) ({job="cadvisor", name=~".*sonarr"})'},
-        )["data"]["result"]
-        pytest.fail(
-            f"cAdvisor reports no {metric} for sonarr. Names it reports: "
-            f"{sorted(r['metric'].get('name', '') for r in names)}. "
-            f"Its series for sonarr: "
-            f"{sorted(r['metric']['__name__'] for r in metrics)}"
-        )
+    layout = podman(
+        "info", "--format", "{{.Host.CgroupManager}} {{.Host.CgroupsVersion}}"
+    )
+    directory = f"/sys/fs/cgroup{path}"
+    found = {}
+    for name in ("memory.swap.current", "memory.swap.max"):
+        try:
+            with open(f"{directory}/{name}") as handle:
+                found[name] = handle.read().strip()
+        except OSError as exc:
+            found[name] = f"unreadable: {exc}"
+    detail = f"CgroupPath {path!r}, manager and version {layout!r}, files {found}"
+    assert re.search(r"/user@\d+\.service/", path), detail
+    assert found["memory.swap.current"].isdigit(), detail
+    assert found["memory.swap.max"] == "max" or found["memory.swap.max"].isdigit(), (
+        detail
+    )
 
 
 # podman_limits_exporter is the one exporter here whose application this
