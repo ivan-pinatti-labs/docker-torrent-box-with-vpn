@@ -689,13 +689,27 @@ def test_app_proxy_domain_defaults_to_a_name_that_never_resolves():
     assert tests["APP_PROXY_DOMAIN"] == "apps.test"
 
 
+class _ComposeLoader(yaml.SafeLoader):
+    """Accepts Compose's own merge tags. A custom route file at the root, which
+    the glob below reads too, clears a service's networks with `!reset []`."""
+
+
+_ComposeLoader.add_multi_constructor("!", lambda loader, suffix, node: None)
+
+
 def _compose_profiles() -> dict[str, list[str]]:
-    """Every compose service in the stack, with the profiles it declares."""
+    """Every compose service in the stack, with the profiles it declares.
+
+    A route file only overrides parts of a service it names, so it adds the
+    name but never replaces the profiles another file declared.
+    """
     services = {}
     for path in sorted(REPO_ROOT.glob("docker-compose*.yml")):
-        compose = yaml.safe_load(path.read_text())
+        compose = yaml.load(path.read_text(), Loader=_ComposeLoader)  # nosec B506 - SafeLoader subclass
         for name, definition in (compose.get("services") or {}).items():
-            services[name] = definition.get("profiles", [])
+            services.setdefault(name, [])
+            if "profiles" in (definition or {}):
+                services[name] = definition["profiles"]
     return services
 
 

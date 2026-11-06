@@ -115,12 +115,21 @@ NOT_ON_DASHBOARDS = {
 }
 
 
+class _ComposeLoader(yaml.SafeLoader):
+    """Accepts Compose's own merge tags. A custom route file at the root, which
+    the glob below reads too, clears a service's networks with `!reset []`."""
+
+
+_ComposeLoader.add_multi_constructor("!", lambda loader, suffix, node: None)
+
+
 def _compose_services() -> set[str]:
     """Parsed rather than grepped, so a service left commented out (notifiarr)
     is not counted."""
     services = set()
     for compose in Path(__file__).resolve().parents[2].glob("docker-compose*.yml"):
-        services.update(yaml.safe_load(compose.read_text()).get("services") or {})
+        doc = yaml.load(compose.read_text(), Loader=_ComposeLoader)  # nosec B506 - SafeLoader subclass
+        services.update(doc.get("services") or {})
     return services
 
 
