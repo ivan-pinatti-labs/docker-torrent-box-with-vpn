@@ -29,10 +29,10 @@
         "label": "Stack",
         "description": "Filter by app stack. Each value is the set of repo container names in that stack.",
         "type": "custom",
-        "query": "Downloaders : jdownloader2|qbittorrent|sabnzbd, Indexers : nzbhydra2|prowlarr, Media & Library : jellyfin|audiobookshelf|calibre|calibre-web, Observability : cadvisor|podman_exporter|podman_limits_exporter|node_exporter|nginx_exporter|qbittorrent_exporter|sabnzbd_exporter|alloy|prometheus|loki|grafana, VPN : gluetun, Proxy : nginx, Homepage : homepage, Servarr : bazarr|cleanuparr|flaresolverr|lidarr|radarr|readarr|recyclarr|sonarr|whisparr|mylar",
+        "query": "Downloaders : jdownloader2|qbittorrent|sabnzbd, Indexers : nzbhydra2|prowlarr, Media & Library : jellyfin|audiobookshelf|calibre|calibre-web|korsync, Observability : cadvisor|podman_exporter|podman_limits_exporter|node_exporter|nginx_exporter|qbittorrent_exporter|sabnzbd_exporter|alloy|prometheus|loki|grafana|log_rotator, VPN : gluetun, Proxy : nginx, Homepage : homepage, Servarr : bazarr|cleanuparr|flaresolverr|lidarr|radarr|readarr|recyclarr|sonarr|whisparr|mylar|lazylibrarian",
         "multi": true,
         "includeAll": true,
-        "allValue": "jdownloader2|qbittorrent|sabnzbd|nzbhydra2|prowlarr|jellyfin|audiobookshelf|calibre|calibre-web|cadvisor|podman_exporter|podman_limits_exporter|node_exporter|nginx_exporter|qbittorrent_exporter|sabnzbd_exporter|alloy|prometheus|loki|grafana|gluetun|nginx|homepage|bazarr|cleanuparr|flaresolverr|lidarr|radarr|readarr|recyclarr|sonarr|whisparr|mylar"
+        "allValue": "jdownloader2|qbittorrent|sabnzbd|nzbhydra2|prowlarr|jellyfin|audiobookshelf|calibre|calibre-web|korsync|cadvisor|podman_exporter|podman_limits_exporter|node_exporter|nginx_exporter|qbittorrent_exporter|sabnzbd_exporter|alloy|prometheus|loki|grafana|log_rotator|gluetun|nginx|homepage|bazarr|cleanuparr|flaresolverr|lidarr|radarr|readarr|recyclarr|sonarr|whisparr|mylar|lazylibrarian"
       },
       {
         "name": "container",

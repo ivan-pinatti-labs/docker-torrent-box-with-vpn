@@ -111,6 +111,11 @@ tools, and never touches a stack or a Python on the host. See
 | SABnzbd        | <https://hub.docker.com/r/linuxserver/sabnzbd>       | Usenet Downloader                                                 | enabled     |
 | Sonarr         | <https://hub.docker.com/r/linuxserver/sonarr>        | TV Shows Tracker/Manager                                          | enabled     |
 
+Cleanuparr is set up by `make wire_connections`: its login, its connections to
+qBittorrent and the arr apps, and the patterns its queue cleaner strikes. See
+[docs/CONNECTIONS.md](docs/CONNECTIONS.md#cleanuparr) for what it does and how to
+change it.
+
 ---
 
 ## Legacy Apps

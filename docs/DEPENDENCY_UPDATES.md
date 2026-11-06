@@ -511,8 +511,9 @@ safe direction to be wrong in, and the dashboard shows it if it happens.
 
 ### Held, and released by hand
 
-Whisparr, koreader-sync, the qBittorrent exporter, the podman exporter and cadvisor have no
-identical copy on Docker Hub, so they stay where they are and each update is released by hand.
+Whisparr, Cleanuparr, koreader-sync, the qBittorrent exporter, the podman exporter and cadvisor
+have no identical copy on Docker Hub, so they stay where they are and each update is released by
+hand.
 [docs/MANUAL_IMAGE_RELEASES.md](MANUAL_IMAGE_RELEASES.md) is the runbook: the table of held
 images and where each registry records its push date, the procedure, the case of a tag rebuilt
 faster than the window, and a log of every release.

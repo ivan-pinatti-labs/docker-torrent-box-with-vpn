@@ -70,7 +70,13 @@ REPO_POD_FILTER = 'pod_name="$pod"'
 EXPECTED_PODMAN_DASHBOARD_STACKS = {
     "Downloaders": {"jdownloader2", "qbittorrent", "sabnzbd"},
     "Indexers": {"nzbhydra2", "prowlarr"},
-    "Media & Library": {"jellyfin", "audiobookshelf", "calibre", "calibre-web"},
+    "Media & Library": {
+        "jellyfin",
+        "audiobookshelf",
+        "calibre",
+        "calibre-web",
+        "korsync",
+    },
     "Observability": {
         "cadvisor",
         "podman_exporter",
@@ -83,6 +89,7 @@ EXPECTED_PODMAN_DASHBOARD_STACKS = {
         "prometheus",
         "loki",
         "grafana",
+        "log_rotator",
     },
     "VPN": {"gluetun"},
     "Proxy": {"nginx"},
@@ -98,6 +105,7 @@ EXPECTED_PODMAN_DASHBOARD_STACKS = {
         "sonarr",
         "whisparr",
         "mylar",
+        "lazylibrarian",
     },
 }
 
@@ -591,7 +599,6 @@ def test_podman_dashboard_stack_filters_match_app_groups():
     assert (
         _parse_custom_variable_query(stack["query"]) == EXPECTED_PODMAN_DASHBOARD_STACKS
     )
-    assert "lazylibrarian" not in stack["query"]
 
 
 def test_podman_dashboard_default_stack_filter_is_repo_only():

@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 pytestmark = pytest.mark.unit
 
@@ -103,3 +104,56 @@ def test_the_stack_variable_values_are_matched_by_suffix():
     query = container["query"]
     query = query if isinstance(query, str) else query["query"]
     assert 'name=~".*(${stack:raw})"' in query
+
+
+# Containers deliberately left off the dashboards that list every container,
+# each with the reason. Everything else needs its panels (#443): Cleanuparr went
+# without any, because nothing tied a new service to them.
+NOT_ON_DASHBOARDS = {
+    "nzbget": "legacy and disabled by default; the overview is SABnzbd's",
+    "vpn_mock": "a CI stand-in for a VPN server, never part of a deployment",
+}
+
+
+def _compose_services() -> set[str]:
+    """Parsed rather than grepped, so a service left commented out (notifiarr)
+    is not counted."""
+    services = set()
+    for compose in Path(__file__).resolve().parents[2].glob("docker-compose*.yml"):
+        services.update(yaml.safe_load(compose.read_text()).get("services") or {})
+    return services
+
+
+def _backends_panels() -> list[dict]:
+    doc = json.loads((DASHBOARDS / "torrent_box/backends.json").read_text())
+
+    def walk(panels):
+        for panel in panels:
+            yield panel
+            yield from walk(panel.get("panels", []))
+
+    return list(walk(doc["panels"]))
+
+
+def test_every_container_has_an_overview_tile_and_a_block():
+    """backends.json gives each container a tile in Overview and a block in its
+    stack's row, headed by "<container> | State"."""
+    panels = _backends_panels()
+    titles = {panel.get("title", "") for panel in panels}
+    expected = _compose_services() - NOT_ON_DASHBOARDS.keys()
+    assert not NOT_ON_DASHBOARDS.keys() - _compose_services()
+    assert sorted(expected - titles) == []
+    assert sorted(name for name in expected if f"{name} | State" not in titles) == []
+
+
+def test_every_container_is_in_a_container_stack():
+    """podman_containers.json's stack picker lists containers by name, so one
+    left out never shows there, whatever stack is picked."""
+    doc = json.loads(
+        (DASHBOARDS / "node_containers/podman_containers.json").read_text()
+    )
+    stack = next(v for v in doc["templating"]["list"] if v["name"] == "stack")
+    listed = set(stack["allValue"].split("|"))
+    expected = _compose_services() - NOT_ON_DASHBOARDS.keys()
+    assert sorted(expected - listed) == []
+    assert sorted(listed - expected) == []
