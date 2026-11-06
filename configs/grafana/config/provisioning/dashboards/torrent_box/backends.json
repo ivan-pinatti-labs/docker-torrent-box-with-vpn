@@ -23123,6 +23123,383 @@
               "mode": "multi"
             }
           }
+        },
+        {
+          "id": 425,
+          "type": "stat",
+          "title": "podman_limits_exporter | State",
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 179
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_state{name=~\".*podman_limits_exporter\"}",
+              "legendFormat": "{{name}}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "Down",
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Configured",
+                      "color": "blue",
+                      "index": 0
+                    },
+                    "1": {
+                      "text": "Created",
+                      "color": "blue",
+                      "index": 1
+                    },
+                    "2": {
+                      "text": "Up",
+                      "color": "green",
+                      "index": 2
+                    },
+                    "3": {
+                      "text": "Stopped",
+                      "color": "red",
+                      "index": 3
+                    },
+                    "4": {
+                      "text": "Paused",
+                      "color": "yellow",
+                      "index": 4
+                    },
+                    "5": {
+                      "text": "Exited",
+                      "color": "red",
+                      "index": 5
+                    },
+                    "6": {
+                      "text": "Removing",
+                      "color": "orange",
+                      "index": 6
+                    },
+                    "7": {
+                      "text": "Stopping",
+                      "color": "orange",
+                      "index": 7
+                    }
+                  }
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  }
+                ]
+              },
+              "color": {
+                "mode": "thresholds"
+              }
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "textMode": "value"
+          }
+        },
+        {
+          "id": 426,
+          "type": "timeseries",
+          "title": "podman_limits_exporter | CPU",
+          "gridPos": {
+            "h": 8,
+            "w": 9,
+            "x": 6,
+            "y": 179
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_cpu_seconds_total{name=~\".*podman_limits_exporter\"}[$interval]) * 100",
+              "legendFormat": "CPU %",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 427,
+          "type": "timeseries",
+          "title": "podman_limits_exporter | Memory",
+          "gridPos": {
+            "h": 8,
+            "w": 9,
+            "x": 15,
+            "y": 179
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_mem_usage_bytes{name=~\".*podman_limits_exporter\"}",
+              "legendFormat": "usage",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_mem_limit_bytes{name=~\".*podman_limits_exporter\"}",
+              "legendFormat": "limit",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 428,
+          "type": "timeseries",
+          "title": "podman_limits_exporter | Swap",
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 0,
+            "y": 187
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*podman_limits_exporter\"} - podman_container_mem_usage_bytes{name=~\".*podman_limits_exporter\"}",
+              "legendFormat": "swap used",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*podman_limits_exporter\"} - podman_container_mem_limit_bytes{name=~\".*podman_limits_exporter\"}",
+              "legendFormat": "swap limit",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 429,
+          "type": "timeseries",
+          "title": "podman_limits_exporter | Disk IO",
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 6,
+            "y": 187
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_block_input_total{name=~\".*podman_limits_exporter\"}[$interval])",
+              "legendFormat": "read",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_block_output_total{name=~\".*podman_limits_exporter\"}[$interval])",
+              "legendFormat": "write",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 430,
+          "type": "timeseries",
+          "title": "podman_limits_exporter | Network IO",
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 12,
+            "y": 187
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_net_input_total{name=~\".*podman_limits_exporter\"}[$interval])",
+              "legendFormat": "rx",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_net_output_total{name=~\".*podman_limits_exporter\"}[$interval])",
+              "legendFormat": "tx",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
         }
       ],
       "gridPos": {
