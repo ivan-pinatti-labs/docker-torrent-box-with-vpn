@@ -245,3 +245,66 @@ def test_compose_services_reads_a_route_file_with_reset(tmp_path):
         "  gluetun:\n    networks:\n      services:\n        aliases: [radarr]\n"
     )
     assert _compose_services(tmp_path) == {"radarr", "gluetun"}
+
+
+# Every podman_container_* series something in the stack emits: the podman
+# exporter's container collector (collector/container.go upstream, which has no
+# swap metric at all) and this repository's scripts/podman-limits-exporter.py.
+# The Swap panels queried podman_container_mem_swap_*, which nothing emits, and
+# stayed empty unnoticed on every block (#459).
+EMITTED_PODMAN_SERIES = {
+    # podman_exporter
+    "podman_container_block_input_total",
+    "podman_container_block_output_total",
+    "podman_container_cpu_seconds_total",
+    "podman_container_cpu_system_seconds_total",
+    "podman_container_created_seconds",
+    "podman_container_exit_code",
+    "podman_container_exited_seconds",
+    "podman_container_health",
+    "podman_container_info",
+    "podman_container_mem_limit_bytes",
+    "podman_container_mem_usage_bytes",
+    "podman_container_net_input_dropped_total",
+    "podman_container_net_input_errors_total",
+    "podman_container_net_input_packets_total",
+    "podman_container_net_input_total",
+    "podman_container_net_output_dropped_total",
+    "podman_container_net_output_errors_total",
+    "podman_container_net_output_packets_total",
+    "podman_container_net_output_total",
+    "podman_container_pids",
+    "podman_container_rootfs_size_bytes",
+    "podman_container_rw_size_bytes",
+    "podman_container_started_seconds",
+    "podman_container_state",
+    # podman_limits_exporter
+    "podman_container_cpu_limit_vcpus",
+    "podman_container_pids_limit",
+    "podman_container_swap_usage_bytes",
+    "podman_container_swap_limit_bytes",
+}
+
+
+def test_every_podman_series_a_query_names_is_emitted():
+    queried = {
+        name
+        for _, query in _queries()
+        for name in re.findall(r"\bpodman_container_[a-z_]+", query)
+    }
+    assert "podman_container_state" in queried
+    assert sorted(queried - EMITTED_PODMAN_SERIES) == []
+
+
+def test_the_limits_exporter_emits_what_it_is_listed_for():
+    """The four the list credits to podman_limits_exporter are the four its
+    script writes, so the list cannot vouch for a series the script dropped."""
+    script = (REPO_ROOT / "scripts/podman-limits-exporter.py").read_text()
+    written = set(re.findall(r"# TYPE (podman_container_[a-z_]+) gauge", script))
+    assert written == {
+        "podman_container_cpu_limit_vcpus",
+        "podman_container_pids_limit",
+        "podman_container_swap_usage_bytes",
+        "podman_container_swap_limit_bytes",
+    }
+    assert written <= EMITTED_PODMAN_SERIES
