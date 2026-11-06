@@ -20,9 +20,10 @@ from pathlib import Path
 SOCK_PATH = "/var/run/podman/podman.sock"
 PORT = 9889
 CACHE_TTL = 30
-# The rootless user's own systemd service cgroup, mounted read only: the
-# user@<uid>.service directory, which holds every container that user runs
-# and nothing of the system's or of other users'.
+# The host's /sys/fs/cgroup, mounted read only. Podman reports each container's
+# CgroupPath from that root, under whichever cgroup manager it runs (systemd puts
+# it in the user's user@<uid>.service tree, cgroupfs under /user), so the whole
+# tree is mounted rather than a path that differs from host to host (#459).
 CGROUP_ROOT = Path("/host-cgroup")
 
 _cache: dict = {"body": b"", "ts": 0.0}
@@ -45,13 +46,12 @@ def podman_get(path: str) -> object:
 
 def cgroup_dir(cgroup_path: str) -> Path | None:
     """The container's cgroup under CGROUP_ROOT, from the CgroupPath Podman
-    reports, which is absolute on the host. Only a path inside a
-    user@<uid>.service tree maps; any other is outside what is mounted."""
+    reports, which is absolute from the host's cgroup root. None when Podman
+    reports none, or a path that would step outside the mount."""
     parts = [p for p in cgroup_path.split("/") if p]
-    for i, part in enumerate(parts):
-        if part.startswith("user@") and part.endswith(".service"):
-            return CGROUP_ROOT.joinpath(*parts[i + 1 :])
-    return None
+    if not parts or ".." in parts:
+        return None
+    return CGROUP_ROOT.joinpath(*parts)
 
 
 def read_swap(directory: Path | None) -> tuple[int | None, int | None]:

@@ -166,6 +166,7 @@ possible. Examples: `/etc/localtime`, `/certs`, prometheus config.
 | podman_exporter | `userns_mode: keep-id:uid=65534,gid=65534` | Must access the Podman socket as a specific mapped UID; SELinux label enforcement disabled |
 | podman_limits_exporter | `userns_mode: keep-id:uid=0,gid=0` | Must access the Podman socket as a specific mapped UID; SELinux label enforcement disabled |
 | gluetun, podman_exporter, podman_limits_exporter | `security_opt: label=disable` | SELinux label enforcement disabled for socket access |
+| podman_limits_exporter | `/sys/fs/cgroup` mounted read-only | Per-container swap, read from each container's cgroup; the path differs by cgroup manager, so the tree is mounted whole (#459) |
 
 ## Rootless Podman UID remapping
 
