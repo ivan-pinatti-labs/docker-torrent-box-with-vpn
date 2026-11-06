@@ -112,6 +112,15 @@ NOT_ON_DASHBOARDS = {
     "vpn_mock": "a CI stand-in for a VPN server, never part of a deployment",
 }
 
+# Overview tiles and stack picker entries exist, but the backends.json block
+# lands in a pull request of its own: CodeRabbit cannot load a dashboard diff
+# much over 600 lines, so one block goes in at a time (#447).
+BLOCK_PENDING = {
+    "sabnzbd_exporter": "#447, follow-up 1 of 3",
+    "podman_limits_exporter": "#447, follow-up 2 of 3",
+    "log_rotator": "#447, follow-up 3 of 3",
+}
+
 
 class _ComposeLoader(yaml.SafeLoader):
     """Accepts Compose's own merge tags. A custom route file at the root, which
@@ -150,12 +159,16 @@ def test_every_container_has_an_overview_tile_and_a_block():
     expected = _compose_services() - NOT_ON_DASHBOARDS.keys()
     assert not NOT_ON_DASHBOARDS.keys() - _compose_services()
     assert sorted(expected - titles) == []
-    assert sorted(name for name in expected if f"{name} | State" not in titles) == []
+    without_block = {name for name in expected if f"{name} | State" not in titles}
+    assert sorted(without_block - BLOCK_PENDING.keys()) == []
+    # A block that has landed takes its entry out of BLOCK_PENDING.
+    assert sorted(BLOCK_PENDING.keys() - without_block) == []
 
 
 def test_every_container_is_in_a_container_stack():
     """podman_containers.json's stack picker lists containers by name, so one
-    left out never shows there, whatever stack is picked."""
+    left out never shows there, whatever stack is picked. Both ways: in "All"
+    (allValue) and in exactly one named stack."""
     doc = json.loads(
         (DASHBOARDS / "node_containers/podman_containers.json").read_text()
     )
@@ -164,6 +177,14 @@ def test_every_container_is_in_a_container_stack():
     expected = _compose_services() - NOT_ON_DASHBOARDS.keys()
     assert sorted(expected - listed) == []
     assert sorted(listed - expected) == []
+    # "Name : a|b, Other : c" -> every container named once across the stacks.
+    grouped = [
+        name
+        for entry in stack["query"].split(",")
+        for name in entry.split(" : ", 1)[1].strip().split("|")
+    ]
+    assert sorted(grouped) == sorted(set(grouped))
+    assert set(grouped) == listed
 
 
 def test_compose_services_reads_a_route_file_with_reset(tmp_path):
