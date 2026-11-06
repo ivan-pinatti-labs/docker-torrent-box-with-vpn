@@ -177,6 +177,37 @@ def test_every_block_has_the_full_panel_set():
     assert missing == []
 
 
+def test_every_block_panel_selects_its_own_container():
+    """A panel copied from another block and only partly renamed would show
+    that container's series under this one's title."""
+    wrong, checked = [], 0
+    for panel in _backends_panels():
+        name, sep, _ = panel.get("title", "").partition(" | ")
+        if not sep:
+            continue
+        for target in panel.get("targets", []):
+            expr = target.get("expr", "")
+            selected = re.findall(r"\bname=~\"\.\*([A-Za-z0-9_.-]+)\"", expr)
+            selected += re.findall(r"\bservice=\"([A-Za-z0-9_.-]+)\"", expr)
+            checked += len(selected)
+            wrong += [(panel["title"], s) for s in selected if s != name]
+    assert checked > 200, "the matchers above no longer find the selectors"
+    assert wrong == []
+
+
+def test_every_block_sits_in_one_row():
+    """Grafana collapses a row with its panels, so a block split across rows
+    shows partly under another stack."""
+    doc = json.loads((DASHBOARDS / "torrent_box/backends.json").read_text())
+    rows = {}
+    for row in doc["panels"]:
+        for panel in row.get("panels", []):
+            name, sep, _ = panel.get("title", "").partition(" | ")
+            if sep:
+                rows.setdefault(name, set()).add(row["title"])
+    assert {name: r for name, r in rows.items() if len(r) > 1} == {}
+
+
 def test_every_container_is_in_a_container_stack():
     """podman_containers.json's stack picker lists containers by name, so one
     left out never shows there, whatever stack is picked. Both ways: in "All"
