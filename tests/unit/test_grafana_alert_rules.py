@@ -68,3 +68,47 @@ def test_gluetun_container_down_matches_any_prefix():
     description = rule["annotations"]["description"]
     assert "{{ if $labels.name }}" in description
     assert "its state is unknown" in description
+
+
+def _port_mismatch_rule() -> dict:
+    return next(r for r in _rules() if r["uid"] == "qbittorrent-port-mismatch")
+
+
+def test_port_mismatch_compares_the_listen_port_to_the_forwarded_port():
+    rule = _port_mismatch_rule()
+    assert _exprs(rule) == [
+        'max(qbittorrent_listen_port{job="qbittorrent"} > 0)',
+        'max(gluetun_forwarded_port{job="qbittorrent"} > 0)',
+    ]
+    nodes = {query["refId"]: query["model"] for query in rule["data"]}
+    assert nodes[rule["condition"]]["expression"] == "$C != $D"
+    assert (nodes["C"]["expression"], nodes["D"]["expression"]) == ("A", "B")
+    # Both ports are named in the alert.
+    description = rule["annotations"]["description"]
+    assert "$values.C.Value" in description
+    assert "$values.D.Value" in description
+
+
+def test_port_mismatch_ignores_a_missing_port():
+    # A 0 or a missing series is qBittorrent down or no port forwarded, which
+    # qbittorrent-down and gluetun-natpmp-port-lost report. A VPN without port
+    # forwarding would otherwise alert forever.
+    assert _port_mismatch_rule()["noDataState"] == "OK"
+
+
+def _script_default(name: str) -> int:
+    script = Path(__file__).resolve().parents[2] / "scripts/qbittorrent-port-forward.sh"
+    match = re.search(rf'"\$\{{{name}:-(\d+)\}}"', script.read_text())
+    assert match, f"no default for {name} in {script}"
+    return int(match.group(1))
+
+
+def test_port_mismatch_outlasts_the_port_forward_retries():
+    # qBittorrent starts minutes after gluetun, and the up command keeps
+    # retrying until it does. A mismatch inside that window is not a fault.
+    retries = _script_default("QBITTORRENT_PORT_FORWARD_ATTEMPTS") * _script_default(
+        "QBITTORRENT_PORT_FORWARD_DELAY"
+    )
+    pending = re.fullmatch(r"(\d+)m", _port_mismatch_rule()["for"])
+    assert pending, _port_mismatch_rule()["for"]
+    assert int(pending.group(1)) * 60 >= retries

@@ -334,6 +334,10 @@ services:
       # here the way sabnzbd_exporter needed one.
       - FILE__QBITTORRENT_USER=/run/secrets/qbittorrent_username
       - FILE__QBITTORRENT_PASS=/run/secrets/qbittorrent_password
+      # gluetun's forwarded port, for the qBittorrent Port Mismatch alert
+      # (#462). 8000 is HTTP_CONTROL_SERVER_ADDRESS in configs/gluetun/.env;
+      # GET /v1/portforward is in gluetun's built-in public role, so no key.
+      - GLUETUN_CONTROL_URL=http://${GLUETUN_SERVICES_IP}:8000/v1/portforward
     secrets: [qbittorrent_username, qbittorrent_password]
     volumes:
       - ${CONFIG_FOLDER}/qbittorrent_exporter/exporter_extended.py:/app/exporter_extended.py:ro,z
