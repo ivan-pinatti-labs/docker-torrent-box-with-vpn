@@ -88,16 +88,28 @@ def test_build_metrics(exporter, podman_api):
     }
     podman_api["/v4.0.0/libpod/containers/cccc/json"] = OSError("gone")
     podman_api["/v4.0.0/libpod/containers/dddd/json"] = {}
-    body = exporter.build_metrics().decode()
+    body, complete = exporter.build_metrics()
+    body = body.decode()
     assert body.endswith("\n")
     lines = body.splitlines()
     assert 'podman_container_cpu_limit_vcpus{name="sonarr"} 1.5000' in lines
     assert 'podman_container_cpu_limit_vcpus{name="bbbbbbbbbbbb"} 0.2500' in lines
-    assert 'podman_container_cpu_limit_vcpus{name="broken"} 0.0000' in lines
     assert 'podman_container_cpu_limit_vcpus{name="unlimited"} 0.0000' in lines
     assert 'podman_container_pids_limit{name="sonarr"} 512' in lines
-    assert 'podman_container_pids_limit{name="broken"} 0' in lines
     assert "# TYPE podman_container_pids_limit gauge" in lines
+    # A failed lookup leaves the container out rather than reporting 0, which
+    # the gauges use for "unlimited", and marks the body incomplete.
+    assert not [line for line in lines if 'name="broken"' in line]
+    assert complete is False
+
+
+def test_build_metrics_is_complete_when_every_lookup_succeeds(exporter, podman_api):
+    podman_api["/v4.0.0/libpod/containers/json?all=false"] = [
+        {"Id": "aaaa", "Names": ["sonarr"]}
+    ]
+    podman_api["/v4.0.0/libpod/containers/aaaa/json"] = {}
+    _, complete = exporter.build_metrics()
+    assert complete is True
 
 
 USER_SERVICE = "/user.slice/user-1000.slice/user@1000.service"
@@ -152,7 +164,7 @@ def test_build_metrics_reads_swap_from_the_cgroup(
     podman_api["/v4.0.0/libpod/containers/bbbb/json"] = {
         "State": {"CgroupPath": "/user/bbbb"}
     }
-    lines = exporter.build_metrics().decode().splitlines()
+    lines = exporter.build_metrics()[0].decode().splitlines()
     assert 'podman_container_swap_usage_bytes{name="sonarr"} 2048' in lines
     assert 'podman_container_swap_limit_bytes{name="sonarr"} 536870912' in lines
     assert not [line for line in lines if 'name="gone"' in line and "swap" in line]
@@ -164,7 +176,7 @@ def test_get_metrics_caches_for_the_ttl(exporter, monkeypatch):
 
     def build():
         calls.append(1)
-        return f"body {len(calls)}".encode()
+        return f"body {len(calls)}".encode(), True
 
     clock = iter([1000.0, 1010.0, 1031.0])
     monkeypatch.setattr(exporter, "build_metrics", build)
@@ -172,6 +184,19 @@ def test_get_metrics_caches_for_the_ttl(exporter, monkeypatch):
     assert exporter.get_metrics() == b"body 1"
     assert exporter.get_metrics() == b"body 1"
     assert exporter.get_metrics() == b"body 2"
+
+
+def test_get_metrics_does_not_cache_an_incomplete_body(exporter, monkeypatch):
+    """After a failed lookup the next scrape asks Podman again, rather than
+    serving the gap for the rest of the TTL."""
+    bodies = iter([(b"partial", False), (b"whole", True)])
+    clock = iter([2000.0, 2001.0, 2002.0])
+    monkeypatch.setattr(exporter, "_cache", {"body": b"", "ts": 0.0})
+    monkeypatch.setattr(exporter, "build_metrics", lambda: next(bodies))
+    monkeypatch.setattr(exporter.time, "monotonic", lambda: next(clock))
+    assert exporter.get_metrics() == b"partial"
+    assert exporter.get_metrics() == b"whole"
+    assert exporter.get_metrics() == b"whole"
 
 
 @pytest.fixture
