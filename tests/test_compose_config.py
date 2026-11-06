@@ -697,14 +697,14 @@ class _ComposeLoader(yaml.SafeLoader):
 _ComposeLoader.add_multi_constructor("!", lambda loader, suffix, node: None)
 
 
-def _compose_profiles() -> dict[str, list[str]]:
+def _compose_profiles(root: Path = REPO_ROOT) -> dict[str, list[str]]:
     """Every compose service in the stack, with the profiles it declares.
 
     A route file only overrides parts of a service it names, so it adds the
     name but never replaces the profiles another file declared.
     """
     services = {}
-    for path in sorted(REPO_ROOT.glob("docker-compose*.yml")):
+    for path in sorted(root.glob("docker-compose*.yml")):
         compose = yaml.load(path.read_text(), Loader=_ComposeLoader)  # nosec B506 - SafeLoader subclass
         for name, definition in (compose.get("services") or {}).items():
             services.setdefault(name, [])
@@ -733,3 +733,21 @@ def test_registered_profile_is_the_one_compose_reads(service):
     disabled, quietly, in every tier."""
     profile_var = SERVICES[service]["profile_var"]
     assert _compose_profiles()[service] == [f"${{{profile_var}}}"]
+
+
+def test_compose_profiles_survive_a_route_file(tmp_path):
+    """A custom route file at the root uses `!reset []` and names a service
+    without its profiles; neither may break or blank the registry guard.
+    It sorts after the stack's own files, so it is read last."""
+    (tmp_path / "docker-compose-apps.yml").write_text(
+        "services:\n  radarr:\n    profiles: ['${RADARR_PROFILE}']\n"
+    )
+    (tmp_path / "docker-compose-custom-vpn.yml").write_text(
+        "services:\n"
+        "  radarr:\n    network_mode: container:gluetun\n    networks: !reset []\n"
+        "  gluetun:\n    networks:\n      services:\n        aliases: [radarr]\n"
+    )
+    assert _compose_profiles(tmp_path) == {
+        "radarr": ["${RADARR_PROFILE}"],
+        "gluetun": [],
+    }

@@ -17,10 +17,8 @@ import yaml
 
 pytestmark = pytest.mark.unit
 
-DASHBOARDS = (
-    Path(__file__).resolve().parents[2]
-    / "configs/grafana/config/provisioning/dashboards"
-)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DASHBOARDS = REPO_ROOT / "configs/grafana/config/provisioning/dashboards"
 # PromQL takes double, single and backtick quoted strings. An exact matcher
 # never survives a prefix; a regex one does only if it starts with a wildcard
 # (.* or .+) or is a dashboard variable that already holds real names.
@@ -123,11 +121,11 @@ class _ComposeLoader(yaml.SafeLoader):
 _ComposeLoader.add_multi_constructor("!", lambda loader, suffix, node: None)
 
 
-def _compose_services() -> set[str]:
+def _compose_services(root: Path = REPO_ROOT) -> set[str]:
     """Parsed rather than grepped, so a service left commented out (notifiarr)
     is not counted."""
     services = set()
-    for compose in Path(__file__).resolve().parents[2].glob("docker-compose*.yml"):
+    for compose in root.glob("docker-compose*.yml"):
         doc = yaml.load(compose.read_text(), Loader=_ComposeLoader)  # nosec B506 - SafeLoader subclass
         services.update(doc.get("services") or {})
     return services
@@ -166,3 +164,17 @@ def test_every_container_is_in_a_container_stack():
     expected = _compose_services() - NOT_ON_DASHBOARDS.keys()
     assert sorted(expected - listed) == []
     assert sorted(listed - expected) == []
+
+
+def test_compose_services_reads_a_route_file_with_reset(tmp_path):
+    """A custom route file kept at the root, as ROUTE_FILES allows, clears
+    networks with Compose's `!reset []`, which yaml.safe_load refuses."""
+    (tmp_path / "docker-compose-apps.yml").write_text(
+        "services:\n  radarr:\n    profiles: ['${RADARR_PROFILE}']\n"
+    )
+    (tmp_path / "docker-compose-custom-vpn.yml").write_text(
+        "services:\n"
+        "  radarr:\n    network_mode: container:gluetun\n    networks: !reset []\n"
+        "  gluetun:\n    networks:\n      services:\n        aliases: [radarr]\n"
+    )
+    assert _compose_services(tmp_path) == {"radarr", "gluetun"}
