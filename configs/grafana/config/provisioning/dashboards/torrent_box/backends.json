@@ -22746,6 +22746,383 @@
               "mode": "multi"
             }
           }
+        },
+        {
+          "id": 419,
+          "type": "stat",
+          "title": "sabnzbd_exporter | State",
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 163
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_state{name=~\".*sabnzbd_exporter\"}",
+              "legendFormat": "{{name}}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "Down",
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Configured",
+                      "color": "blue",
+                      "index": 0
+                    },
+                    "1": {
+                      "text": "Created",
+                      "color": "blue",
+                      "index": 1
+                    },
+                    "2": {
+                      "text": "Up",
+                      "color": "green",
+                      "index": 2
+                    },
+                    "3": {
+                      "text": "Stopped",
+                      "color": "red",
+                      "index": 3
+                    },
+                    "4": {
+                      "text": "Paused",
+                      "color": "yellow",
+                      "index": 4
+                    },
+                    "5": {
+                      "text": "Exited",
+                      "color": "red",
+                      "index": 5
+                    },
+                    "6": {
+                      "text": "Removing",
+                      "color": "orange",
+                      "index": 6
+                    },
+                    "7": {
+                      "text": "Stopping",
+                      "color": "orange",
+                      "index": 7
+                    }
+                  }
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  }
+                ]
+              },
+              "color": {
+                "mode": "thresholds"
+              }
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "textMode": "value"
+          }
+        },
+        {
+          "id": 420,
+          "type": "timeseries",
+          "title": "sabnzbd_exporter | CPU",
+          "gridPos": {
+            "h": 8,
+            "w": 9,
+            "x": 6,
+            "y": 163
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_cpu_seconds_total{name=~\".*sabnzbd_exporter\"}[$interval]) * 100",
+              "legendFormat": "CPU %",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 421,
+          "type": "timeseries",
+          "title": "sabnzbd_exporter | Memory",
+          "gridPos": {
+            "h": 8,
+            "w": 9,
+            "x": 15,
+            "y": 163
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_mem_usage_bytes{name=~\".*sabnzbd_exporter\"}",
+              "legendFormat": "usage",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_mem_limit_bytes{name=~\".*sabnzbd_exporter\"}",
+              "legendFormat": "limit",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 422,
+          "type": "timeseries",
+          "title": "sabnzbd_exporter | Swap",
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 0,
+            "y": 171
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*sabnzbd_exporter\"} - podman_container_mem_usage_bytes{name=~\".*sabnzbd_exporter\"}",
+              "legendFormat": "swap used",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*sabnzbd_exporter\"} - podman_container_mem_limit_bytes{name=~\".*sabnzbd_exporter\"}",
+              "legendFormat": "swap limit",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 423,
+          "type": "timeseries",
+          "title": "sabnzbd_exporter | Disk IO",
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 6,
+            "y": 171
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_block_input_total{name=~\".*sabnzbd_exporter\"}[$interval])",
+              "legendFormat": "read",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_block_output_total{name=~\".*sabnzbd_exporter\"}[$interval])",
+              "legendFormat": "write",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 424,
+          "type": "timeseries",
+          "title": "sabnzbd_exporter | Network IO",
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 12,
+            "y": 171
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_net_input_total{name=~\".*sabnzbd_exporter\"}[$interval])",
+              "legendFormat": "rx",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_net_output_total{name=~\".*sabnzbd_exporter\"}[$interval])",
+              "legendFormat": "tx",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
         }
       ],
       "gridPos": {
