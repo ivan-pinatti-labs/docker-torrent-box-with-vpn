@@ -40,7 +40,13 @@ def podman_get(path: str) -> object:
             if not chunk:
                 break
             buf += chunk
-    _, _, body = buf.partition(b"\r\n\r\n")
+    head, _, body = buf.partition(b"\r\n\r\n")
+    # Podman answers a container removed since the listing with a 404 and a
+    # JSON error body, which must not read as that container's details.
+    status_line = head.split(b"\r\n", 1)[0]
+    status = status_line.split()
+    if len(status) < 2 or not status[1].startswith(b"2"):
+        raise OSError(f"Podman API {path}: {status_line.decode(errors='replace')}")
     return json.loads(body)
 
 
@@ -70,8 +76,15 @@ def read_swap(directory: Path | None) -> tuple[int | None, int | None]:
     return values[0], values[1]
 
 
-def build_metrics() -> bytes:
+def build_metrics() -> tuple[bytes, bool]:
+    """The metrics body, and whether every container's details were read.
+
+    A container whose detail lookup fails is left out of this body rather than
+    reported with limits of 0, which the gauges use for "unlimited"; the caller
+    does not cache an incomplete body, so the next scrape asks again.
+    """
     containers = podman_get("/v4.0.0/libpod/containers/json?all=false")
+    complete = True
     cpu_lines = [
         "# HELP podman_container_cpu_limit_vcpus Configured CPU limit in vCPUs (0 = unlimited).",
         "# TYPE podman_container_cpu_limit_vcpus gauge",
@@ -99,9 +112,8 @@ def build_metrics() -> bytes:
             pids = host.get("PidsLimit") or 0
             cgroup_path = detail.get("State", {}).get("CgroupPath") or ""
         except Exception:
-            nano = 0
-            pids = 0
-            cgroup_path = ""
+            complete = False
+            continue
         vcpus = int(nano) / 1_000_000_000
         cpu_lines.append(
             f'podman_container_cpu_limit_vcpus{{name="{name}"}} {vcpus:.4f}'
@@ -115,13 +127,16 @@ def build_metrics() -> bytes:
                 f'podman_container_swap_limit_bytes{{name="{name}"}} {limit}'
             )
     lines = cpu_lines + pids_lines + swap_lines + swap_limit_lines
-    return ("\n".join(lines) + "\n").encode()
+    return ("\n".join(lines) + "\n").encode(), complete
 
 
 def get_metrics() -> bytes:
     now = time.monotonic()
     if now - _cache["ts"] > CACHE_TTL:
-        _cache["body"] = build_metrics()
+        body, complete = build_metrics()
+        if not complete:
+            return body
+        _cache["body"] = body
         _cache["ts"] = now
     return _cache["body"]
 

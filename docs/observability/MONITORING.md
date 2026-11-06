@@ -50,7 +50,9 @@ the path differs by cgroup manager: systemd puts containers under the user's
 read only and the script reads the two swap files of the containers Podman lists.
 
 Responses are cached for 30 seconds so Prometheus scrapes do not hammer the
-Podman socket.
+Podman socket. A container whose details Podman fails to return is left out of
+that scrape, rather than reported with limits of `0` (which reads as unlimited),
+and a scrape with such a gap is not cached, so the next one asks again.
 
 ## Enabling
 
