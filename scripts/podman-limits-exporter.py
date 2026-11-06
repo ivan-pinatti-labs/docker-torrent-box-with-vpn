@@ -40,7 +40,13 @@ def podman_get(path: str) -> object:
             if not chunk:
                 break
             buf += chunk
-    _, _, body = buf.partition(b"\r\n\r\n")
+    head, _, body = buf.partition(b"\r\n\r\n")
+    # Podman answers a container removed since the listing with a 404 and a
+    # JSON error body, which must not read as that container's details.
+    status_line = head.split(b"\r\n", 1)[0]
+    status = status_line.split()
+    if len(status) < 2 or not status[1].startswith(b"2"):
+        raise OSError(f"Podman API {path}: {status_line.decode(errors='replace')}")
     return json.loads(body)
 
 

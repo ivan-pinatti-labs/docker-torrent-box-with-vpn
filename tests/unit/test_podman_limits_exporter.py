@@ -21,6 +21,13 @@ def exporter(load_script):
     return load_script("podman-limits-exporter.py")
 
 
+class Status:
+    """A non-200 answer: the status line and the JSON body Podman sends with it."""
+
+    def __init__(self, line: bytes, body: object):
+        self.line, self.body = line, body
+
+
 class FakeSocket:
     """Answers one HTTP/1.0 request the way the Podman API socket does."""
 
@@ -49,8 +56,13 @@ class FakeSocket:
         answer = self.responses[path]
         if isinstance(answer, Exception):
             raise answer
+        status = b"200 OK"
+        if isinstance(answer, Status):
+            status, answer = answer.line, answer.body
         body = json.dumps(answer).encode()
-        reply = b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n" + body
+        reply = (
+            b"HTTP/1.0 " + status + b"\r\nContent-Type: application/json\r\n\r\n" + body
+        )
         # Split across two reads, as a real socket may deliver it.
         self.chunks = [reply[:20], reply[20:]]
 
@@ -70,6 +82,38 @@ def test_podman_get_reads_the_json_body(exporter, podman_api):
     podman_api["/v4.0.0/info"] = {"ok": True}
     assert exporter.podman_get("/v4.0.0/info") == {"ok": True}
     assert FakeSocket.connected_to == [exporter.SOCK_PATH]
+
+
+def test_podman_get_refuses_an_error_status(exporter, podman_api):
+    """A container removed since the listing answers 404 with a JSON body."""
+    path = "/v4.0.0/libpod/containers/gone/json"
+    podman_api[path] = Status(b"404 Not Found", {"cause": "no such container"})
+    with pytest.raises(OSError, match="404 Not Found"):
+        exporter.podman_get(path)
+
+
+def test_podman_get_refuses_a_reply_without_a_status(exporter, monkeypatch):
+    class Silent(FakeSocket):
+        def sendall(self, data):
+            self.chunks = []
+
+    monkeypatch.setattr(exporter.socket, "socket", Silent)
+    with pytest.raises(OSError):
+        exporter.podman_get("/v4.0.0/info")
+
+
+def test_build_metrics_leaves_out_a_container_removed_since_the_listing(
+    exporter, podman_api
+):
+    podman_api["/v4.0.0/libpod/containers/json?all=false"] = [
+        {"Id": "gone", "Names": ["gone"]}
+    ]
+    podman_api["/v4.0.0/libpod/containers/gone/json"] = Status(
+        b"404 Not Found", {"cause": "no such container"}
+    )
+    body, complete = exporter.build_metrics()
+    assert b'name="gone"' not in body
+    assert complete is False
 
 
 def test_build_metrics(exporter, podman_api):
