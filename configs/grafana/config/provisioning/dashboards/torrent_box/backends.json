@@ -5692,6 +5692,168 @@
       }
     },
     {
+      "id": 411,
+      "type": "stat",
+      "title": "cleanuparr",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "podman_container_state{name=~\".*cleanuparr\"}",
+          "legendFormat": "{{name}}",
+          "refId": "A",
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(max(podman_container_health{name=~\".*cleanuparr\"}) unless on() (podman_container_state{name=~\".*cleanuparr\"} != 2)) or on() vector(-1)",
+          "legendFormat": "Health",
+          "refId": "B",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Down",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Configured",
+                  "color": "blue",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Created",
+                  "color": "blue",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Up",
+                  "color": "green",
+                  "index": 2
+                },
+                "3": {
+                  "text": "Stopped",
+                  "color": "red",
+                  "index": 3
+                },
+                "4": {
+                  "text": "Paused",
+                  "color": "yellow",
+                  "index": 4
+                },
+                "5": {
+                  "text": "Exited",
+                  "color": "red",
+                  "index": 5
+                },
+                "6": {
+                  "text": "Removing",
+                  "color": "orange",
+                  "index": 6
+                },
+                "7": {
+                  "text": "Stopping",
+                  "color": "orange",
+                  "index": 7
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Health"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "-1": {
+                        "text": "N/A",
+                        "color": "gray",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "Healthy",
+                        "color": "green",
+                        "index": 1
+                      },
+                      "1": {
+                        "text": "Starting",
+                        "color": "yellow",
+                        "index": 2
+                      },
+                      "2": {
+                        "text": "Unhealthy",
+                        "color": "red",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "noValue",
+                "value": "N/A"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "colorMode": "background",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 26
+      }
+    },
+    {
       "id": 34,
       "type": "row",
       "title": "VPN Stack",
@@ -14191,6 +14353,431 @@
                 "uid": "loki"
               },
               "expr": "avg by (service) (avg_over_time({job=\"nginx-access\", service=\"whisparr\"} !~ \"socket.io\" | regexp `\\] \"[^\"]*\" \\d+ \\d+ \\d+ [\\d.]+ (?P<upstream_time>[\\d.]+)` | unwrap upstream_time [1m])) * 1000",
+              "legendFormat": "{{service}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 412,
+          "type": "stat",
+          "title": "cleanuparr | State",
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 208
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_state{name=~\".*cleanuparr\"}",
+              "legendFormat": "{{name}}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "Down",
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Configured",
+                      "color": "blue",
+                      "index": 0
+                    },
+                    "1": {
+                      "text": "Created",
+                      "color": "blue",
+                      "index": 1
+                    },
+                    "2": {
+                      "text": "Up",
+                      "color": "green",
+                      "index": 2
+                    },
+                    "3": {
+                      "text": "Stopped",
+                      "color": "red",
+                      "index": 3
+                    },
+                    "4": {
+                      "text": "Paused",
+                      "color": "yellow",
+                      "index": 4
+                    },
+                    "5": {
+                      "text": "Exited",
+                      "color": "red",
+                      "index": 5
+                    },
+                    "6": {
+                      "text": "Removing",
+                      "color": "orange",
+                      "index": 6
+                    },
+                    "7": {
+                      "text": "Stopping",
+                      "color": "orange",
+                      "index": 7
+                    }
+                  }
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  }
+                ]
+              },
+              "color": {
+                "mode": "thresholds"
+              }
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "textMode": "value"
+          }
+        },
+        {
+          "id": 413,
+          "type": "timeseries",
+          "title": "cleanuparr | CPU",
+          "gridPos": {
+            "h": 8,
+            "w": 9,
+            "x": 6,
+            "y": 208
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_cpu_seconds_total{name=~\".*cleanuparr\"}[$interval]) * 100",
+              "legendFormat": "CPU %",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 414,
+          "type": "timeseries",
+          "title": "cleanuparr | Memory",
+          "gridPos": {
+            "h": 8,
+            "w": 9,
+            "x": 15,
+            "y": 208
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_mem_usage_bytes{name=~\".*cleanuparr\"}",
+              "legendFormat": "usage",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_mem_limit_bytes{name=~\".*cleanuparr\"}",
+              "legendFormat": "limit",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 415,
+          "type": "timeseries",
+          "title": "cleanuparr | Swap",
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 0,
+            "y": 216
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_mem_swap_usage_bytes{name=~\".*cleanuparr\"} - podman_container_mem_usage_bytes{name=~\".*cleanuparr\"}",
+              "legendFormat": "swap used",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "podman_container_mem_swap_limit_bytes{name=~\".*cleanuparr\"} - podman_container_mem_limit_bytes{name=~\".*cleanuparr\"}",
+              "legendFormat": "swap limit",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 416,
+          "type": "timeseries",
+          "title": "cleanuparr | Disk IO",
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 6,
+            "y": 216
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_block_input_total{name=~\".*cleanuparr\"}[$interval])",
+              "legendFormat": "read",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_block_output_total{name=~\".*cleanuparr\"}[$interval])",
+              "legendFormat": "write",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 417,
+          "type": "timeseries",
+          "title": "cleanuparr | Network IO",
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 12,
+            "y": 216
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_net_input_total{name=~\".*cleanuparr\"}[$interval])",
+              "legendFormat": "rx",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(podman_container_net_output_total{name=~\".*cleanuparr\"}[$interval])",
+              "legendFormat": "tx",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 418,
+          "type": "timeseries",
+          "title": "cleanuparr | Latency",
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 18,
+            "y": 216
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "avg by (service) (avg_over_time({job=\"nginx-access\", service=\"cleanuparr\"} !~ \"socket.io\" | regexp `\\] \"[^\"]*\" \\d+ \\d+ \\d+ [\\d.]+ (?P<upstream_time>[\\d.]+)` | unwrap upstream_time [1m])) * 1000",
               "legendFormat": "{{service}}",
               "refId": "A"
             }

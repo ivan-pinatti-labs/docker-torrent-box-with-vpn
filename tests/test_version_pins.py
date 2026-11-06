@@ -47,7 +47,10 @@ Covered, each confirmed live against a standalone container of the pinned
 image before being wired into this file: qBittorrent (`/api/v2/app/version`,
 authenticated); Sonarr, Radarr, Lidarr, Prowlarr, Readarr
 (`system/status` beside each app's own already-registered `/health` path,
-same API prefix, same API key); Bazarr (`/api/system/status`); SABnzbd
+same API prefix, same API key); Bazarr (`/api/system/status`); Cleanuparr
+(`/api/status`, with the key wire-connections.sh saved; its
+`application.version` is the assembly version, per its StatusController at
+the pinned tag); SABnzbd
 (`mode=version`, unauthenticated by design upstream); Jellyfin
 (`/System/Info/Public`, unauthenticated); Grafana
 (`/api/frontend/settings`, authenticated, because `hide_version` masks
@@ -83,6 +86,7 @@ while looking thorough:
     actually exposed.
 """
 
+import json
 import re
 import subprocess  # nosec B404 - podman CLI, see the call sites
 
@@ -94,6 +98,7 @@ from conftest import (
     GRAFANA_INI,
     SERVICES,
     base_url,
+    cleanuparr_api,
     container_name,
     env,
     grafana_admin_credentials,
@@ -318,6 +323,27 @@ def test_bazarr_running_version_matches_pin(running_containers):
     assert reported, f"bazarr system/status returned no version: {resp.text[:200]}"
     _assert_running_matches_pin(
         env("BAZARR_VERSION"), reported, "bazarr", "BAZARR_VERSION"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Cleanuparr
+# ---------------------------------------------------------------------------
+
+
+def test_cleanuparr_running_version_matches_pin(running_containers):
+    if not is_enabled("cleanuparr"):
+        pytest.skip("cleanuparr profile is disabled")
+    skip_if_not_running("cleanuparr", running_containers)
+    if not read_secret("cleanuparr", "api_key.txt"):
+        pytest.skip("No Cleanuparr API key found")
+
+    status, body = cleanuparr_api("status")
+    assert status == 200, f"cleanuparr status returned {status}: {body[:200]}"
+    reported = (json.loads(body).get("application") or {}).get("version")
+    assert reported, f"cleanuparr status returned no version: {body[:200]}"
+    _assert_running_matches_pin(
+        env("CLEANUPARR_VERSION"), reported, "cleanuparr", "CLEANUPARR_VERSION"
     )
 
 

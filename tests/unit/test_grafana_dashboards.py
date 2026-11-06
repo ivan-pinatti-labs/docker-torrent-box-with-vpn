@@ -13,13 +13,12 @@ import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 pytestmark = pytest.mark.unit
 
-DASHBOARDS = (
-    Path(__file__).resolve().parents[2]
-    / "configs/grafana/config/provisioning/dashboards"
-)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DASHBOARDS = REPO_ROOT / "configs/grafana/config/provisioning/dashboards"
 # PromQL takes double, single and backtick quoted strings. An exact matcher
 # never survives a prefix; a regex one does only if it starts with a wildcard
 # (.* or .+) or is a dashboard variable that already holds real names.
@@ -103,3 +102,103 @@ def test_the_stack_variable_values_are_matched_by_suffix():
     query = container["query"]
     query = query if isinstance(query, str) else query["query"]
     assert 'name=~".*(${stack:raw})"' in query
+
+
+# Containers deliberately left off the dashboards that list every container,
+# each with the reason. Everything else needs its panels (#443): Cleanuparr went
+# without any, because nothing tied a new service to them.
+NOT_ON_DASHBOARDS = {
+    "nzbget": "legacy and disabled by default; the overview is SABnzbd's",
+    "vpn_mock": "a CI stand-in for a VPN server, never part of a deployment",
+}
+
+# Overview tiles and stack picker entries exist, but the backends.json block
+# lands in a pull request of its own: CodeRabbit cannot load a dashboard diff
+# much over 600 lines, so one block goes in at a time (#447).
+BLOCK_PENDING = {
+    "sabnzbd_exporter": "#447, follow-up 1 of 3",
+    "podman_limits_exporter": "#447, follow-up 2 of 3",
+    "log_rotator": "#447, follow-up 3 of 3",
+}
+
+
+class _ComposeLoader(yaml.SafeLoader):
+    """Accepts Compose's own merge tags. A custom route file at the root, which
+    the glob below reads too, clears a service's networks with `!reset []`."""
+
+
+_ComposeLoader.add_multi_constructor("!", lambda loader, suffix, node: None)
+
+
+def _compose_services(root: Path = REPO_ROOT) -> set[str]:
+    """Parsed rather than grepped, so a service left commented out (notifiarr)
+    is not counted."""
+    services = set()
+    for compose in sorted(root.glob("docker-compose*.yml")):
+        doc = yaml.load(compose.read_text(), Loader=_ComposeLoader)  # nosec B506 - SafeLoader subclass
+        services.update(doc.get("services") or {})
+    return services
+
+
+def _backends_panels() -> list[dict]:
+    doc = json.loads((DASHBOARDS / "torrent_box/backends.json").read_text())
+
+    def walk(panels):
+        for panel in panels:
+            yield panel
+            yield from walk(panel.get("panels", []))
+
+    return list(walk(doc["panels"]))
+
+
+def test_every_container_has_an_overview_tile_and_a_block():
+    """backends.json gives each container a tile in Overview and a block in its
+    stack's row, headed by "<container> | State"."""
+    panels = _backends_panels()
+    titles = {panel.get("title", "") for panel in panels}
+    expected = _compose_services() - NOT_ON_DASHBOARDS.keys()
+    assert not NOT_ON_DASHBOARDS.keys() - _compose_services()
+    assert sorted(expected - titles) == []
+    without_block = {name for name in expected if f"{name} | State" not in titles}
+    assert sorted(without_block - BLOCK_PENDING.keys()) == []
+    # A block that has landed takes its entry out of BLOCK_PENDING.
+    assert sorted(BLOCK_PENDING.keys() - without_block) == []
+
+
+def test_every_container_is_in_a_container_stack():
+    """podman_containers.json's stack picker lists containers by name, so one
+    left out never shows there, whatever stack is picked. Both ways: in "All"
+    (allValue) and in exactly one named stack."""
+    doc = json.loads(
+        (DASHBOARDS / "node_containers/podman_containers.json").read_text()
+    )
+    stack = next(v for v in doc["templating"]["list"] if v["name"] == "stack")
+    listed = set(stack["allValue"].split("|"))
+    expected = _compose_services() - NOT_ON_DASHBOARDS.keys()
+    assert sorted(expected - listed) == []
+    assert sorted(listed - expected) == []
+    # "Name : a|b, Other : c" -> every container named once across the stacks.
+    entries = stack["query"].split(",")
+    assert all(" : " in entry for entry in entries), entries
+    grouped = [
+        name.strip()
+        for entry in entries
+        for name in entry.split(" : ", 1)[1].split("|")
+    ]
+    assert "" not in grouped, stack["query"]
+    assert sorted(grouped) == sorted(set(grouped))
+    assert set(grouped) == listed
+
+
+def test_compose_services_reads_a_route_file_with_reset(tmp_path):
+    """A custom route file kept at the root, as ROUTE_FILES allows, clears
+    networks with Compose's `!reset []`, which yaml.safe_load refuses."""
+    (tmp_path / "docker-compose-apps.yml").write_text(
+        "services:\n  radarr:\n    profiles: ['${RADARR_PROFILE}']\n"
+    )
+    (tmp_path / "docker-compose-custom-vpn.yml").write_text(
+        "services:\n"
+        "  radarr:\n    network_mode: container:gluetun\n    networks: !reset []\n"
+        "  gluetun:\n    networks:\n      services:\n        aliases: [radarr]\n"
+    )
+    assert _compose_services(tmp_path) == {"radarr", "gluetun"}
