@@ -163,8 +163,12 @@ repos:
         # Third-party arr-scripts bootstrap scripts, vendored like patches/.
         exclude: '^patches/|^configs/.*/custom-(cont-init|services)\.d/'
 
-  - repo: https://github.com/jumanjihouse/pre-commit-hooks
-    rev: 3.0.0
+  # The same hook pre-commit-checklists' checklist-dev-shell runs. It installs
+  # shfmt itself, from the upstream release its own pinned checksums verify,
+  # so the version moves with this rev (which Renovate bumps) and is the same
+  # in L2 and in CI, with nothing to put on PATH first.
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.13.1-1
     hooks:
       - id: shfmt
         args: ["--indent", "2", "--list", "--write"]
