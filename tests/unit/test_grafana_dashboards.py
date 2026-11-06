@@ -134,7 +134,7 @@ def _compose_services(root: Path = REPO_ROOT) -> set[str]:
     """Parsed rather than grepped, so a service left commented out (notifiarr)
     is not counted."""
     services = set()
-    for compose in root.glob("docker-compose*.yml"):
+    for compose in sorted(root.glob("docker-compose*.yml")):
         doc = yaml.load(compose.read_text(), Loader=_ComposeLoader)  # nosec B506 - SafeLoader subclass
         services.update(doc.get("services") or {})
     return services
@@ -178,11 +178,14 @@ def test_every_container_is_in_a_container_stack():
     assert sorted(expected - listed) == []
     assert sorted(listed - expected) == []
     # "Name : a|b, Other : c" -> every container named once across the stacks.
+    entries = stack["query"].split(",")
+    assert all(" : " in entry for entry in entries), entries
     grouped = [
-        name
-        for entry in stack["query"].split(",")
-        for name in entry.split(" : ", 1)[1].strip().split("|")
+        name.strip()
+        for entry in entries
+        for name in entry.split(" : ", 1)[1].split("|")
     ]
+    assert "" not in grouped, stack["query"]
     assert sorted(grouped) == sorted(set(grouped))
     assert set(grouped) == listed
 

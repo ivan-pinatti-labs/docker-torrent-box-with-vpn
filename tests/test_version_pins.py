@@ -340,7 +340,7 @@ def test_cleanuparr_running_version_matches_pin(running_containers):
 
     status, body = cleanuparr_api("status")
     assert status == 200, f"cleanuparr status returned {status}: {body[:200]}"
-    reported = json.loads(body).get("application", {}).get("version")
+    reported = (json.loads(body).get("application") or {}).get("version")
     assert reported, f"cleanuparr status returned no version: {body[:200]}"
     _assert_running_matches_pin(
         env("CLEANUPARR_VERSION"), reported, "cleanuparr", "CLEANUPARR_VERSION"
