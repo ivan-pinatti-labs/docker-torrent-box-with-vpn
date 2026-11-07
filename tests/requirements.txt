@@ -23,7 +23,7 @@
 # them from here, under the cooldown, and the suite is what clears them.
 docker==7.2.0
 json5==0.17.3
-pytest==9.1.1
+pytest==9.2.0
 pytest-testinfra==10.2.2
 pytest-xdist==3.8.0
 python-dotenv==1.2.4
