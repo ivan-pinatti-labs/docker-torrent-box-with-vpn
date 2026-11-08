@@ -231,15 +231,18 @@ maintaining a pin CI cannot check is a liability, not coverage. `.github/renovat
 `docker.io/linuxserver/nzbget` with `enabled: false`. Dropping that rule is a decision to actually
 run and test nzbget again, not merely to bump its pin.
 
-Two more pins carry an `allowedVersions` ceiling rather than being grouped or held, because their
-tag history contains something that outranks their real version line under Renovate's default
-docker versioning: `docker.io/linuxserver/qbittorrent` (`<10.0.0`) and
-`docker.io/linuxserver/readarr` (`<1.0.0`). The qbittorrent case is what PR #137 exploited --
+Every pin in `versions.env` also carries a tag shape: an `allowedVersions` regex in
+`.github/renovate.json5`, so Renovate never offers a tag that is not shaped like the pin's own.
+Image tag histories hold decoys that outrank the real version line. PR #137 offered qbittorrent
 `5.2.2 -> 20.04.1`, a four-and-a-half-year-old image from an abandoned Ubuntu-base-release tag
-line that satisfied the entire integration suite anyway -- and readarr's `1.0.<build>` decoy tags
-(123 of them, all built around 2021-12, really an early `0.1.0` build under `versioning=loose`)
-were found by auditing every LinuxServer pin for the same shape afterward. See the comment above
-each rule in `.github/renovate.json5` for the full evidence, and
+line that satisfied the entire integration suite anyway. readarr carries 123 `1.0.<build>` tags
+from an early `0.1.0` build. PR #457 offered mylar3 `v0.11.0-ls277 -> 3ea9b997-ls249`, an older
+commit-tagged build from another branch. calibre-web, jellyfin, mylar3 and nzbget carry calendar
+tags like `2021.12.16`, and lidarr and calibre-web carry other numbering (`8.1.2135`, `5.33.2`).
+The shapes bound the leading number to exclude every decoy found by `skopeo list-tags` on
+2026-11-08, while leaving room for real majors. `tests/test_renovate_pins.py` fails when a pin has
+no shape, when its own tag does not match it, or when a known decoy does. A new pin needs a shape
+before it passes. See the comment above the rules in `.github/renovate.json5` for the evidence, and
 [`tests/test_version_pins.py`](../tests/test_version_pins.py) for the coverage that asks each
 running service what version it actually is, which is the check that would have caught PR #137
 directly instead of relying on a human noticing an implausible major-version jump.

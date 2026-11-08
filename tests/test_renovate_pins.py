@@ -745,3 +745,68 @@ def test_env_example_carries_no_image_pins():
         f"{ENV_EXAMPLE.name} sets {', '.join(in_template)}, which "
         f"{VERSIONS_FILE.name} pins. Keep image versions in {VERSIONS_FILE.name} only."
     )
+
+
+# Tags that were offered, or could have been, in place of a real release, each
+# from the image's own `skopeo list-tags`. The tag shapes in renovate.json5
+# must keep refusing every one of them.
+KNOWN_DECOYS = [
+    ("docker.io/linuxserver/mylar3", "3ea9b997-ls249"),  # PR #457
+    ("docker.io/linuxserver/mylar3", "2021.10.01"),
+    ("docker.io/linuxserver/mylar3", "5.9.5"),
+    ("docker.io/linuxserver/qbittorrent", "20.04.1"),  # PR #137
+    ("docker.io/linuxserver/qbittorrent", "14.3.9"),
+    ("docker.io/linuxserver/readarr", "1.0.1126"),
+    ("docker.io/linuxserver/readarr", "0.4.19-develop"),
+    ("docker.io/linuxserver/lidarr", "8.1.2135"),
+    ("docker.io/linuxserver/jellyfin", "2021.12.16"),
+    ("docker.io/linuxserver/calibre-web", "2021.12.16"),
+    ("docker.io/linuxserver/calibre-web", "5.33.2"),
+    ("docker.io/linuxserver/nzbget", "2021.11.25"),
+]
+
+
+def _allowed_versions(package: str) -> str | None:
+    """The allowedVersions Renovate applies to one package.
+
+    The last matching rule's, since a later packageRules entry overrides an
+    earlier one for the same setting.
+    """
+    allowed = None
+    for rule in _renovate_config().get("packageRules", []):
+        if package in rule.get("matchPackageNames", []) and "allowedVersions" in rule:
+            allowed = rule["allowedVersions"]
+    return allowed
+
+
+def _tag_shape(package: str) -> re.Pattern:
+    allowed = _allowed_versions(package)
+    assert allowed and allowed.startswith("/") and allowed.endswith("/"), (
+        f"{package} has no tag shape in {RENOVATE_CONFIG.name} (an allowedVersions "
+        f"`/regex/`; it has {allowed!r}), so Renovate offers it any tag that "
+        f"orders above the pin, including another branch's or an old one's."
+    )
+    return re.compile(allowed[1:-1])
+
+
+@pytest.mark.parametrize("variable", sorted(_annotations()))
+def test_pin_has_a_tag_shape_its_own_tag_matches(variable):
+    """Every pin limits Renovate to tags shaped like its own.
+
+    A shape its own tag does not match would refuse every release, which
+    freezes the pin as quietly as no annotation does.
+    """
+    package = _annotations()[variable]
+    tag = _pins()[variable].split("@", 1)[0]
+    assert _tag_shape(package).fullmatch(tag), (
+        f"{variable}={tag} does not match the tag shape {package} has in "
+        f"{RENOVATE_CONFIG.name}, so Renovate would offer it nothing."
+    )
+
+
+@pytest.mark.parametrize(("package", "tag"), KNOWN_DECOYS)
+def test_known_decoy_is_refused(package, tag):
+    assert not _tag_shape(package).fullmatch(tag), (
+        f"{tag} is a decoy in {package}'s tag history, and its tag shape in "
+        f"{RENOVATE_CONFIG.name} lets Renovate offer it."
+    )

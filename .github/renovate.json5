@@ -424,16 +424,111 @@
     // Under `versioning=loose`, already set on this pin and already flagged
     // above as the more permissive, misorder-prone scheme, a bare `1.0.x`
     // tag outranks `0.4.19` the same way `20.04.1` outranked `5.2.2`.
-    // `<1.0.0` excludes every one of the 123 decoy tags while leaving the
-    // entire real `0.x` line open, including whatever nightly and develop
-    // builds land before an eventual real 1.0.
+    // `<1.0.0` excluded every one of the 123 decoy tags while leaving the
+    // real `0.x` line open.
+    //
+    // Both caps were per image, added after the decoy surfaced, and the third
+    // one proved that does not scale: PR #457 offered mylar3
+    // `v0.11.0-ls277 -> 3ea9b997-ls249`, a commit-tagged build from another
+    // branch, older than the pin, which `loose` versioning read as major 3.
+    // A tag that happened to read as a minor instead would have merged
+    // unattended, after seven days and a green suite, which #137 showed an
+    // old image can pass. So every pin in versions.env now has a tag shape, below,
+    // and Renovate offers nothing that does not have the pin's own shape.
+    // tests/test_renovate_pins.py fails when a pin has no shape, when its own
+    // tag does not match it, and when a known decoy does.
+    //
+    // A shape cannot tell a decoy of the same shape from a real release, so
+    // the leading number is bounded too: at most two digits everywhere,
+    // which shuts out the calendar tags (`2021.12.16`) LinuxServer left on
+    // calibre-web, jellyfin, mylar3 and nzbget, and tighter where a decoy
+    // sits below that (qbittorrent's `14.3.9` and `20.04.1`, lidarr's
+    // `8.1.2135`, calibre-web's `5.33.2`). The bounds leave room for real majors, which still wait
+    // for a person. The caps were measured against `skopeo list-tags` for
+    // every image on 2026-11-08. Later rules win, so the per image ones come
+    // last. lazylibrarian (`latest`) and whisparr (`v3`) move by digest only,
+    // and their shape is the one alias they follow.
     {
-      matchPackageNames: ["docker.io/linuxserver/qbittorrent"],
-      allowedVersions: "<10.0.0",
+      matchPackageNames: [
+        "docker.io/advplyr/audiobookshelf",
+        "docker.io/grafana/grafana-oss",
+        "docker.io/grafana/loki",
+        "docker.io/linuxserver/bazarr",
+        "docker.io/linuxserver/calibre",
+        "docker.io/linuxserver/calibre-web",
+        "docker.io/linuxserver/jackett",
+        "docker.io/linuxserver/jellyfin",
+        "docker.io/linuxserver/nzbget",
+        "docker.io/linuxserver/nzbhydra2",
+        "docker.io/linuxserver/prowlarr",
+        "docker.io/linuxserver/radarr",
+        "docker.io/linuxserver/sabnzbd",
+        "docker.io/linuxserver/sonarr",
+        "docker.io/msroest/sabnzbd_exporter",
+        "docker.io/nginx/nginx-prometheus-exporter",
+        "docker.io/recyclarr/recyclarr",
+        "ghcr.io/cleanuparr/cleanuparr",
+        "ghcr.io/nperez0111/koreader-sync",
+      ],
+      allowedVersions: "/^\\d{1,2}\\.\\d+\\.\\d+$/",
+    },
+    {
+      matchPackageNames: [
+        "docker.io/flaresolverr/flaresolverr",
+        "docker.io/gethomepage/homepage",
+        "docker.io/golift/notifiarr",
+        "docker.io/grafana/alloy",
+        "docker.io/jlesage/jdownloader-2",
+        "docker.io/prom/node-exporter",
+        "docker.io/prom/prometheus",
+        "docker.io/qmcgaw/gluetun",
+        "gcr.io/cadvisor/cadvisor",
+        "ghcr.io/esanchezm/prometheus-qbittorrent-exporter",
+        "quay.io/navidys/prometheus-podman-exporter",
+      ],
+      allowedVersions: "/^v\\d{1,2}\\.\\d+\\.\\d+$/",
+    },
+    {
+      matchPackageNames: ["docker.io/library/alpine"],
+      allowedVersions: "/^\\d{1,2}\\.\\d+$/",
+    },
+    {
+      matchPackageNames: ["docker.io/library/python"],
+      allowedVersions: "/^\\d{1,2}\\.\\d+-alpine\\d+\\.\\d+$/",
+    },
+    {
+      matchPackageNames: ["docker.io/linuxserver/wireguard"],
+      allowedVersions: "/^\\d{1,2}\\.\\d+\\.\\d+-r\\d+-ls\\d+$/",
+    },
+    {
+      matchPackageNames: ["docker.io/linuxserver/mylar3"],
+      allowedVersions: "/^v\\d{1,2}\\.\\d+\\.\\d+-ls\\d+$/",
     },
     {
       matchPackageNames: ["docker.io/linuxserver/readarr"],
-      allowedVersions: "<1.0.0",
+      allowedVersions: "/^0\\.\\d+\\.\\d+-nightly$/",
+    },
+    {
+      matchPackageNames: ["docker.io/linuxserver/lazylibrarian"],
+      allowedVersions: "/^latest$/",
+    },
+    {
+      matchPackageNames: ["ghcr.io/hotio/whisparr"],
+      allowedVersions: "/^v3$/",
+    },
+    {
+      matchPackageNames: ["docker.io/linuxserver/qbittorrent"],
+      allowedVersions: "/^[1-9]\\.\\d+\\.\\d+$/",
+    },
+    {
+      matchPackageNames: ["docker.io/linuxserver/lidarr"],
+      allowedVersions: "/^[1-7]\\.\\d+\\.\\d+$/",
+    },
+    // calibre-web's history also carries `5.29.0` to `5.33.2`, calibre's own
+    // version numbers on a few builds, against calibre-web's real 0.6 line.
+    {
+      matchPackageNames: ["docker.io/linuxserver/calibre-web"],
+      allowedVersions: "/^[0-4]\\.\\d+\\.\\d+$/",
     },
     // nzbget is not part of the default stack: `NZBGET_PROFILE=disabled` in
     // .env.example, and SABnzbd (`SABNZBD_PROFILE=enabled`) is the usenet
