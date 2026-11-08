@@ -804,6 +804,46 @@ def test_pin_has_a_tag_shape_its_own_tag_matches(variable):
     )
 
 
+@pytest.mark.parametrize("variable", sorted(_annotations()))
+def test_tag_shape_admits_the_next_release(variable):
+    """A shape has to admit a newer tag, not only the pin's own.
+
+    The pin's tag with its last number moved on, which is what a patch or a
+    rebuild looks like. The fixed aliases (`latest`, `v3`) are skipped: they
+    move by digest only, and their shape holds no number.
+    """
+    package = _annotations()[variable]
+    shape = _tag_shape(package)
+    if r"\d" not in shape.pattern:
+        pytest.skip(f"{package} follows a fixed alias")
+    tag = _pins()[variable].split("@", 1)[0]
+    last = list(re.finditer(r"\d+", tag))[-1]
+    newer = f"{tag[: last.start()]}{int(last.group()) + 1}{tag[last.end() :]}"
+    assert shape.fullmatch(newer), (
+        f"the tag shape {package} has in {RENOVATE_CONFIG.name} refuses "
+        f"{newer}, the release after {variable}={tag}, so the pin would never move."
+    )
+
+
+def test_tag_shapes_name_their_packages_literally():
+    """A shape is only checked here for the packages a rule names outright.
+
+    A rule matching by pattern, glob, negation or datasource could set
+    allowedVersions over a pin's shape without `_allowed_versions` seeing it,
+    and the decoy test would then pass while Renovate offers the decoy.
+    """
+    for rule in _renovate_config().get("packageRules", []):
+        if "allowedVersions" not in rule:
+            continue
+        names = rule.get("matchPackageNames", [])
+        assert names, f"an allowedVersions rule names no package: {rule}"
+        indirect = [n for n in names if n.startswith(("/", "!")) or "*" in n]
+        assert not indirect, (
+            f"an allowedVersions rule matches by pattern ({indirect}); name each "
+            f"package literally so the tag shape tests see it."
+        )
+
+
 @pytest.mark.parametrize(("package", "tag"), KNOWN_DECOYS)
 def test_known_decoy_is_refused(package, tag):
     assert not _tag_shape(package).fullmatch(tag), (
