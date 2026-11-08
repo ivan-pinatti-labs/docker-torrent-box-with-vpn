@@ -804,25 +804,30 @@ def test_pin_has_a_tag_shape_its_own_tag_matches(variable):
     )
 
 
+# Pins that follow one alias and move by digest only, so no newer tag exists.
+FIXED_ALIASES = {"LAZYLIBRARIAN_VERSION": "latest", "WHISPARR_VERSION": "v3"}
+
+
 @pytest.mark.parametrize("variable", sorted(_annotations()))
 def test_tag_shape_admits_the_next_release(variable):
     """A shape has to admit a newer tag, not only the pin's own.
 
-    The pin's tag with its last number moved on, which is what a patch or a
-    rebuild looks like. The fixed aliases (`latest`, `v3`) are skipped: they
-    move by digest only, and their shape holds no number.
+    The pin's tag with each number after the first moved on in turn: a minor,
+    a patch, a rebuild. The first number is left alone, since a shape may cap
+    it on purpose to shut out a decoy line (readarr stays on 0).
     """
     package = _annotations()[variable]
-    shape = _tag_shape(package)
-    if r"\d" not in shape.pattern:
-        pytest.skip(f"{package} follows a fixed alias")
     tag = _pins()[variable].split("@", 1)[0]
-    last = list(re.finditer(r"\d+", tag))[-1]
-    newer = f"{tag[: last.start()]}{int(last.group()) + 1}{tag[last.end() :]}"
-    assert shape.fullmatch(newer), (
-        f"the tag shape {package} has in {RENOVATE_CONFIG.name} refuses "
-        f"{newer}, the release after {variable}={tag}, so the pin would never move."
-    )
+    if variable in FIXED_ALIASES:
+        assert tag == FIXED_ALIASES[variable], f"{variable} no longer follows an alias"
+        pytest.skip(f"{package} follows the {tag} alias")
+    shape = _tag_shape(package)
+    for number in list(re.finditer(r"\d+", tag))[1:]:
+        newer = f"{tag[: number.start()]}{int(number.group()) + 1}{tag[number.end() :]}"
+        assert shape.fullmatch(newer), (
+            f"the tag shape {package} has in {RENOVATE_CONFIG.name} refuses "
+            f"{newer}, a release after {variable}={tag}, so the pin would not move."
+        )
 
 
 def test_tag_shapes_name_their_packages_literally():
@@ -841,6 +846,15 @@ def test_tag_shapes_name_their_packages_literally():
         assert not indirect, (
             f"an allowedVersions rule matches by pattern ({indirect}); name each "
             f"package literally so the tag shape tests see it."
+        )
+        # Another selector would narrow when the rule applies, so the shape the
+        # tests read might not be the one Renovate uses.
+        selectors = sorted(
+            k for k in rule if k.startswith("match") and k != "matchPackageNames"
+        )
+        assert not selectors, (
+            f"an allowedVersions rule also selects on {selectors}; a tag shape "
+            f"rule names its packages and nothing else."
         )
 
 
