@@ -11,7 +11,7 @@
 # generate-homepage-services.py import it, and pytest-xdist because
 # test_xdist_groups.py runs the suite's xdist grouping hook under it. Keep
 # pytest, pytest-xdist and pyyaml equal to the integration pins.
-coverage==7.17.0
-pytest==9.1.1
+coverage==7.17.2
+pytest==9.2.0
 pytest-xdist==3.8.0
 pyyaml==6.0.3
