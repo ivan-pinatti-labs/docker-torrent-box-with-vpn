@@ -6,7 +6,7 @@
 #
 # The stack and the integration suite do not run in L2; they run on the host
 # against the host's podman (.devcontainer/README.md says why).
-ARG L2_IMAGE=ghcr.io/ivan-pinatti-labs/airlock-l2@sha256:fe5ed9b8840c4abc8cd531788440a106f5b943828d5344522a52e1daf82ce2ab
+ARG L2_IMAGE=ghcr.io/ivan-pinatti-labs/airlock-l2@sha256:7e5d9e524f9938565437006122af0c1e3582d3e1d863b634c5ba16c6153b7eb7
 # hadolint ignore=DL3006
 FROM ${L2_IMAGE}
 USER 1000:1000
