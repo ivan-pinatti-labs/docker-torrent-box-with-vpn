@@ -1391,7 +1391,7 @@ COVERAGE_PYTHON_IMAGE ?= docker.io/library/python:3.14-slim@sha256:9aaa474097d09
 # renovate: datasource=docker depName=docker.io/kcov/kcov
 COVERAGE_KCOV_IMAGE ?= docker.io/kcov/kcov:latest@sha256:481289ae32e55e5b733019515acd10948a4f76dfed381765577db909664fc603
 # renovate: datasource=docker depName=docker.io/library/node
-COVERAGE_NODE_IMAGE ?= docker.io/library/node:24-trixie@sha256:8c761eca2bf7eec965f946cf47b8090143cb41f45f2f8699af0cc0298d2d2d19
+COVERAGE_NODE_IMAGE ?= docker.io/library/node:24-trixie@sha256:6e5d4c38403930b420404f190be8563396dca2bd156a6cb4722707b0efcf6fc1
 # How a shell script is found: a file git would commit (tracked, plus new ones
 # not ignored; a path deleted in the working tree is dropped before awk opens
 # it) whose name ends in .sh or .bash, or whose first line is a shebang running
