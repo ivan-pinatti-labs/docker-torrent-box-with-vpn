@@ -55,7 +55,7 @@ def hashpw(password, salt):
 EOF
 export PYTHONPATH="${__scratch}/python"
 
-readonly SERVICES=(audiobookshelf bazarr calibre calibre-web cleanuparr grafana jdownloader2 jellyfin lazylibrarian lidarr mylar nzbhydra2 prowlarr qbittorrent radarr readarr sabnzbd sonarr whisparr)
+readonly SERVICES=(audiobookshelf bazarr calibre calibre-web cleanuparr grafana jdownloader2 jellyfin lazylibrarian lidarr mylar nzbhydra2 prowlarr qbittorrent radarr sabnzbd sonarr whisparr)
 
 # sql <file> <statement>...: runs statements against a database under the
 # scratch repository, printing the rows of the last.
@@ -102,7 +102,6 @@ PROWLARR_HTTPS_PORT=9697
 QBITTORRENT_HTTPS_PORT=8443
 GLUETUN_SERVICES_IP=10.0.0.2
 RADARR_HTTPS_PORT=7879
-READARR_HTTPS_PORT=8788
 SABNZBD_HTTPS_PORT=9090
 SONARR_HTTP_PORT=8989
 WHISPARR_HTTPS_PORT=6970
@@ -121,18 +120,17 @@ NZBHYDRA2_PROFILE=enabled
 PROWLARR_PROFILE=enabled
 QBITTORRENT_PROFILE=enabled
 RADARR_PROFILE=enabled
-READARR_PROFILE=enabled
 SABNZBD_PROFILE=enabled
 SONARR_PROFILE=enabled
 WHISPARR_PROFILE=enabled
 EOF
   containers "${SERVICES[@]}" homepage qbittorrent_exporter sabnzbd_exporter
   local app k
-  for app in sonarr radarr lidarr readarr whisparr prowlarr; do
+  for app in sonarr radarr lidarr whisparr prowlarr; do
     k="key-${app}"
     put "configs/${app}/config/config.xml" "<Config><ApiKey>${k}</ApiKey></Config>"
   done
-  for app in sonarr/sonarr radarr/radarr lidarr/lidarr readarr/readarr prowlarr/prowlarr; do
+  for app in sonarr/sonarr radarr/radarr lidarr/lidarr prowlarr/prowlarr; do
     downloads_db "configs/${app%/*}/config/${app#*/}.db"
   done
   put configs/bazarr/config/config/config.yaml '{"auth": {"password": "old"}}' # pragma: allowlist secret
@@ -273,12 +271,6 @@ check "Calibre-Web's admin is found by role" 0 out "calibre-web     calibre"
 if [[ "$(sql configs/sonarr/config/sonarr.db "SELECT Settings FROM DownloadClients WHERE Id = 1")" != *"$(new_password qbittorrent)"* ]]; then
   fail "the arr apps' qBittorrent client gets the new password"
 fi
-# Readarr's client has no credentials, so qBittorrent's rotation leaves it be
-# (#411).
-if [[ "$(sql configs/readarr/config/readarr.db "SELECT Settings FROM DownloadClients WHERE Id = 1")" == *"$(new_password qbittorrent)"* ]]; then
-  fail "Readarr's qBittorrent client is not given the new password"
-fi
-refute "and its database is not edited for it" out "[Readarr DB] Updating qBittorrent password"
 if [[ "$(sql configs/audiobookshelf/config/absdatabase.sqlite "SELECT pash FROM users")" != "\$2b\$12\$hash-of-$(new_password audiobookshelf)" ]]; then
   fail "Audiobookshelf stores a bcrypt hash"
 fi
@@ -307,7 +299,7 @@ done
 # Services and containers that are off or not up.
 deployment
 sed -i 's/^WHISPARR_PROFILE=enabled$/WHISPARR_PROFILE=disabled/' "${__repo}/.env"
-containers bazarr sonarr radarr readarr prowlarr qbittorrent grafana jellyfin
+containers bazarr sonarr radarr prowlarr qbittorrent grafana jellyfin
 stopped sonarr
 rule '^podman inspect .* radarr$' 0 starting 7
 rule '^podman start sonarr$' 0 ""

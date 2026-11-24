@@ -69,7 +69,6 @@ def test_host_access_is_enabled_for_rootless_operator():
         ("docker-compose-servarr.yml", "sonarr", "sonarr"),
         ("docker-compose-servarr.yml", "radarr", "radarr"),
         ("docker-compose-servarr.yml", "lidarr", "lidarr"),
-        ("docker-compose-servarr.yml", "readarr", "readarr"),
         ("docker-compose-servarr.yml", "whisparr", "whisparr"),
         ("docker-compose-servarr.yml", "bazarr", "bazarr"),
         ("docker-compose-servarr.yml", "prowlarr", "prowlarr"),

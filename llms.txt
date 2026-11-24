@@ -38,7 +38,7 @@ the shared network namespace disappears and those services lose network access.
 - Gluetun for VPN tunneling, firewalling, DNS, and port forwarding
 - Proton VPN by default, with documented alternatives through Gluetun
 - qBittorrent
-- Sonarr, Radarr, Lidarr, Readarr, Bazarr, Prowlarr, Recyclarr, Whisparr, Mylar, Cleanuparr
+- Sonarr, Radarr, Lidarr, Bazarr, Prowlarr, Recyclarr, Whisparr, Mylar, Cleanuparr
 - Nginx reverse proxy
 - Prometheus, Grafana, Loki, Alloy, and exporters
 - GNU Make

@@ -371,14 +371,6 @@ ARR_APP_TARGETS = [
         "v1",
     ),
     (
-        "readarr",
-        "configs/readarr/config/config.xml",
-        "https",
-        "READARR_HTTPS_PORT",
-        "readarr",
-        "v1",
-    ),
-    (
         "whisparr",
         "configs/whisparr/config/config.xml",
         "https",

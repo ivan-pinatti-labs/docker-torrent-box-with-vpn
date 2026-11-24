@@ -641,32 +641,6 @@ externalTools:
     discographySeedTime: null
     earlyDownloadLimit: null
     removeYearFromSearchString: false
-  - name: "Readarr"
-    type: "READARR"
-    host: "http://readarr:8787/readarr"
-    apiKey: "44444444444444444444444444444444"
-    enabled: true
-    syncType: "SINGLE"
-    nzbhydraName: "NZBHydra2"
-    nzbhydraHost: "https://nzbhydra2:5077/nzbhydra2"
-    configureForUsenet: true
-    configureForTorrents: false
-    addDisabledIndexers: false
-    useHydraPriorities: true
-    priority: 25
-    enableRss: true
-    enableAutomaticSearch: true
-    enableInteractiveSearch: true
-    categories: "7020,8010"
-    animeCategories: null
-    additionalParameters: null
-    minimumSeeders: "1"
-    seedRatio: null
-    seedTime: null
-    seasonPackSeedTime: null
-    discographySeedTime: null
-    earlyDownloadLimit: null
-    removeYearFromSearchString: false
   syncOnConfigChange: true
 genericStorage:
   BackupData: "{\"lastBackup\":\"2026-07-27T14:25:59.079136\"}"

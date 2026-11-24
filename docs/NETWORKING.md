@@ -95,7 +95,7 @@ setting with `networks:`, so VPN route override files use `networks: !reset []`.
              │ │                                    │ │     │
              │ │  SERVARR                           │ │     │
              │ │    sonarr      :8989  radarr :7878 │ │     │
-             │ │    lidarr      :8686  readarr:8787 │ │     │
+             │ │    lidarr      :8686                │ │     │
              │ │    bazarr      :6767  prowlarr:9696│ │     │
              │ │    recyclarr   (no port)           │ │     │
              │ │    flaresolverr :8191              │ │     │
@@ -146,12 +146,12 @@ handshake only.
 | **sabnzbd_exporter**                                                                                           | `networks: [observability, services]`                                | Scrapes SABnzbd through gluetun's services IP and exposes metrics internally.                                                 |
 | **nzbget**                                                                                                     | `network_mode: container:${VPN_PROVIDER}` when enabled               | Optional legacy usenet route.                                                                                                 |
 | **jdownloader2**                                                                                               | `network_mode: container:${VPN_PROVIDER}`                            | Download traffic must go through wg0, same killswitch as qBittorrent and SABnzbd.                                             |
-| **sonarr, radarr, lidarr, readarr, bazarr, prowlarr, recyclarr, flaresolverr, whisparr, lazylibrarian, mylar** | `networks: [apps, services]` by default                              | Direct app traffic, while still reaching qBittorrent through gluetun's services IP.                                           |
+| **sonarr, radarr, lidarr, bazarr, prowlarr, recyclarr, flaresolverr, whisparr, lazylibrarian, mylar**          | `networks: [apps, services]` by default                              | Direct app traffic, while still reaching qBittorrent through gluetun's services IP.                                           |
 | **cleanuparr**                                                                                                 | `networks: [apps, services]`, no VPN route                           | Reaches the arr apps by service name and qBittorrent through gluetun's services IP; other egress is direct on `apps`.         |
 | **servarr VPN route overrides**                                                                                | `network_mode: container:${VPN_PROVIDER}` plus `networks: !reset []` | Per-service opt-in VPN routing without duplicating service definitions. Route files also add service-name aliases to gluetun. |
 | **nzbhydra2**                                                                                                  | `networks: [apps, services]`                                         | Indexer meta search, direct egress by default.                                                                                |
 | **homepage**                                                                                                   | `networks: [apps, services, media, observability]`                   | Dashboard needs reachability to services across every network it links to.                                                    |
-| **calibre, calibre-web**                                                                                       | `networks: [media, apps, services]`                                  | Reachable from Jellyfin's `media` bridge and from Readarr/LazyLibrarian on `apps`/`services`.                                 |
+| **calibre, calibre-web**                                                                                       | `networks: [media, apps, services]`                                  | Reachable from Jellyfin's `media` bridge and from LazyLibrarian on `apps`/`services`.                                         |
 | **korsync, audiobookshelf**                                                                                    | `networks: [media]`                                                  | Media-adjacent services with no VPN or Servarr coupling.                                                                      |
 | **prometheus, grafana, loki, alloy**                                                                           | `networks: [observability]` (grafana also `apps`)                    | Internal only; grafana additionally sits on `apps` for direct reachability from nginx.                                        |
 | **cadvisor, node_exporter, podman_exporter, podman_limits_exporter, nginx_exporter**                           | `networks: [observability]`                                          | Metrics sources, internal only.                                                                                               |
@@ -175,7 +175,7 @@ The hop sequence for every user facing path:
 | Prometheus scrape to qbittorrent_exporter         | prometheus → gluetun observability IP:17871 → exporter in gluetun namespace                                                                                                      |
 | Prometheus scrape to node_exporter                | prometheus → gluetun observability IP:9100 → node_exporter in gluetun namespace                                                                                                  |
 | Sonarr to qBittorrent API (download client)       | sonarr → services bridge → gluetun services IP `172.28.0.10:8085`                                                                                                                |
-| Sonarr/Radarr/Lidarr/Readarr/Whisparr to Prowlarr | app → services bridge → `http://prowlarr:9696/prowlarr/...`; if Prowlarr is VPN-routed, `prowlarr` resolves to gluetun by route alias.                                           |
+| Sonarr/Radarr/Lidarr/Whisparr to Prowlarr         | app → services bridge → `http://prowlarr:9696/prowlarr/...`; if Prowlarr is VPN-routed, `prowlarr` resolves to gluetun by route alias.                                           |
 | Prowlarr to Arr apps                              | prowlarr → services bridge → `http://sonarr:8989/sonarr`, `http://radarr:7878/radarr`, etc.; VPN-routed apps keep the same DNS name by route alias.                              |
 | Cleanuparr to Arr apps and qBittorrent            | cleanuparr → services bridge → each Arr app over HTTPS by service name, and qBittorrent at gluetun services IP `172.28.0.10:8085`; route aliases keep the names.                 |
 | Prowlarr tagged indexer to internet               | prowlarr → services bridge → `gluetun:8888` HTTP proxy → VPN tunnel → provider exit → internet                                                                                   |
@@ -285,7 +285,7 @@ can claim to be the browser:
 
 | App                                                 | Trusts                               | Set by                                                                   |
 | --------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------ |
-| Sonarr, Radarr, Lidarr, Prowlarr, Readarr, Whisparr | `NGINX_APPS_IP`, `NGINX_SERVICES_IP` | `<APP>__SERVER__TRUSTEDNETWORKS` in `docker-compose-servarr.yml`         |
+| Sonarr, Radarr, Lidarr, Prowlarr, Whisparr          | `NGINX_APPS_IP`, `NGINX_SERVICES_IP` | `<APP>__SERVER__TRUSTEDNETWORKS` in `docker-compose-servarr.yml`         |
 | qBittorrent                                         | `NGINX_SERVICES_IP`                  | `scripts/wire-connections.sh`, through its API (`make wire_connections`) |
 | Jellyfin                                            | `NGINX_MEDIA_IP`                     | `KnownProxies`, `make configure_jellyfin_network`                        |
 
@@ -301,12 +301,10 @@ redirected to `http://localhost/<app>/login`, losing https and nginx's port.
 qBittorrent with reverse proxy support off sees every browser as nginx, so its ban after
 five failed logins lands on nginx and locks everyone out for an hour.
 
-qBittorrent also lets Readarr's fixed address, `READARR_SERVICES_IP`, in without a login,
-since Readarr cannot log in to qBittorrent 5.2 and later (see
-[CONNECTIONS.md](CONNECTIONS.md)). Because qBittorrent takes the client from
-`X-Forwarded-For` when nginx sends it, nginx overwrites that header with the real client
-for `/qbittorrent/` and `/sabnzbd/` rather than appending to the browser's, so no browser
-can claim Readarr's address. The bypass never covers nginx's address or gluetun's.
+Because qBittorrent takes the client from `X-Forwarded-For` when nginx sends it, nginx
+overwrites that header with the real client for `/qbittorrent/` and `/sabnzbd/` rather
+than appending to the browser's, so no browser can claim another address. qBittorrent
+lets nothing in without a login (see [CONNECTIONS.md](CONNECTIONS.md)).
 
 **Upgrading an existing deployment.** A `.env` from before these variables takes their
 values from `.env.example` (the Makefile fills them in), but the `apps` network it already
@@ -315,9 +313,8 @@ Run `make down`, then `make start`, to recreate it, then `make wire_connections`
 qBittorrent. Under podman `make down` removes the stack's networks itself; under Docker it
 leaves them, since compose does not remove an external network, so run
 `docker network rm <COMPOSE_PROJECT_NAME>_apps` between the two. If `SERVICES_SUBNET` was
-moved off its default, set `NGINX_SERVICES_IP` and `READARR_SERVICES_IP` in `.env` to
-free addresses inside it, below `SERVICES_DYNAMIC_IP_RANGE`; `make start` refuses a
-`READARR_SERVICES_IP` that is not.
+moved off its default, set `NGINX_SERVICES_IP` in `.env` to a free address inside it,
+below `SERVICES_DYNAMIC_IP_RANGE`.
 
 ### Post deploy verification
 

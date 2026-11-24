@@ -436,9 +436,9 @@ def test_nginx_scopes_mylar_and_lazylibrarian_cookies():
 def test_nginx_overwrites_forwarded_for_to_downloaders(app):
     """nginx sends the real client as X-Forwarded-For, never the browser's.
 
-    qBittorrent trusts nginx and takes the client from that header, and lets
-    READARR_SERVICES_IP in without a login. Appending to what the browser sent
-    would let any browser claim Readarr's address through nginx (#411).
+    qBittorrent trusts nginx and takes the client from that header, for its
+    failed login bans among other things. Appending to what the browser sent
+    would let any browser name any address through nginx (#411).
     Cleanuparr trusts no forwarded header, and gets the same header anyway.
     """
     template = (REPO_ROOT / "configs/nginx/templates/default.conf.template").read_text()
@@ -454,8 +454,7 @@ def test_env_tests_moves_every_network_address():
     """.env.tests moves every subnet, range and fixed address .env.example sets.
 
     The integration suite runs on subnets of its own, so an address left at
-    .env.example's value sits outside its network there, and make start
-    refuses READARR_SERVICES_IP outright (#411).
+    .env.example's value sits outside its network there.
     """
     pattern = re.compile(r"^([A-Z_]+_(?:IP|SUBNET|IP_RANGE))=(.*)$", re.MULTILINE)
     example = dict(pattern.findall((REPO_ROOT / ".env.example").read_text()))
@@ -468,16 +467,28 @@ def test_env_tests_moves_every_network_address():
     assert not unmoved, f".env.tests keeps .env.example's value for {unmoved}"
 
 
-def test_readarr_has_its_fixed_services_address():
-    """qBittorrent lets this one address in without a login, so it is pinned."""
-    compose = yaml.safe_load((REPO_ROOT / "docker-compose-servarr.yml").read_text())
-    services = compose["services"]["readarr"]["networks"]["services"]
+def test_readarr_is_retired():
+    """Readarr left the stack (#545): no service, route, setting or login bypass.
 
-    assert services == {"ipv4_address": "${READARR_SERVICES_IP}"}
+    Its retired upstream could not log in to qBittorrent 5.2 and later, which
+    is what qBittorrent's only login bypass existed for (#411).
+    """
+    for path in sorted(REPO_ROOT.glob("docker-compose*.yml")) + sorted(
+        (REPO_ROOT / "docker-compose.routes").glob("*.yml")
+    ):
+        compose = yaml.safe_load(path.read_text()) or {}
+        assert "readarr" not in (compose.get("services") or {}), path.name
+        assert not any(
+            "readarr" in str(item) for item in compose.get("include") or []
+        ), path.name
+    example = (REPO_ROOT / ".env.example").read_text()
+    assert not re.search(r"^READARR_", example, re.MULTILINE)
+    wiring = (REPO_ROOT / "scripts/wire-connections.sh").read_text()
+    assert "bypass_auth_subnet_whitelist" not in wiring
 
 
 def test_gluetun_logs_in_to_set_the_qbittorrent_port():
-    """gluetun's up command logs in, since only Readarr skips the login (#419).
+    """gluetun's up command logs in, since qBittorrent lets nothing skip it (#419).
 
     The command is set in the compose file so it overrides the one a seeded
     configs/gluetun/.env still carries from before.

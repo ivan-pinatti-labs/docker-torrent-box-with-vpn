@@ -27,7 +27,7 @@ first, so re-running is always safe.
 
 ## What gets wired
 
-### Download clients (Sonarr, Radarr, Lidarr, Readarr, Whisparr, Prowlarr → qBittorrent, SABnzbd)
+### Download clients (Sonarr, Radarr, Lidarr, Whisparr, Prowlarr → qBittorrent, SABnzbd)
 
 Each of these apps keeps its download clients in a `DownloadClients` SQLite
 table, created through `POST /api/<version>/downloadclient`. The script:
@@ -77,45 +77,15 @@ the bare string `prowlarr`, matching the same convention as the arr apps,
 though Prowlarr itself doesn't use it for anything (it isn't sorting content
 into genre folders the way Sonarr/Radarr/etc. are).
 
-**Readarr's qBittorrent client has no credentials.** Readarr cannot log in to
-qBittorrent 5.2 and later (#167): its retired upstream (see README's Known
-Issues) still takes a login as successful only when the body is exactly
-`Ok.`, and qBittorrent now answers a successful one with `204 No Content` and
-an empty body. Readarr sends no login at all when its client's username and
-password are empty, so the script (#411):
-
-- Creates Readarr's qBittorrent client with an empty username and password,
-  and clears them from a client created before, which still has them.
-- Has qBittorrent skip its login for Readarr's own address,
-  `READARR_SERVICES_IP` (`172.28.0.13`, fixed in `docker-compose-servarr.yml`),
-  and nothing else: it adds `<address>/32` to qBittorrent's authentication
-  bypass list (Tools > Options > WebUI) and keeps any entries already there.
-  It sets nothing, with a warning, when another entry overlaps
-  `SERVICES_SUBNET`, nginx's or gluetun's address, or loopback, or when the
-  list is off but holds other entries, which switching it on would let in.
-  `make start` refuses a `READARR_SERVICES_IP` outside `SERVICES_SUBNET`, on
-  its network or broadcast address, inside `SERVICES_DYNAMIC_IP_RANGE` or
-  equal to another fixed address, so no other container can be handed it.
-  Neither runs while `READARR_PROFILE` is not enabled.
-- Leaves Readarr out of qBittorrent's password rotation, which would put the
-  failing login back.
-
-This is safe only because nginx overwrites `X-Forwarded-For` with the real
-client for `/qbittorrent/` (and `/sabnzbd/`) instead of appending to the one the
-browser sent. qBittorrent trusts nginx as its reverse proxy and takes the
-client from that header, so with appending, a browser sending Readarr's
-address through nginx would skip the login.
-
-**Routed through the VPN** (`VPN_ON=readarr` or `servarr`), Readarr shares
-gluetun's network namespace and has no address of its own: its requests reach
-qBittorrent from gluetun's address, as SABnzbd's, JDownloader's and every other
-routed app's do. Letting that address in would let all of them in, so the
-script sets no bypass, leaves Readarr's qBittorrent client not wired, and says
-so. A client an earlier run gave Readarr is disabled, since every request it
-made would fail, and enabled again once Readarr is back on its own address.
-Readarr's SABnzbd client is unaffected either way. If `READARR_SERVICES_IP`
-changes, the old address stays in qBittorrent's bypass list until removed there
-by hand.
+**qBittorrent lets nothing in without a login.** Readarr's own address was
+the one exception (#411), because its retired upstream could not log in to
+qBittorrent 5.2 and later; Readarr left the stack in #545, and with it the
+exception. A deployment that ran Readarr keeps the entry until it is removed
+by hand (README's Known Issues). nginx still overwrites `X-Forwarded-For` with
+the real client for `/qbittorrent/` (and `/sabnzbd/`) instead of appending to
+the one the browser sent: qBittorrent trusts nginx as its reverse proxy and
+takes the client from that header, for its failed login bans among other
+things.
 
 ### Jellyfin library updates (Sonarr, Radarr, Lidarr, Whisparr → Jellyfin)
 
@@ -126,11 +96,10 @@ as an import, upgrade or rename changes the library. Without it Jellyfin only
 notices on its own scheduled scan, and a finished download can sit there
 invisible for hours.
 
-**Readarr is not wired**, because it offers no `MediaBrowser` implementation at
-all: Jellyfin does not take a book library from it, and Readarr's equivalents
-there are Kavita and Subsonic. The script asks each app what it supports rather
-than carrying a hardcoded list, and skips the ones that do not, so this stays
-correct if upstream changes.
+The script asks each app whether it offers a `MediaBrowser` implementation
+rather than carrying a hardcoded list, and skips one that does not (Readarr,
+before it left the stack, had none), so this stays correct if upstream
+changes.
 
 The triggers come from the app's own schema for the same reason. The apps
 disagree on them: Sonarr and Radarr have `onDownload`, Lidarr has no such
@@ -173,17 +142,6 @@ same call `tests/test_wire_connections.py` makes. On versions older than
 Sonarr 4.0.20 that Test only sends a notification, which Jellyfin answers with
 404 whatever the key, so it passes with a wrong key too.
 
-### Readarr → Metadata Provider Source
-
-Readarr's own upstream metadata hub went offline when the project was
-retired (see [README's Known Issues](../README.md#known-issues-and-future-improvements)).
-`wire_arr_app`'s Readarr branch sets `Settings > Development > Metadata
-Provider Source` to the community-run rreading-glasses mirror
-(`https://api.bookinfo.pro`) via `GET`/`PUT /api/v1/config/development/{id}`.
-It checks the current value first and skips if already set, so re-running
-is safe. Not yet confirmed against a live Readarr instance; verify on the
-next bench run.
-
 ### Prowlarr → Indexer Proxy (FlareSolverr)
 
 If both Prowlarr and FlareSolverr are enabled, the script registers
@@ -194,7 +152,7 @@ automatically apply it to any indexer. Assign it per indexer that actually
 needs a Cloudflare bypass, under Settings > Indexers > (the indexer) >
 Proxy in Prowlarr's UI.
 
-### Prowlarr → Applications (Sonarr, Radarr, Lidarr, Readarr, Whisparr, LazyLibrarian, Mylar)
+### Prowlarr → Applications (Sonarr, Radarr, Lidarr, Whisparr, LazyLibrarian, Mylar)
 
 If Prowlarr is enabled (`PROWLARR_PROFILE`), the script registers each of
 those apps as an Application via `POST /api/v1/applications`, so Prowlarr can
@@ -252,7 +210,7 @@ at `importPending` with `No files found are eligible for import in
 .../<name>.exe` and retries every minute, for ever, and nothing blocklists the
 release or searches for the episode again. Sonarr's and Radarr's own "Fail
 Downloads" options look only at files on disk, so they never fire, and Lidarr
-and Readarr have no such option.
+has no such option.
 
 Cleanuparr (`CLEANUPARR_PROFILE`, enabled by default) watches the arr queues.
 Its queue cleaner strikes a failed import whose status message holds one of
@@ -279,9 +237,9 @@ in its own database, so `wire_cleanuparr` makes them through its API, at
   apps already are, since qBittorrent and the arr apps serve this stack's
   own.
 - **qBittorrent**: its WebUI on gluetun's services address, logged in as
-  `qbittorrent`, since qBittorrent lets only Readarr in without a login.
+  `qbittorrent`, since qBittorrent lets nothing in without a login.
 - **Arr apps**: one instance per enabled app (Sonarr, Radarr, Lidarr,
-  Readarr, Whisparr), over HTTPS by its service name, with the key its
+  Whisparr), over HTTPS by its service name, with the key its
   `config.xml` holds. Sonarr included: Prowlarr reaches it over plain HTTP,
   but it serves HTTPS on `SONARR_HTTPS_PORT` like the others.
 - **Queue cleaner**: on, failed import strikes `3`, pattern mode `Include`,

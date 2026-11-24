@@ -36,7 +36,6 @@ map $host $app_proxy_path {
   prowlarr.${APP_PROXY_DOMAIN}        /prowlarr/;
   qbittorrent.${APP_PROXY_DOMAIN}     /qbittorrent/;
   radarr.${APP_PROXY_DOMAIN}          /radarr/;
-  readarr.${APP_PROXY_DOMAIN}         /readarr/;
   sabnzbd.${APP_PROXY_DOMAIN}         /sabnzbd/;
   sonarr.${APP_PROXY_DOMAIN}          /sonarr/;
   whisparr.${APP_PROXY_DOMAIN}        /whisparr/;
@@ -82,7 +81,6 @@ map $request_uri $app_name {
   ~^/prowlarr(?:[/?]|$)              Prowlarr;
   ~^/qbittorrent(?:[/?]|$)           qBittorrent;
   ~^/radarr(?:[/?]|$)                Radarr;
-  ~^/readarr(?:[/?]|$)               Readarr;
   ~^/sabnzbd(?:[/?]|$)               SABnzbd;
   ~^/sonarr(?:[/?]|$)                Sonarr;
   ~^/whisparr(?:[/?]|$)              Whisparr;
@@ -113,7 +111,6 @@ map $request_uri $app_profile {
   ~^/prowlarr(?:[/?]|$)              PROWLARR_PROFILE;
   ~^/qbittorrent(?:[/?]|$)           QBITTORRENT_PROFILE;
   ~^/radarr(?:[/?]|$)                RADARR_PROFILE;
-  ~^/readarr(?:[/?]|$)               READARR_PROFILE;
   ~^/sabnzbd(?:[/?]|$)               SABNZBD_PROFILE;
   ~^/sonarr(?:[/?]|$)                SONARR_PROFILE;
   ~^/whisparr(?:[/?]|$)              WHISPARR_PROFILE;
@@ -227,7 +224,6 @@ server {
   set $prowlarr_upstream      ${PROWLARR_UPSTREAM_SCHEME}://${PROWLARR_UPSTREAM_HOST}:${PROWLARR_UPSTREAM_PORT};
   set $qbittorrent_upstream   https://${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT};
   set $radarr_upstream        ${RADARR_UPSTREAM_SCHEME}://${RADARR_UPSTREAM_HOST}:${RADARR_UPSTREAM_PORT};
-  set $readarr_upstream       ${READARR_UPSTREAM_SCHEME}://${READARR_UPSTREAM_HOST}:${READARR_UPSTREAM_PORT};
   set $nzbhydra2_upstream     ${NZBHYDRA2_UPSTREAM_SCHEME}://${NZBHYDRA2_UPSTREAM_HOST}:${NZBHYDRA2_UPSTREAM_PORT};
   set $sabnzbd_upstream       ${SABNZBD_UPSTREAM_SCHEME}://${SABNZBD_UPSTREAM_HOST}:${SABNZBD_UPSTREAM_PORT};
   set $sonarr_upstream        ${SONARR_UPSTREAM_SCHEME}://${SONARR_UPSTREAM_HOST}:${SONARR_UPSTREAM_PORT};
@@ -401,24 +397,6 @@ server {
     proxy_set_header            X-Forwarded-Host $http_host;
     access_log                  /var/log/nginx/services/radarr-access.log  stripsecrets;
     error_log                   /var/log/nginx/services/radarr-error.log  warn;
-  }
-
-  location /readarr/ {
-    proxy_pass                  $readarr_upstream;
-    proxy_ssl_verify            off;
-    proxy_redirect              off;
-    proxy_http_version          1.1;
-    proxy_pass_request_headers  on;
-    proxy_set_header            Upgrade $http_upgrade;
-    proxy_set_header            Connection $http_connection;
-    proxy_set_header            Host $host;
-    proxy_set_header            X-Real-IP $remote_addr;
-    proxy_set_header            X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header            X-Forwarded-Proto $scheme;
-    proxy_set_header            X-Forwarded-Protocol $scheme;
-    proxy_set_header            X-Forwarded-Host $http_host;
-    access_log                  /var/log/nginx/services/readarr-access.log  stripsecrets;
-    error_log                   /var/log/nginx/services/readarr-error.log  warn;
   }
 
   location /sonarr/ {
@@ -613,10 +591,9 @@ server {
     proxy_set_header            Host $host;
     proxy_set_header            X-Real-IP $remote_addr;
     # Overwritten, never appended to. qBittorrent trusts nginx as its reverse
-    # proxy and takes the client from this header, and it lets
-    # READARR_SERVICES_IP in without a login. Appending would keep whatever
-    # the browser sent, so a browser claiming Readarr's address would skip
-    # that login (#411).
+    # proxy and takes the client from this header, for its failed login bans
+    # among other things. Appending would keep whatever address the browser
+    # sent (#411).
     proxy_set_header            X-Forwarded-For $remote_addr;
     proxy_set_header            X-Forwarded-Proto $scheme;
     proxy_set_header            X-Forwarded-Protocol $scheme;

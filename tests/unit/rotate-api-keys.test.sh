@@ -72,7 +72,6 @@ LAZYLIBRARIAN_HTTP_PORT=5299
 SONARR_PROFILE=enabled
 RADARR_PROFILE=enabled
 LIDARR_PROFILE=enabled
-READARR_PROFILE=enabled
 WHISPARR_PROFILE=enabled
 PROWLARR_PROFILE=enabled
 BAZARR_PROFILE=enabled
@@ -83,11 +82,10 @@ JELLYFIN_PROFILE=enabled
 CLEANUPARR_PROFILE=enabled
 CLEANUPARR_HTTP_PORT=11011
 EOF
-  containers sonarr radarr lidarr readarr whisparr prowlarr bazarr lazylibrarian mylar nzbhydra2 jellyfin homepage cleanuparr
+  containers sonarr radarr lidarr whisparr prowlarr bazarr lazylibrarian mylar nzbhydra2 jellyfin homepage cleanuparr
   arr_xml sonarr False 8989 9898 ""
   arr_xml radarr True 7878 7879 /radarr/
   arr_xml lidarr True 8686 8687 lidarr
-  arr_xml readarr True 8787 8788 readarr
   arr_xml whisparr True 6969 6970 whisparr
   arr_xml prowlarr True 9696 9697 prowlarr
   put configs/bazarr/config/config/config.yaml '{"auth": {"apikey": "old-bazarr"}, "sonarr": {"apikey": "old-sonarr"}, "radarr": {"apikey": "old-radarr"}}' # pragma: allowlist secret
@@ -124,7 +122,6 @@ EOF
     {"id": 1, "name": "Sonarr", "fields": [{"name": "apiKey", "value": "old-sonarr"}, {"name": "baseUrl", "value": "x"}]},
     {"id": 2, "name": "Radarr", "fields": [{"name": "apiKey", "value": "old-radarr"}]},
     {"id": 3, "name": "Lidarr", "fields": [{"name": "apiKey", "value": "old-lidarr"}]},
-    {"id": 4, "name": "Readarr", "fields": [{"name": "apiKey", "value": "old-readarr"}]},
     {"id": 5, "name": "Whisparr", "fields": [{"name": "apiKey", "value": "old-whisparr"}]},
     {"id": 6, "name": "LazyLibrarian", "fields": [{"name": "apiKey", "value": "old-lazylibrarian"}]}]'
   # Each arr app's indexers, one pushed by Prowlarr and one added by hand.
@@ -134,11 +131,10 @@ EOF
     {"id": 9, "name": "No fields"}]'
   rule 'curl -sk --fail -H X-Api-Key: \S+ \S+/indexer$' 0 "${indexers}"
   # Each arr app's connections, a Jellyfin one with its key masked the way the
-  # API answers. Readarr cannot hold a Jellyfin connection.
+  # API answers.
   rule 'curl -sk --fail --max-time 30 -H X-Api-Key: \S+ \S+/notification$' 0 '[
     {"id": 4, "implementation": "MediaBrowser", "fields": [{"name": "host", "value": "jellyfin"}, {"name": "apiKey", "value": "********"}]},
     {"id": 5, "implementation": "Discord"}]'
-  rule 'readarr curl -sk --fail --max-time 30 -H X-Api-Key: \S+ \S+/notification$' 0 '[]'
   rule '/System/Info/Public$' 0 '{"StartupWizardCompleted": true}'
   rule 'curl -s --fail -H Authorization: MediaBrowser Token="old-jellyfin" \S+/Auth/Keys$' 0 \
     '{"Items": [{"AccessToken": "old-jellyfin", "DateCreated": "1"}, {"AccessToken": "new-jellyfin", "DateCreated": "3"}, {"AccessToken": "other", "DateCreated": "2"}]}'
@@ -150,7 +146,7 @@ EOF
   put configs/cleanuparr/secrets/api_key.txt old-cleanuparr
   rule 'cleanuparr curl -sS -X GET .*/cleanuparr/api/configuration/[a-z]+$' 0 $'{"instances": [
     {"id": "sonarr-id", "name": "Sonarr", "url": "https://sonarr:9899/sonarr", "apiKey": "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", "version": 4},
-    {"id": "radarr-id", "name": "Radarr"}, {"id": "readarr-id", "name": "Readarr"}, {"id": "whisparr-id", "name": "Whisparr"}]}\n200'
+    {"id": "radarr-id", "name": "Radarr"}, {"id": "whisparr-id", "name": "Whisparr"}]}\n200'
   rule 'cleanuparr curl -sS -X PUT .*/cleanuparr/api/configuration/[a-z]+/instances/[a-z]+-id$' 0 $'{}\n200'
   rule 'cleanuparr curl -sS -X POST .*X-Api-Key: old-cleanuparr .*/cleanuparr/api/account/api-key/regenerate$' 0 \
     $'{"apiKey": "new-cleanuparr"}\n200' # pragma: allowlist secret
@@ -175,11 +171,11 @@ deployment
 run all
 check "all rotates every service" 0 out \
   "$(row sonarr old- 0001)" "$(row radarr old- 0002)" "$(row lidarr old- 0003)" \
-  "$(row readarr old- 0004)" "$(row whisparr old- 0005)" "$(row prowlarr old- 0006)" \
-  "$(row bazarr old- 0007)" "$(row lazylibrarian old- 0008)" "$(row mylar old- 0009)" \
-  "$(row nzbhydra2 0006 0010)" "$(row jellyfin old- new-)" "$(row cleanuparr old- new-)"
+  "$(row whisparr old- 0004)" "$(row prowlarr old- 0005)" \
+  "$(row bazarr old- 0006)" "$(row lazylibrarian old- 0007)" "$(row mylar old- 0008)" \
+  "$(row nzbhydra2 0005 0009)" "$(row jellyfin old- new-)" "$(row cleanuparr old- new-)"
 check "all validates every new key" 0 out \
-  "$(ok sonarr)" "$(ok radarr)" "$(ok lidarr)" "$(ok readarr)" "$(ok whisparr)" "$(ok prowlarr)" \
+  "$(ok sonarr)" "$(ok radarr)" "$(ok lidarr)" "$(ok whisparr)" "$(ok prowlarr)" \
   "$(ok bazarr)" "$(ok lazylibrarian)" "$(ok mylar)" "$(ok nzbhydra2)" "$(ok jellyfin)" "$(ok cleanuparr)"
 check "Cleanuparr's new key is saved" 0 configs/cleanuparr/secrets/api_key.txt new-cleanuparr
 if [[ "$(stat -c %a "${__repo}/configs/cleanuparr/secrets/api_key.txt")" != 600 ]]; then
@@ -195,15 +191,15 @@ check "sent back as read, with the new key" 0 log \
 check "the new ApiKey is in config.xml" 0 configs/sonarr/config/config.xml "<ApiKey>$(key 1)</ApiKey>"
 check "the new key is the homepage secret" 0 configs/sonarr/secrets/api_key.txt "$(key 1)"
 check "Bazarr learns Sonarr's and Radarr's keys and its own" 0 configs/bazarr/config/config/config.yaml \
-  "\"apikey\": \"$(key 1)\"" "\"apikey\": \"$(key 2)\"" "\"apikey\": \"$(key 7)\""
+  "\"apikey\": \"$(key 1)\"" "\"apikey\": \"$(key 2)\"" "\"apikey\": \"$(key 6)\""
 check "recyclarr learns Sonarr's and Radarr's keys" 0 configs/recyclarr/config/secrets.yml \
   "\"sonarr_apikey\": \"$(key 1)\"" "\"radarr_apikey\": \"$(key 2)\""
 check "LazyLibrarian gets its own key, Prowlarr's and NZBHydra2's" 0 configs/lazylibrarian/config/config.ini \
-  "api_key = $(key 8)" "api = $(key 6)" "api = $(key 10)" "api = untouched"
+  "api_key = $(key 7)" "api = $(key 5)" "api = $(key 9)" "api = untouched"
 check "Mylar gets its own key and NZBHydra2's" 0 configs/mylar/config/mylar/config.ini \
-  "api_key = $(key 9)" "http://nzbhydra2:5076/nzbhydra2, 1, $(key 10), 0"
-check "NZBHydra2's key is written plain" 0 configs/nzbhydra2/config/nzbhydra.yml "\"apiKey\": \"$(key 10)\""
-if [[ "$(db_settings configs/sonarr/config/sonarr.db 1)" != *"$(key 10)"* || "$(db_settings configs/whisparr/config/whisparr3.db 2)" != *other* ]]; then
+  "api_key = $(key 8)" "http://nzbhydra2:5076/nzbhydra2, 1, $(key 9), 0"
+check "NZBHydra2's key is written plain" 0 configs/nzbhydra2/config/nzbhydra.yml "\"apiKey\": \"$(key 9)\""
+if [[ "$(db_settings configs/sonarr/config/sonarr.db 1)" != *"$(key 9)"* || "$(db_settings configs/whisparr/config/whisparr3.db 2)" != *other* ]]; then
   fail "only the NZBHydra2 indexer row changes"
 fi
 check "Prowlarr's application for Sonarr gets the new key" 0 log \
@@ -230,7 +226,6 @@ check "the connection is saved with the new key, where config.xml says the app i
   "podman exec sonarr curl -sk --fail --max-time 30 -X PUT -H X-Api-Key: $(key 1) -H Content-Type: application/json -d {\n  \"id\": 4,\n  \"implementation\": \"MediaBrowser\",\n  \"fields\": [\n    {\n      \"name\": \"host\",\n      \"value\": \"jellyfin\"\n    },\n    {\n      \"name\": \"apiKey\",\n      \"value\": \"new-jellyfin\"" \
   "http://127.0.0.1:8989/api/v3/notification/4?forceSave=true" \
   "https://127.0.0.1:8687/lidarr/api/v1/notification/4?forceSave=true"
-refute "an app without a Jellyfin connection is left alone" out "Updated readarr's Jellyfin connection"
 put_line="$(grep -n 'sonarr curl -sk --fail --max-time 30 -X PUT .*/notification/4' "${__state}/log" | cut -d: -f1)"
 revoke_line="$(grep -n 'Auth/Keys/old-jellyfin' "${__state}/log" | cut -d: -f1)"
 if [[ -z "${put_line}" || -z "${revoke_line}" || "${put_line}" -gt "${revoke_line}" ]]; then
@@ -240,7 +235,7 @@ check "homepage is recreated" 0 log "podman-compose --file docker-compose.yml --
 check "permissions are repaired" 0 log "permissions.py repair --runtime podman --recursive"
 
 # Each service on its own.
-for service in sonarr radarr lidarr readarr whisparr prowlarr bazarr lazylibrarian mylar nzbhydra2 jellyfin cleanuparr; do
+for service in sonarr radarr lidarr whisparr prowlarr bazarr lazylibrarian mylar nzbhydra2 jellyfin cleanuparr; do
   deployment
   run "${service}"
   check "${service} rotates on its own" 0 out "$(ok "${service}")"
@@ -277,7 +272,7 @@ check "a key in neither file is named" 1 err "ERROR: CONTAINER_PREFIX is set in 
 # Profiles and containers.
 deployment
 sed -i 's/^SONARR_PROFILE=enabled$/SONARR_PROFILE=disabled/' "${__repo}/.env"
-containers radarr lidarr readarr whisparr bazarr lazylibrarian mylar nzbhydra2 jellyfin
+containers radarr lidarr whisparr bazarr lazylibrarian mylar nzbhydra2 jellyfin
 rule '/System/Info/Public$' 0 '{"StartupWizardCompleted": false}'
 run all
 check "all skips a disabled service" 0 out "[sonarr] Skipped, SONARR_PROFILE is disabled"
@@ -299,22 +294,22 @@ run all
 check "a Prowlarr that never answers is skipped" 0 out \
   "[Prowlarr] Didn't come up in time, skipping application update for 'Sonarr'." \
   "[Prowlarr] Didn't come back up with the new key in time, skipping indexer key propagation."
-# 24 tries over the first 120s, then one each for Radarr, Lidarr, Readarr,
-# Whisparr, Prowlarr's own propagation, LazyLibrarian and Mylar.
-if [[ "$(grep -c 'prowlarr/api/v1/system/status' "${__state}/log")" -ne 31 ]]; then
+# 24 tries over the first 120s, then one each for Radarr, Lidarr, Whisparr,
+# Prowlarr's own propagation, LazyLibrarian and Mylar.
+if [[ "$(grep -c 'prowlarr/api/v1/system/status' "${__state}/log")" -ne 30 ]]; then
   fail "only the first wait is a long one: Prowlarr's status asked $(grep -c 'prowlarr/api/v1/system/status' "${__state}/log") times"
 fi
 
 # Prowlarr's own rotation, against apps that are missing or not answering.
 deployment
-containers sonarr radarr lidarr readarr prowlarr homepage
-arr_xml readarr True 8787 8788 readarr ""
+containers sonarr radarr lidarr whisparr prowlarr homepage
+arr_xml whisparr True 6969 6970 whisparr ""
 rule 'radarr curl -sk --fail -H X-Api-Key: \S+ \S+/indexer$' 22 ""
 rule 'lidarr curl -sk --fail -X PUT' 22 ""
 run prowlarr
 check "an indexer that will not take the key is reported" 0 out \
   "[Prowlarr] WARNING: failed to update lidarr's indexer 'Archive (Prowlarr)' with the new API key."
-refute "an app without a key is left alone" log "readarr curl"
+refute "an app without a key is left alone" log "whisparr curl"
 refute "LazyLibrarian without a container is left alone" out "LazyLibrarian's Torznab"
 
 # The container disappears between the checks.
@@ -364,21 +359,27 @@ check "no new Jellyfin key is fatal" 1 err "[Jellyfin] ERROR: could not obtain t
 
 # Jellyfin's new key, against arr apps that cannot all take it.
 deployment
-containers radarr lidarr readarr whisparr jellyfin
+containers radarr lidarr whisparr jellyfin
 arr_xml lidarr True 8686 8687 lidarr ""
 rule 'radarr curl -sk --fail --max-time 30 -o /dev/null .*/notification$' 7 ""
-rule 'readarr curl -sk --fail --max-time 30 -H X-Api-Key: \S+ \S+/notification$' 22 ""
 rule 'whisparr curl -sk --fail --max-time 30 -X PUT' 22 ""
 run jellyfin
 check "an arr app that does not answer, list or take the key is reported" 0 out \
   "[Jellyfin] WARNING: radarr did not answer, so its Jellyfin connection still holds the old key." \
-  "[Jellyfin] WARNING: readarr did not list its connections, so its Jellyfin connection still holds the old key." \
   "[Jellyfin] WARNING: whisparr refused the new key, so its Jellyfin connection still holds the old key."
 check "and the old key is revoked all the same" 0 log "http://127.0.0.1:8096/jellyfin/Auth/Keys/old-jellyfin"
 refute "an arr app without a container is left alone" log "sonarr curl"
 check "an arr app without a key is reported" 0 out \
   "[Jellyfin] WARNING: lidarr has no API key in configs/lidarr/config/config.xml, so its Jellyfin connection still holds the old key."
 refute "and left alone" log "lidarr curl"
+
+# An arr app that answers but will not list its connections.
+deployment
+containers sonarr jellyfin
+rule 'sonarr curl -sk --fail --max-time 30 -H X-Api-Key: \S+ \S+/notification$' 22 ""
+run jellyfin
+check "an arr app that does not list its connections is reported" 0 out \
+  "[Jellyfin] WARNING: sonarr did not list its connections, so its Jellyfin connection still holds the old key."
 
 # homepage that will not recreate.
 deployment

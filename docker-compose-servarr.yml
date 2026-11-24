@@ -59,9 +59,6 @@ secrets:
   radarr_api_key:
     file: ./configs/radarr/secrets/api_key.txt
     x-podman.relabel: z
-  readarr_api_key:
-    file: ./configs/readarr/secrets/api_key.txt
-    x-podman.relabel: z
   bazarr_api_key:
     file: ./configs/bazarr/secrets/api_key.txt
     x-podman.relabel: z
@@ -187,38 +184,6 @@ services:
       test: >
         curl --fail http://127.0.0.1:${RADARR_HTTP_PORT}/radarr/ &&
         curl --fail --insecure https://127.0.0.1:${RADARR_HTTPS_PORT}/radarr/ ||
-        exit 1
-
-  readarr:
-    <<: [*servarr-common, *limit-servarr]
-    image: docker.io/linuxserver/readarr:${READARR_VERSION}
-    container_name: ${CONTAINER_PREFIX}readarr
-    profiles: ["${READARR_PROFILE}"]
-    networks:
-      apps:
-        aliases: [readarr-https]
-      # Fixed, because qBittorrent lets this one address in without a login
-      # (see READARR_SERVICES_IP in .env.example).
-      services:
-        ipv4_address: ${READARR_SERVICES_IP}
-    env_file: ["${CONFIG_FOLDER}/readarr/.env"]
-    environment:
-      <<: *servarr-env
-      PGID: "${READARR_GID}"
-      PUID: "${READARR_UID}"
-      READARR__SERVER__TRUSTEDNETWORKS: "${NGINX_APPS_IP},${NGINX_SERVICES_IP}"
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - ${CERTIFICATES_FOLDER}:/certs:ro,z
-      - ${CONFIG_FOLDER}/readarr/config:/config:z
-      - ${APP_BACKUPS_FOLDER}/readarr:/appbackups${DATA_VOLUME_FLAGS}
-      - ${MEDIA_COVERS_FOLDER}/readarr:/mediacover${DATA_VOLUME_FLAGS}
-      - ${DATA_FOLDER}:/data${DATA_VOLUME_FLAGS}
-    healthcheck:
-      <<: *healthcheck-defaults
-      test: >
-        curl --fail http://127.0.0.1:${READARR_HTTP_PORT}/readarr/ &&
-        curl --fail --insecure https://127.0.0.1:${READARR_HTTPS_PORT}/readarr/ ||
         exit 1
 
   recyclarr:

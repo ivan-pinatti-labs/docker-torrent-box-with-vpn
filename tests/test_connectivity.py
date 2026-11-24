@@ -166,7 +166,7 @@ def test_jellyfin_proxy_domain_reachable(running_containers):
 
 # The Servarr apps behind nginx, each trusting nginx's addresses through
 # <APP>__SERVER__TRUSTEDNETWORKS (docker-compose-servarr.yml).
-SERVARR_APPS = ["lidarr", "prowlarr", "radarr", "readarr", "sonarr", "whisparr"]
+SERVARR_APPS = ["lidarr", "prowlarr", "radarr", "sonarr", "whisparr"]
 
 
 def _requires_forms_login(service_name: str) -> bool:

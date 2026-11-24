@@ -39,6 +39,11 @@ node_modules/
 # never a candidate and excluding it did nothing. Remove both once no working
 # copy is old enough to still have the directory.
 megalinter-reports/
+# Readarr was retired from the stack (#545). A deployment that ran it keeps its
+# configs/readarr/ (database, keys, backups) on disk, untouched, and that
+# directory lost its own .gitignore with the rest of Readarr's files. This keeps
+# it out of a `git add -A`. Remove it once no working copy still has one.
+configs/readarr/
 
 # dotenv ###
 .env

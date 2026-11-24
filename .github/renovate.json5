@@ -424,7 +424,8 @@
     // substitution directly, by asking the running container what version it
     // actually is rather than trusting either the tag or the image label.
     //
-    // readarr: no incident, found while auditing every LinuxServer pin in
+    // readarr (retired from the stack since, #545): no incident, found while
+    // auditing every LinuxServer pin in
     // .env.example for the same shape after the qbittorrent one surfaced.
     // `skopeo list-tags` on `docker.io/linuxserver/readarr` turns up 123
     // tags of the form `1.0.<build>` (e.g. `1.0.1126`), all built around
@@ -516,10 +517,6 @@
       allowedVersions: "/^v\\d{1,2}\\.\\d+\\.\\d+-ls\\d+$/",
     },
     {
-      matchPackageNames: ["docker.io/linuxserver/readarr"],
-      allowedVersions: "/^0\\.\\d+\\.\\d+-nightly$/",
-    },
-    {
       matchPackageNames: ["docker.io/linuxserver/lazylibrarian"],
       allowedVersions: "/^[0-9a-f]+-ls\\d+$/",
     },
@@ -562,10 +559,10 @@
       matchPackageNames: ["docker.io/linuxserver/nzbget"],
       enabled: false,
     },
-    // The arr suite. Grouped to cut the pull request volume these seven images
+    // The arr suite. Grouped to cut the pull request volume these six images
     // would otherwise open one at a time, not because they share a release
     // cadence. They do not: image creation dates measured with skopeo inspect
-    // on 2026-08-18 run from readarr on 2025-06-27 to prowlarr and sonarr in
+    // on 2026-08-18 ran from readarr (retired since) on 2025-06-27 to prowlarr and sonarr in
     // early August 2026, fifteen months apart across the full set, so grouping
     // on "they release together" would be fiction. These are also the images
     // that have not broken anything recently, unlike the download clients kept
@@ -577,7 +574,6 @@
         "docker.io/linuxserver/sonarr",
         "docker.io/linuxserver/radarr",
         "docker.io/linuxserver/lidarr",
-        "docker.io/linuxserver/readarr",
         "docker.io/linuxserver/prowlarr",
         "docker.io/linuxserver/bazarr",
         "docker.io/recyclarr/recyclarr",

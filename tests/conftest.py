@@ -97,15 +97,6 @@ SERVICES = {
         "api_key_source": ("xml", "configs/prowlarr/config/config.xml", "ApiKey"),
         "password_var": "PROWLARR_PASSWORD",  # pragma: allowlist secret
     },
-    "readarr": {
-        "profile_var": "READARR_PROFILE",
-        "http_port_var": "READARR_HTTP_PORT",
-        "https_port_var": "READARR_HTTPS_PORT",
-        "proxy_path": "/readarr",
-        "api_health_path": "/readarr/api/v1/health",
-        "api_key_source": ("xml", "configs/readarr/config/config.xml", "ApiKey"),
-        "password_var": "READARR_PASSWORD",  # pragma: allowlist secret
-    },
     "bazarr": {
         "profile_var": "BAZARR_PROFILE",
         "http_port_var": "BAZARR_HTTP_PORT",
@@ -786,7 +777,6 @@ def nginx_map(name: str) -> dict[str, str]:
 CLEANUPARR_ARR_NAMES = {
     "lidarr": "Lidarr",
     "radarr": "Radarr",
-    "readarr": "Readarr",
     "sonarr": "Sonarr",
     "whisparr": "Whisparr",
 }
@@ -905,7 +895,6 @@ HOMEPAGE_WIDGET_PROBES = [
     ("sonarr", "Servarr", "Sonarr", "queue"),
     ("radarr", "Servarr", "Radarr", "queue/status"),
     ("lidarr", "Servarr", "Lidarr", "queue/status"),
-    ("readarr", "Servarr", "Readarr", "queue/status"),
     ("whisparr", "Servarr", "Whisparr", "queue/status"),
     ("mylar", "Servarr", "Mylar", "series"),
     ("bazarr", "Servarr", "Bazarr", "episodes"),

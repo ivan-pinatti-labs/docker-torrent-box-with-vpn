@@ -148,11 +148,7 @@ def test_classify_arr_health_response_treats_malformed_items_as_warnings():
 
 @pytest.mark.parametrize(
     "service_name",
-    [
-        name
-        for name in ("sonarr", "radarr", "prowlarr", "readarr", "lidarr")
-        if name in SERVICES
-    ],
+    [name for name in ("sonarr", "radarr", "prowlarr", "lidarr") if name in SERVICES],
 )
 def test_arr_health_response_empty(service_name, running_containers):
     """Servarr health endpoints return an empty list when everything is OK."""

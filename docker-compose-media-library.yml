@@ -161,7 +161,7 @@ services:
     networks:
       media:
         aliases: [calibre-https]
-      # Expose content server (port 8081) to servarr apps so Readarr and
+      # Expose content server (port 8081) to the apps network so
       # LazyLibrarian can reach it at http://calibre-http:8081.
       apps:
         aliases: [calibre-http]

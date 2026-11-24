@@ -71,7 +71,6 @@ Homepage. Left at its default, `invalid`, nothing changes.
 | SABnzbd        | <http://localhost:8086/sabnzbd/> | sabnzbd      | rotated      |
 | Prowlarr       | <http://localhost:9696/>         | prowlarr     | rotated      |
 | Radarr         | <http://localhost:7878/>         | radarr       | rotated      |
-| Readarr        | <http://localhost:8787/>         | readarr      | rotated      |
 | Sonarr         | <http://localhost:8989/>         | sonarr       | rotated      |
 | Whisparr       | <http://localhost:6969/>         | whisparr     | rotated      |
 
@@ -90,7 +89,6 @@ Homepage. Left at its default, `invalid`, nothing changes.
 | Prowlarr       | <https://localhost:6969/>              | prowlarr      | rotated       |
 | qBitTorrent    | <https://localhost:8085/>              | qbittorrent   | rotated       |
 | Radarr         | <https://localhost:7879/>              | radarr        | rotated       |
-| Readarr        | <https://localhost:8788/>              | readarr       | rotated       |
 | Whisparr       | <https://localhost:9898/>              | whisparr      | rotated       |
 
 ## **HTTPS through reverse proxy (Nginx)**
@@ -122,7 +120,6 @@ Homepage. Left at its default, `invalid`, nothing changes.
 | Prowlarr           | <https://localhost:8443/prowlarr/>              | prowlarr      | rotated       |
 | qBitTorrent        | <https://localhost:8443/qbittorrent/>           | qbittorrent   | rotated       |
 | Radarr             | <https://localhost:8443/radarr/>                | radarr        | rotated       |
-| Readarr            | <https://localhost:8443/readarr/>               | readarr       | rotated       |
 | Sonarr             | <https://localhost:8443/sonarr/>                | sonarr        | rotated       |
 | Whisparr           | <https://localhost:8443/whisparr/>              | whisparr      | rotated       |
 
@@ -136,7 +133,6 @@ LazyLibrarian ---> Prowlarr ---> Flaresolverr\
 Lidarr ---> Prowlarr ---> Flaresolverr\
 Mylar ---> Prowlarr ---> Flaresolverr\
 Radarr ---> Prowlarr ---> Flaresolverr\
-Readarr ---> Prowlarr ---> Flaresolverr\
 Sonarr ---> Prowlarr ---> Flaresolverr
 
 Legacy Jackett setups may still use
@@ -150,7 +146,6 @@ LazyLibrarian ---> NzbHydra2\
 Lidarr ---> NzbHydra2\
 Mylar ---> NzbHydra2\
 Radarr ---> NzbHydra2\
-Readarr ---> NzbHydra2\
 Sonarr ---> NzbHydra2
 
 ---
@@ -163,7 +158,6 @@ LazyLibrarian ---> qBitTorrent\
 Lidarr ---> qBitTorrent\
 Mylar ---> qBitTorrent\
 Radarr ---> qBitTorrent\
-Readarr ---> qBitTorrent\
 Sonarr ---> qBitTorrent
 
 qBittorrent is also wired to TrackersList's qBittorrent feed. The bundled
@@ -178,7 +172,6 @@ LazyLibrarian ---> SABnzbd\
 Lidarr ---> SABnzbd\
 Mylar ---> SABnzbd\
 Radarr ---> SABnzbd\
-Readarr ---> SABnzbd\
 Sonarr ---> SABnzbd
 
 ---
@@ -197,8 +190,7 @@ Plex is a legacy, disabled-by-default alternative; see
 ### AudioBooks / eBooks / Comics
 
 LazyLibrarian ---> Calibre\
-Mylar ---> Calibre\
-Readarr ---> Calibre
+Mylar ---> Calibre
 
 See [docs/CALIBRE.md](CALIBRE.md) and [docs/KORSYNC.md](KORSYNC.md)
 for configuration details.

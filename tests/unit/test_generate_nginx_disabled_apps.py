@@ -66,7 +66,7 @@ def test_read_profiles_reads_values_as_compose_does(generator, tmp_path):
         "WHISPARR_PROFILE=enabled # trailing note\n"
         'RADARR_PROFILE="enabled"\n'
         "LIDARR_PROFILE='disabled' # quoted, then a note\n"
-        "READARR_PROFILE=disabled # note\n"
+        "MYLAR_PROFILE=disabled # note\n"
         "BAZARR_PROFILE=enabled#not-a-comment\n"
         'PROWLARR_PROFILE="\n'
         'JELLYFIN_PROFILE="enabled\n'
@@ -78,7 +78,7 @@ def test_read_profiles_reads_values_as_compose_does(generator, tmp_path):
         "WHISPARR_PROFILE": True,
         "RADARR_PROFILE": True,
         "LIDARR_PROFILE": False,
-        "READARR_PROFILE": False,
+        "MYLAR_PROFILE": False,
         "BAZARR_PROFILE": False,
         # A lone quote is not a quoted value.
         "PROWLARR_PROFILE": False,

@@ -7,10 +7,10 @@
 # gluetun, so it only uses what gluetun's image ships: GNU Wget, and BusyBox
 # tools, which take short options only (head -n, grep -q).
 #
-# qBittorrent asks gluetun for a login like every other client. Its login
-# bypass covers Readarr's address alone (#411), and gluetun's address is
-# shared by every container in its network namespace, so widening the bypass
-# to it would let SABnzbd and JDownloader2 in too. The login comes from the
+# qBittorrent asks gluetun for a login like every other client: it lets
+# nothing in without one, and gluetun's address is shared by every container
+# in its network namespace, so exempting it would let SABnzbd and JDownloader2
+# in too. The login comes from the
 # compose secrets the qBittorrent exporter uses, read on every run, so a
 # password rotation needs no gluetun restart (#419).
 #

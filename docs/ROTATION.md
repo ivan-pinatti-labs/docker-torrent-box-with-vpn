@@ -85,7 +85,7 @@ state" note in `AGENTS.md` for why that's unsafe.
 
 ## API Keys (`rotate-api-keys.sh`)
 
-Valid targets: `sonarr`, `radarr`, `lidarr`, `readarr`, `whisparr`,
+Valid targets: `sonarr`, `radarr`, `lidarr`, `whisparr`,
 `prowlarr`, `bazarr`, `lazylibrarian`, `mylar`, `nzbhydra2`, `jellyfin`,
 `cleanuparr`, `all`.
 
@@ -156,7 +156,7 @@ respective config files.
 Valid targets (alphabetical): `audiobookshelf`, `bazarr`, `calibre`,
 `calibre-web`, `cleanuparr`, `grafana`, `jdownloader2`, `jellyfin`, `lazylibrarian`,
 `lidarr`, `mylar`, `nzbhydra2`, `prowlarr`, `qbittorrent`, `radarr`,
-`readarr`, `sabnzbd`, `sonarr`, `whisparr`, `all`.
+`sabnzbd`, `sonarr`, `whisparr`, `all`.
 
 The summary table prints service, user, and new password, and the rotation
 functions, execution order, summary rows, and validation checks are all
@@ -271,7 +271,7 @@ alphabetical by service.
   `configs/sabnzbd/secrets/api_key.txt` (read directly by sabnzbd_exporter
   and Homepage), the Servarr `DownloadClients` tables, LazyLibrarian, Mylar,
   and Notifiarr.
-- **Servarr apps** (Lidarr, Prowlarr, Radarr, Readarr, Sonarr, Whisparr):
+- **Servarr apps** (Lidarr, Prowlarr, Radarr, Sonarr, Whisparr):
   the new login password is set through each app's host config API, which
   hashes it internally.
 
@@ -304,8 +304,8 @@ Regenerates `certs/server.key`, `certs/server.crt`, and `certs/server.pfx`
 with a new random PKCS#12 password, then syncs that password into every
 consumer:
 
-- `SslCertPassword` in the `config.xml` of Lidarr, Prowlarr, Radarr, Readarr,
-  Sonarr, and Whisparr (apps with SSL disabled are skipped).
+- `SslCertPassword` in the `config.xml` of Lidarr, Prowlarr, Radarr, Sonarr,
+  and Whisparr (apps with SSL disabled are skipped).
 - `CertificatePassword` in Jellyfin's `network.xml`.
 - `sslKeyStorePassword` in NZBHydra2's `nzbhydra.yml`.
 

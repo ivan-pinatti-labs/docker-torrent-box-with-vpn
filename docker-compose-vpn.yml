@@ -63,8 +63,6 @@ services:
       # - ${QBITTORRENT_PORT}:${QBITTORRENT_PORT}/udp # qbittorrent-torrent
       # - ${RADARR_HTTP_PORT}:${RADARR_HTTP_PORT} # radarr-http
       # - ${RADARR_HTTPS_PORT}:${RADARR_HTTPS_PORT} # radarr-https
-      # - ${READARR_HTTP_PORT}:${READARR_HTTP_PORT} # readarr-http
-      # - ${READARR_HTTPS_PORT}:${READARR_HTTPS_PORT} # readarr-https
       # - ${SONARR_HTTP_PORT}:${SONARR_HTTP_PORT} # sonarr-http
       # - ${SONARR_HTTPS_PORT}:${SONARR_HTTPS_PORT} # sonarr-https
       # - ${WHISPARR_HTTP_PORT}:${WHISPARR_HTTP_PORT} # whisparr-http
@@ -80,7 +78,7 @@ services:
     env_file: [".env", "${CONFIG_FOLDER}/gluetun/.env"]
     # Set here rather than in configs/gluetun/.env so it reaches installs whose
     # seeded copy still has the old command, which qBittorrent refuses since
-    # its login bypass covers Readarr alone (#419). The script logs in with the
+    # it lets nothing in without a login (#419). The script logs in with the
     # two secrets below; see its header.
     environment:
       VPN_PORT_FORWARDING_UP_COMMAND: "/bin/sh /scripts/qbittorrent-port-forward.sh {{PORTS}}"

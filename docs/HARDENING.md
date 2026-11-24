@@ -431,7 +431,7 @@ the bumps not happening.
 
 ```bash
 # Confirm app processes run as non-root
-for c in sonarr radarr bazarr lidarr prowlarr readarr whisparr qbittorrent sabnzbd jellyfin prometheus grafana; do
+for c in sonarr radarr bazarr lidarr prowlarr whisparr qbittorrent sabnzbd jellyfin prometheus grafana; do
   echo -n "$c: "; podman exec $c id 2>/dev/null || echo "not running"
 done
 

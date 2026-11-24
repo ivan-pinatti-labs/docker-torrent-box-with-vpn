@@ -94,7 +94,6 @@ update_xml_ssl_password() {
 update_xml_ssl_password "Lidarr" "configs/lidarr/config/config.xml"
 update_xml_ssl_password "Prowlarr" "configs/prowlarr/config/config.xml"
 update_xml_ssl_password "Radarr" "configs/radarr/config/config.xml"
-update_xml_ssl_password "Readarr" "configs/readarr/config/config.xml"
 update_xml_ssl_password "Sonarr" "configs/sonarr/config/config.xml"
 update_xml_ssl_password "Whisparr" "configs/whisparr/config/config.xml"
 
@@ -124,4 +123,4 @@ echo "Restart every app that uses the certificate for the new password to take e
 echo "(the first line exports the image pins, see docs/MAKE_COMMANDS.md, \"Image versions\"):"
 echo "  set -a; . <(grep -hE '^[A-Z0-9_]+_VERSION=' versions.env .env); set +a"
 echo "  podman-compose --file docker-compose.yml --profile enabled up -d --force-recreate \\"
-echo "    lidarr prowlarr radarr readarr sonarr whisparr jellyfin nzbhydra2 nginx"
+echo "    lidarr prowlarr radarr sonarr whisparr jellyfin nzbhydra2 nginx"

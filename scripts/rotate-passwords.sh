@@ -3,7 +3,7 @@
 # Copyright 2022 Ivan Pinatti
 set -euo pipefail
 
-# Usage: ./scripts/rotate-passwords.sh [audiobookshelf|bazarr|calibre|calibre-web|cleanuparr|grafana|jdownloader2|jellyfin|lazylibrarian|lidarr|mylar|nzbhydra2|prowlarr|qbittorrent|radarr|readarr|sabnzbd|sonarr|whisparr|all]
+# Usage: ./scripts/rotate-passwords.sh [audiobookshelf|bazarr|calibre|calibre-web|cleanuparr|grafana|jdownloader2|jellyfin|lazylibrarian|lidarr|mylar|nzbhydra2|prowlarr|qbittorrent|radarr|sabnzbd|sonarr|whisparr|all]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
@@ -11,7 +11,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 readonly REPO_ROOT
 cd "$REPO_ROOT"
 
-readonly USAGE="Usage: $0 [audiobookshelf|bazarr|calibre|calibre-web|cleanuparr|grafana|jdownloader2|jellyfin|lazylibrarian|lidarr|mylar|nzbhydra2|prowlarr|qbittorrent|radarr|readarr|sabnzbd|sonarr|whisparr|all]"
+readonly USAGE="Usage: $0 [audiobookshelf|bazarr|calibre|calibre-web|cleanuparr|grafana|jdownloader2|jellyfin|lazylibrarian|lidarr|mylar|nzbhydra2|prowlarr|qbittorrent|radarr|sabnzbd|sonarr|whisparr|all]"
 
 if [[ $# -ne 1 ]]; then
   echo "$USAGE" >&2
@@ -78,7 +78,6 @@ QBITTORRENT_HTTPS_PORT="$(env_value QBITTORRENT_HTTPS_PORT)"
 # qBittorrent.conf), not loopback, so in-container curl must target it.
 GLUETUN_SERVICES_IP="$(env_value GLUETUN_SERVICES_IP)"
 RADARR_HTTPS_PORT="$(env_value RADARR_HTTPS_PORT)"
-READARR_HTTPS_PORT="$(env_value READARR_HTTPS_PORT)"
 SABNZBD_HTTPS_PORT="$(env_value SABNZBD_HTTPS_PORT)"
 SONARR_HTTP_PORT="$(env_value SONARR_HTTP_PORT)"
 WHISPARR_HTTPS_PORT="$(env_value WHISPARR_HTTPS_PORT)"
@@ -88,7 +87,7 @@ readonly AUDIOBOOKSHELF_HTTP_PORT BAZARR_HTTP_PORT CALIBRE_GUI_WEB_HTTP_PORT \
   JELLYFIN_HTTP_PORT JELLYFIN_BASE_URL LAZYLIBRARIAN_HTTP_PORT \
   LIDARR_HTTPS_PORT MYLAR_HTTPS_PORT NZBHYDRA2_HTTPS_PORT PROWLARR_HTTPS_PORT \
   QBITTORRENT_HTTPS_PORT GLUETUN_SERVICES_IP RADARR_HTTPS_PORT \
-  READARR_HTTPS_PORT SABNZBD_HTTPS_PORT SONARR_HTTP_PORT WHISPARR_HTTPS_PORT
+  SABNZBD_HTTPS_PORT SONARR_HTTP_PORT WHISPARR_HTTPS_PORT
 
 # ---------------------------------------------------------------------------
 # Config file paths
@@ -97,7 +96,6 @@ readonly AUDIOBOOKSHELF_HTTP_PORT BAZARR_HTTP_PORT CALIBRE_GUI_WEB_HTTP_PORT \
 readonly SONARR_XML="configs/sonarr/config/config.xml"
 readonly RADARR_XML="configs/radarr/config/config.xml"
 readonly LIDARR_XML="configs/lidarr/config/config.xml"
-readonly READARR_XML="configs/readarr/config/config.xml"
 readonly WHISPARR_XML="configs/whisparr/config/config.xml"
 readonly PROWLARR_XML="configs/prowlarr/config/config.xml"
 
@@ -159,7 +157,6 @@ readonly JDOWNLOADER2_PASSWORD_SECRET="configs/jdownloader2/secrets/password.txt
 readonly SONARR_DB="configs/sonarr/config/sonarr.db"
 readonly RADARR_DB="configs/radarr/config/radarr.db"
 readonly LIDARR_DB="configs/lidarr/config/lidarr.db"
-readonly READARR_DB="configs/readarr/config/readarr.db"
 readonly WHISPARR_DB="configs/whisparr/config/whisparr3.db"
 readonly PROWLARR_DB="configs/prowlarr/config/prowlarr.db"
 
@@ -512,8 +509,6 @@ SUMMARY_QBITTORRENT_USER=""
 SUMMARY_QBITTORRENT_NEW=""
 SUMMARY_RADARR_USER=""
 SUMMARY_RADARR_NEW=""
-SUMMARY_READARR_USER=""
-SUMMARY_READARR_NEW=""
 SUMMARY_SABNZBD_USER=""
 SUMMARY_SABNZBD_NEW=""
 SUMMARY_SONARR_USER=""
@@ -1131,11 +1126,6 @@ rotate_qbittorrent() {
   # config files, are edited on disk; stop everything in the blast radius so
   # nothing rewrites the files mid-edit or reloads stale state. homepage and
   # qbittorrent_exporter are handled separately, by RECREATE_CONSUMERS below.
-  #
-  # Not Readarr: it cannot log in to qBittorrent 5.2 and later, so its client
-  # has no credentials and qBittorrent lets its address in instead
-  # (wire-connections.sh, #411). Writing the password there would bring back
-  # the login that fails.
   echo "[qBittorrent] Stopping consumers for config and database edits..."
   stop_existing sonarr radarr lidarr whisparr prowlarr lazylibrarian mylar
 
@@ -1208,16 +1198,6 @@ rotate_radarr() {
   SUMMARY_RADARR_NEW="$new_password"
 }
 
-rotate_readarr() {
-  local new_password
-  new_password=$(gen_password)
-  local api_key
-  api_key=$(get_xml_apikey "$READARR_XML")
-  rotate_arr_password "Readarr" "readarr" "$api_key" "$READARR_HTTPS_PORT" "readarr" "v1" "$new_password"
-  SUMMARY_READARR_USER="readarr"
-  SUMMARY_READARR_NEW="$new_password"
-}
-
 rotate_sabnzbd() {
   local new_password new_api_key new_nzb_key
   new_password=$(gen_password)
@@ -1229,7 +1209,7 @@ rotate_sabnzbd() {
   # in the blast radius for the duration of the edits. homepage and
   # sabnzbd_exporter are handled separately, by RECREATE_CONSUMERS below.
   echo "[SABnzbd] Stopping consumers for config and database edits..."
-  stop_existing sabnzbd lazylibrarian mylar sonarr radarr lidarr readarr whisparr prowlarr
+  stop_existing sabnzbd lazylibrarian mylar sonarr radarr lidarr whisparr prowlarr
 
   echo "[SABnzbd] Updating config and service env credentials..."
   python3 - <<PYEOF
@@ -1334,8 +1314,6 @@ PYEOF
   update_arr_sabnzbd_credentials Radarr "$RADARR_DB" "$new_password" "$new_api_key"
   echo "[Lidarr DB] Updating SABnzbd credentials in DownloadClients..."
   update_arr_sabnzbd_credentials Lidarr "$LIDARR_DB" "$new_password" "$new_api_key"
-  echo "[Readarr DB] Updating SABnzbd credentials in DownloadClients..."
-  update_arr_sabnzbd_credentials Readarr "$READARR_DB" "$new_password" "$new_api_key"
   echo "[Whisparr DB] Updating SABnzbd credentials in DownloadClients..."
   update_arr_sabnzbd_credentials Whisparr "$WHISPARR_DB" "$new_password" "$new_api_key"
 
@@ -1448,7 +1426,7 @@ rotate_if_enabled() {
 # below, serializing waits that could otherwise happen concurrently.
 prestart_api_containers() {
   local svc container to_start=() to_wait=()
-  for svc in sonarr radarr lidarr readarr whisparr prowlarr qbittorrent grafana jellyfin cleanuparr; do
+  for svc in sonarr radarr lidarr whisparr prowlarr qbittorrent grafana jellyfin cleanuparr; do
     if [[ "$TARGET" != "all" && "$TARGET" != "$svc" ]]; then
       continue
     fi
@@ -1604,7 +1582,6 @@ nzbhydra2) rotate_if_enabled nzbhydra2 rotate_nzbhydra2 ;;
 prowlarr) rotate_if_enabled prowlarr rotate_prowlarr prowlarr ;;
 qbittorrent) rotate_if_enabled qbittorrent rotate_qbittorrent qbittorrent ;;
 radarr) rotate_if_enabled radarr rotate_radarr radarr ;;
-readarr) rotate_if_enabled readarr rotate_readarr readarr ;;
 sabnzbd) rotate_if_enabled sabnzbd rotate_sabnzbd ;;
 sonarr) rotate_if_enabled sonarr rotate_sonarr sonarr ;;
 whisparr) rotate_if_enabled whisparr rotate_whisparr whisparr ;;
@@ -1616,7 +1593,6 @@ all)
   rotate_if_enabled mylar rotate_mylar
   rotate_if_enabled qbittorrent rotate_qbittorrent qbittorrent
   rotate_if_enabled radarr rotate_radarr radarr
-  rotate_if_enabled readarr rotate_readarr readarr
   rotate_if_enabled sabnzbd rotate_sabnzbd
   rotate_if_enabled sonarr rotate_sonarr sonarr
   rotate_if_enabled whisparr rotate_whisparr whisparr
@@ -1744,7 +1720,6 @@ print_row "nzbhydra2" "$SUMMARY_NZBHYDRA2_USER" "$SUMMARY_NZBHYDRA2_NEW"
 print_row "prowlarr" "$SUMMARY_PROWLARR_USER" "$SUMMARY_PROWLARR_NEW"
 print_row "qbittorrent" "$SUMMARY_QBITTORRENT_USER" "$SUMMARY_QBITTORRENT_NEW"
 print_row "radarr" "$SUMMARY_RADARR_USER" "$SUMMARY_RADARR_NEW"
-print_row "readarr" "$SUMMARY_READARR_USER" "$SUMMARY_READARR_NEW"
 print_row "sabnzbd" "$SUMMARY_SABNZBD_USER" "$SUMMARY_SABNZBD_NEW"
 print_row "sonarr" "$SUMMARY_SONARR_USER" "$SUMMARY_SONARR_NEW"
 print_row "whisparr" "$SUMMARY_WHISPARR_USER" "$SUMMARY_WHISPARR_NEW"
@@ -2038,7 +2013,6 @@ VALIDATE_TMPDIR="$(mktemp -d)"
 [[ -n "$SUMMARY_PROWLARR_NEW" ]] && queue_validation prowlarr validate prowlarr 180 arr_login_ok prowlarr https "$PROWLARR_HTTPS_PORT" prowlarr "$SUMMARY_PROWLARR_NEW"
 [[ -n "$SUMMARY_QBITTORRENT_NEW" ]] && queue_validation qbittorrent validate qbittorrent 180 qbittorrent_api_ok "$SUMMARY_QBITTORRENT_NEW"
 [[ -n "$SUMMARY_RADARR_NEW" ]] && queue_validation radarr validate radarr 180 arr_login_ok radarr https "$RADARR_HTTPS_PORT" radarr "$SUMMARY_RADARR_NEW"
-[[ -n "$SUMMARY_READARR_NEW" ]] && queue_validation readarr validate readarr 180 arr_login_ok readarr https "$READARR_HTTPS_PORT" readarr "$SUMMARY_READARR_NEW"
 [[ -n "$VERIFY_SABNZBD_KEY" ]] && queue_validation sabnzbd validate sabnzbd 180 sabnzbd_key_ok "$VERIFY_SABNZBD_KEY"
 [[ -n "$SUMMARY_SONARR_NEW" ]] && queue_validation sonarr validate sonarr 180 arr_login_ok sonarr http "$SONARR_HTTP_PORT" sonarr "$SUMMARY_SONARR_NEW"
 [[ -n "$SUMMARY_WHISPARR_NEW" ]] && queue_validation whisparr validate whisparr 180 arr_login_ok whisparr https "$WHISPARR_HTTPS_PORT" whisparr "$SUMMARY_WHISPARR_NEW"

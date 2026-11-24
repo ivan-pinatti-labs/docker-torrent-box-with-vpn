@@ -194,7 +194,6 @@ RUNTIME_STATE = [
     "configs/prowlarr/config/prowlarr.db",
     "configs/qbittorrent/config/qBittorrent/qBittorrent.conf",
     "configs/radarr/config/radarr.db",
-    "configs/readarr/config/readarr.db",
     "configs/sabnzbd/config/sabnzbd.ini",
     "configs/sonarr/config/sonarr.db",
     "configs/whisparr/config/whisparr.db",

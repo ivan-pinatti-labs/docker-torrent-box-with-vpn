@@ -101,7 +101,6 @@ EXPECTED_PODMAN_DASHBOARD_STACKS = {
         "flaresolverr",
         "lidarr",
         "radarr",
-        "readarr",
         "recyclarr",
         "sonarr",
         "whisparr",
