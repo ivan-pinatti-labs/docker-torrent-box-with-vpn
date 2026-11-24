@@ -890,7 +890,10 @@ def test_lazylibrarian_build_bump_is_a_patch_update():
         groups = scheme.fullmatch(tag).groupdict()
         return tuple(int(groups.get(name) or 0) for name in ("major", "minor", "patch"))
 
-    current = release(_pins()["LAZYLIBRARIAN_VERSION"].split("@", 1)[0])
+    # Fixed tags rather than the live pin, so the test still holds once
+    # Renovate moves the pin. The pin's own tag must parse, or nothing orders.
+    assert scheme.fullmatch(_pins()["LAZYLIBRARIAN_VERSION"].split("@", 1)[0])
+    current = release("649e8201-ls394")
     newer = release("4e8f22d9-ls405")
     assert newer[:2] == current[:2], "a newer build is not a patch update"
     assert newer[2] > current[2], "a newer build does not order above the pin"
