@@ -42,15 +42,6 @@
           url: https://lidarr-https:6868/lidarr
           key: "{{HOMEPAGE_FILE_LIDARR_API_KEY}}"
 
-    - Readarr:
-        icon: readarr.png
-        href: /readarr/
-        description: Books
-        widget:
-          type: readarr
-          url: https://readarr-https:8788/readarr
-          key: "{{HOMEPAGE_FILE_READARR_API_KEY}}"
-
     - Mylar:
         icon: mylar.png
         href: /mylar/

@@ -45,7 +45,7 @@ numeric per component rather than textual.
 
 Covered, each confirmed live against a standalone container of the pinned
 image before being wired into this file: qBittorrent (`/api/v2/app/version`,
-authenticated); Sonarr, Radarr, Lidarr, Prowlarr, Readarr
+authenticated); Sonarr, Radarr, Lidarr, Prowlarr
 (`system/status` beside each app's own already-registered `/health` path,
 same API prefix, same API key); Bazarr (`/api/system/status`); Cleanuparr
 (`/api/status`, with the key wire-connections.sh saved; its
@@ -245,7 +245,7 @@ def test_qbittorrent_running_version_matches_pin(running_containers):
 
 
 # ---------------------------------------------------------------------------
-# Servarr apps: Sonarr, Radarr, Lidarr, Prowlarr, Readarr
+# Servarr apps: Sonarr, Radarr, Lidarr, Prowlarr
 # ---------------------------------------------------------------------------
 
 _ARR_VERSION_VAR = {
@@ -253,7 +253,6 @@ _ARR_VERSION_VAR = {
     "radarr": "RADARR_VERSION",
     "lidarr": "LIDARR_VERSION",
     "prowlarr": "PROWLARR_VERSION",
-    "readarr": "READARR_VERSION",
 }
 
 
@@ -263,9 +262,9 @@ def test_arr_running_version_matches_pin(service_name, running_containers):
 
     Same API prefix (api/v3 for Sonarr and Radarr, api/v1 for the rest) and
     the same API key; confirmed live against standalone containers of
-    Sonarr, Prowlarr and Readarr that all three answer a `version` field at
-    `system/status` in this shape (Radarr and Lidarr share the same Servarr
-    codebase and API convention).
+    Sonarr and Prowlarr (and Readarr, since retired) that each answer a
+    `version` field at `system/status` in this shape (Radarr and Lidarr share
+    the same Servarr codebase and API convention).
     """
     if not is_enabled(service_name):
         pytest.skip(f"{service_name} profile is disabled")

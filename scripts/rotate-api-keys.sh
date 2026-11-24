@@ -3,7 +3,7 @@
 # Copyright 2022 Ivan Pinatti
 set -euo pipefail
 
-# Usage: ./scripts/rotate-api-keys.sh [sonarr|radarr|lidarr|readarr|whisparr|prowlarr|bazarr|lazylibrarian|mylar|nzbhydra2|jellyfin|cleanuparr|all]
+# Usage: ./scripts/rotate-api-keys.sh [sonarr|radarr|lidarr|whisparr|prowlarr|bazarr|lazylibrarian|mylar|nzbhydra2|jellyfin|cleanuparr|all]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
@@ -11,7 +11,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 readonly REPO_ROOT
 cd "$REPO_ROOT"
 
-readonly USAGE="Usage: $0 [sonarr|radarr|lidarr|readarr|whisparr|prowlarr|bazarr|lazylibrarian|mylar|nzbhydra2|jellyfin|cleanuparr|all]"
+readonly USAGE="Usage: $0 [sonarr|radarr|lidarr|whisparr|prowlarr|bazarr|lazylibrarian|mylar|nzbhydra2|jellyfin|cleanuparr|all]"
 
 if [[ $# -ne 1 ]]; then
   echo "$USAGE" >&2
@@ -97,7 +97,6 @@ arr_endpoint() {
 readonly SONARR_XML="configs/sonarr/config/config.xml"
 readonly RADARR_XML="configs/radarr/config/config.xml"
 readonly LIDARR_XML="configs/lidarr/config/config.xml"
-readonly READARR_XML="configs/readarr/config/config.xml"
 readonly WHISPARR_XML="configs/whisparr/config/config.xml"
 readonly PROWLARR_XML="configs/prowlarr/config/config.xml"
 
@@ -109,7 +108,6 @@ readonly RECYCLARR_SECRETS="configs/recyclarr/config/secrets.yml" # pragma: allo
 # See docs/COMPOSE_CONVENTIONS.md.
 readonly SONARR_API_KEY_SECRET="configs/sonarr/secrets/api_key.txt"     # pragma: allowlist secret
 readonly RADARR_API_KEY_SECRET="configs/radarr/secrets/api_key.txt"     # pragma: allowlist secret
-readonly READARR_API_KEY_SECRET="configs/readarr/secrets/api_key.txt"   # pragma: allowlist secret
 readonly BAZARR_API_KEY_SECRET="configs/bazarr/secrets/api_key.txt"     # pragma: allowlist secret
 readonly PROWLARR_API_KEY_SECRET="configs/prowlarr/secrets/api_key.txt" # pragma: allowlist secret
 readonly LIDARR_API_KEY_SECRET="configs/lidarr/secrets/api_key.txt"     # pragma: allowlist secret
@@ -451,7 +449,7 @@ propagate_prowlarr_key() {
 
   # Scheme/port/UrlBase come from each app's own config.xml (see arr_endpoint),
   # not from .env, so this follows an app that is not serving where .env says.
-  local targets=("sonarr v3 ${SONARR_XML}" "radarr v3 ${RADARR_XML}" "lidarr v1 ${LIDARR_XML}" "readarr v1 ${READARR_XML}" "whisparr v3 ${WHISPARR_XML}")
+  local targets=("sonarr v3 ${SONARR_XML}" "radarr v3 ${RADARR_XML}" "lidarr v1 ${LIDARR_XML}" "whisparr v3 ${WHISPARR_XML}")
   local entry app scheme port base api_version xml_path app_key indexers
   for entry in "${targets[@]}"; do
     read -r app api_version xml_path <<<"$entry"
@@ -655,23 +653,6 @@ rotate_lidarr() {
   SUMMARY_LIDARR_NEW="$new_key"
 }
 
-rotate_readarr() {
-  local old_key
-  old_key=$(get_xml_apikey "$READARR_XML")
-  local new_key
-  new_key=$(rotate_arr_apikey "Readarr" "readarr" "$READARR_XML")
-
-  local prowlarr_key
-  prowlarr_key=$(get_xml_apikey "$PROWLARR_XML")
-  update_prowlarr_application "$prowlarr_key" "Readarr" "$new_key"
-  update_cleanuparr_instance readarr Readarr "$new_key"
-
-  write_secret_file "$READARR_API_KEY_SECRET" "$new_key"
-
-  SUMMARY_READARR_OLD="$old_key"
-  SUMMARY_READARR_NEW="$new_key"
-}
-
 rotate_whisparr() {
   local old_key
   old_key=$(get_xml_apikey "$WHISPARR_XML")
@@ -803,7 +784,7 @@ rotate_nzbhydra2() {
   # and the arr apps' Indexers tables are edited on disk, so everything in
   # the blast radius is stopped for the duration of the edits.
   echo "[NZBHydra2] Stopping consumers for config and database edits..."
-  stop_existing nzbhydra2 lazylibrarian mylar sonarr radarr lidarr readarr whisparr
+  stop_existing nzbhydra2 lazylibrarian mylar sonarr radarr lidarr whisparr
 
   echo "[NZBHydra2] Writing new main.apiKey to $NZBHYDRA_YML..."
   apiKey="$new_key" yq -i '(.main.apiKey) = strenv(apiKey)' "$NZBHYDRA_YML"
@@ -811,7 +792,7 @@ rotate_nzbhydra2() {
   echo "[NZBHydra2] Updating consumers (arr Indexers tables, LazyLibrarian, Mylar)..."
   local db
   for db in configs/sonarr/config/sonarr.db configs/radarr/config/radarr.db configs/lidarr/config/lidarr.db \
-    configs/readarr/config/readarr.db configs/whisparr/config/whisparr3.db; do
+    configs/whisparr/config/whisparr3.db; do
     host_writable_db "$db"
   done
   python3 - <<PYEOF
@@ -826,7 +807,6 @@ dbs = {
     "sonarr": "configs/sonarr/config/sonarr.db",
     "radarr": "configs/radarr/config/radarr.db",
     "lidarr": "configs/lidarr/config/lidarr.db",
-    "readarr": "configs/readarr/config/readarr.db",
     "whisparr": "configs/whisparr/config/whisparr3.db",
 }
 for app, db in dbs.items():
@@ -887,11 +867,11 @@ PYEOF
 # forceSave because storing the key is the job here, the same as the indexer
 # update in propagate_prowlarr_key; whether the connection works is what
 # tests/test_wire_connections.py checks. An app holding no Jellyfin connection
-# (Readarr, or a profile wired without Jellyfin) is left alone.
+# (a profile wired without Jellyfin) is left alone.
 # Args: new_key
 propagate_jellyfin_key() {
   local new_key="$1"
-  local targets=("sonarr v3 ${SONARR_XML}" "radarr v3 ${RADARR_XML}" "lidarr v1 ${LIDARR_XML}" "readarr v1 ${READARR_XML}" "whisparr v3 ${WHISPARR_XML}")
+  local targets=("sonarr v3 ${SONARR_XML}" "radarr v3 ${RADARR_XML}" "lidarr v1 ${LIDARR_XML}" "whisparr v3 ${WHISPARR_XML}")
   local entry app api_version xml_path app_key scheme port base url connection updated
   for entry in "${targets[@]}"; do
     read -r app api_version xml_path <<<"$entry"
@@ -986,8 +966,6 @@ SUMMARY_RADARR_OLD=""
 SUMMARY_RADARR_NEW=""
 SUMMARY_LIDARR_OLD=""
 SUMMARY_LIDARR_NEW=""
-SUMMARY_READARR_OLD=""
-SUMMARY_READARR_NEW=""
 SUMMARY_WHISPARR_OLD=""
 SUMMARY_WHISPARR_NEW=""
 SUMMARY_PROWLARR_OLD=""
@@ -1040,7 +1018,6 @@ case "$TARGET" in
 sonarr) rotate_if_enabled SONARR sonarr rotate_sonarr ;;
 radarr) rotate_if_enabled RADARR radarr rotate_radarr ;;
 lidarr) rotate_if_enabled LIDARR lidarr rotate_lidarr ;;
-readarr) rotate_if_enabled READARR readarr rotate_readarr ;;
 whisparr) rotate_if_enabled WHISPARR whisparr rotate_whisparr ;;
 prowlarr) rotate_if_enabled PROWLARR prowlarr rotate_prowlarr ;;
 bazarr) rotate_if_enabled BAZARR bazarr rotate_bazarr ;;
@@ -1053,7 +1030,6 @@ all)
   rotate_if_enabled SONARR sonarr rotate_sonarr
   rotate_if_enabled RADARR radarr rotate_radarr
   rotate_if_enabled LIDARR lidarr rotate_lidarr
-  rotate_if_enabled READARR readarr rotate_readarr
   rotate_if_enabled WHISPARR whisparr rotate_whisparr
   rotate_if_enabled PROWLARR prowlarr rotate_prowlarr
   rotate_if_enabled BAZARR bazarr rotate_bazarr
@@ -1126,7 +1102,6 @@ print_row() {
 print_row "sonarr" "$SUMMARY_SONARR_OLD" "$SUMMARY_SONARR_NEW"
 print_row "radarr" "$SUMMARY_RADARR_OLD" "$SUMMARY_RADARR_NEW"
 print_row "lidarr" "$SUMMARY_LIDARR_OLD" "$SUMMARY_LIDARR_NEW"
-print_row "readarr" "$SUMMARY_READARR_OLD" "$SUMMARY_READARR_NEW"
 print_row "whisparr" "$SUMMARY_WHISPARR_OLD" "$SUMMARY_WHISPARR_NEW"
 print_row "prowlarr" "$SUMMARY_PROWLARR_OLD" "$SUMMARY_PROWLARR_NEW"
 print_row "bazarr" "$SUMMARY_BAZARR_OLD" "$SUMMARY_BAZARR_NEW"
@@ -1231,7 +1206,6 @@ echo "======================================================================"
 [[ -n "$SUMMARY_SONARR_NEW" ]] && validate sonarr 180 arr_key_ok sonarr "$SONARR_XML" v3 "$SUMMARY_SONARR_NEW"
 [[ -n "$SUMMARY_RADARR_NEW" ]] && validate radarr 180 arr_key_ok radarr "$RADARR_XML" v3 "$SUMMARY_RADARR_NEW"
 [[ -n "$SUMMARY_LIDARR_NEW" ]] && validate lidarr 180 arr_key_ok lidarr "$LIDARR_XML" v1 "$SUMMARY_LIDARR_NEW"
-[[ -n "$SUMMARY_READARR_NEW" ]] && validate readarr 180 arr_key_ok readarr "$READARR_XML" v1 "$SUMMARY_READARR_NEW"
 [[ -n "$SUMMARY_WHISPARR_NEW" ]] && validate whisparr 180 arr_key_ok whisparr "$WHISPARR_XML" v3 "$SUMMARY_WHISPARR_NEW"
 [[ -n "$SUMMARY_PROWLARR_NEW" ]] && validate prowlarr 180 arr_key_ok prowlarr "$PROWLARR_XML" v1 "$SUMMARY_PROWLARR_NEW"
 [[ -n "$SUMMARY_BAZARR_NEW" ]] && validate bazarr 180 bazarr_key_ok "$SUMMARY_BAZARR_NEW"

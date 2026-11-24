@@ -30,7 +30,6 @@ HARDENED_SERVICES = [
         "bazarr",
         "lidarr",
         "prowlarr",
-        "readarr",
         "whisparr",
         "recyclarr",
         "flaresolverr",
@@ -58,7 +57,6 @@ PUID_PGID_SERVICES = [
         "bazarr",
         "lidarr",
         "prowlarr",
-        "readarr",
         "whisparr",
         "qbittorrent",
         "sabnzbd",
@@ -86,7 +84,6 @@ SERVICES_WITH_CONFIG = [
         "bazarr",
         "lidarr",
         "prowlarr",
-        "readarr",
         "whisparr",
         "recyclarr",
         "cleanuparr",
@@ -446,7 +443,7 @@ def test_usenet_completed_category_folders_exist_in_repo():
 
 @pytest.mark.parametrize(
     "service_name",
-    ["sabnzbd", "sonarr", "radarr", "lidarr", "readarr", "whisparr"],
+    ["sabnzbd", "sonarr", "radarr", "lidarr", "whisparr"],
 )
 def test_usenet_completed_category_folders_visible_to_apps(
     service_name, running_containers, docker_client
@@ -471,7 +468,6 @@ def test_servarr_remote_path_mappings_not_needed_for_shared_data_mount():
         "sonarr": "configs/sonarr/config/sonarr.db",
         "radarr": "configs/radarr/config/radarr.db",
         "lidarr": "configs/lidarr/config/lidarr.db",
-        "readarr": "configs/readarr/config/readarr.db",
         "whisparr": "configs/whisparr/config/whisparr3.db",
     }
     for app, db in dbs.items():

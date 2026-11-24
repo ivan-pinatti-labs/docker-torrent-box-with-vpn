@@ -48,7 +48,7 @@ pytestmark = [pytest.mark.rotation, pytest.mark.pw_rotation]
 TIMEOUT = 30
 SCRIPTS = REPO_ROOT / "scripts"
 
-ARR_APPS = ("sonarr", "radarr", "lidarr", "readarr", "whisparr")
+ARR_APPS = ("sonarr", "radarr", "lidarr", "whisparr")
 
 # Whisparr v3 names its DB whisparr3.db; the others match the service name.
 ARR_DB_PATHS = {
@@ -56,12 +56,9 @@ ARR_DB_PATHS = {
     for svc in ARR_APPS
 }
 
-# The arr apps whose qBittorrent client holds qBittorrent's password. Not
-# Readarr: its retired upstream cannot log in to qBittorrent 5.2 and later, so
-# wire-connections.sh gives it a client with no credentials and has
-# qBittorrent let Readarr's address in instead (#411), and rotate-passwords.sh
-# leaves that client alone.
-ARR_APPS_WITH_QBT = tuple(svc for svc in ARR_APPS if svc != "readarr")
+# The arr apps whose qBittorrent client holds qBittorrent's password: all of
+# them, since Readarr, whose client had none (#411), left the stack (#545).
+ARR_APPS_WITH_QBT = ARR_APPS
 
 # Prowlarr keeps its own qBittorrent/SABnzbd DownloadClients (for its own
 # Interactive Search), separate from the arr apps' clients above.
@@ -227,8 +224,7 @@ def test_rotate_qbittorrent_password_propagates(running_containers):
     still answers 200 (see rotate-passwords.sh), so the status proves
     nothing. Instead the test verifies the PBKDF2 hash stored in
     qBittorrent.conf changed (the config is flushed on restart) and that all
-    consumers were updated. Readarr's client, which has no credentials since
-    #411, must stay without them.
+    consumers were updated.
     """
     if not is_enabled("qbittorrent"):
         pytest.skip("qbittorrent profile is disabled")
@@ -273,20 +269,6 @@ def test_rotate_qbittorrent_password_propagates(running_containers):
         assert stored == new_password, (
             "Prowlarr DB still holds old qBittorrent password"
         )
-
-    # Readarr's client has no credentials, and rotation must not give it the
-    # password back: Readarr cannot log in with one (#411). Routed through the
-    # VPN, Readarr has no qBittorrent client at all.
-    readarr_db = REPO_ROOT / ARR_DB_PATHS["readarr"]
-    if is_enabled("readarr") and readarr_db.exists():
-        with live_db(readarr_db) as conn:
-            row = conn.execute(
-                "SELECT Settings FROM DownloadClients WHERE ConfigContract='QBittorrentSettings' LIMIT 1"
-            ).fetchone()
-        if row is not None:
-            assert not json.loads(row[0]).get("password"), (
-                f"rotation put a password in Readarr's qBittorrent client:\n{result.stdout}"
-            )
 
     # The shared secret file (read by qbittorrent_exporter and homepage) was
     # updated, without a trailing newline, at mode 644
@@ -691,7 +673,6 @@ def _restore_arr_password(
         ("sonarr", "http", "SONARR_HTTP_PORT", "sonarr", "v3"),
         ("radarr", "https", "RADARR_HTTPS_PORT", "radarr", "v3"),
         ("lidarr", "https", "LIDARR_HTTPS_PORT", "lidarr", "v1"),
-        ("readarr", "https", "READARR_HTTPS_PORT", "readarr", "v1"),
         ("whisparr", "https", "WHISPARR_HTTPS_PORT", "whisparr", "v3"),
         ("prowlarr", "https", "PROWLARR_HTTPS_PORT", "prowlarr", "v1"),
     ],

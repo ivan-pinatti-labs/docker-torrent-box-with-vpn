@@ -106,7 +106,6 @@ tools, and never touches a stack or a Python on the host. See
 | Prowlarr       | <https://hub.docker.com/r/linuxserver/prowlarr>      | Query Proxy Server                                                | enabled     |
 | qBittorrent    | <https://hub.docker.com/r/linuxserver/qbittorrent>   | Torrent Downloader                                                | enabled     |
 | Radarr         | <https://hub.docker.com/r/linuxserver/radarr>        | Movies Tracker/Manager                                            | enabled     |
-| Readarr        | <https://hub.docker.com/r/linuxserver/readarr>       | eBooks Tracker/Manager ⚠️ retired upstream                        | enabled     |
 | Recyclarr      | <https://github.com/recyclarr/recyclarr>             | TRaSH-Guides quality profile sync for Sonarr/Radarr               | enabled     |
 | SABnzbd        | <https://hub.docker.com/r/linuxserver/sabnzbd>       | Usenet Downloader                                                 | enabled     |
 | Sonarr         | <https://hub.docker.com/r/linuxserver/sonarr>        | TV Shows Tracker/Manager                                          | enabled     |
@@ -313,7 +312,6 @@ NGINX_PROFILE=enabled
 PROWLARR_PROFILE=enabled
 QBITTORRENT_PROFILE=enabled
 RADARR_PROFILE=enabled
-READARR_PROFILE=enabled
 SABNZBD_PROFILE=enabled
 SONARR_PROFILE=enabled
 
@@ -477,31 +475,34 @@ services, dashboards, and alert rules.
 
 ## Known Issues and future improvements
 
-1. **Readarr upstream has been retired**: the project's metadata service went offline and the team
-   shut the project down. The Docker image (`linuxserver/readarr`) still works but will not receive
-   further updates. `make bootstrap`/`make wire_connections` automatically points Readarr at the
-   community-run metadata mirror [rreading-glasses](https://github.com/blampe/rreading-glasses)
-   (`https://api.bookinfo.pro`), which restores full search and library refresh functionality. The
-   hosted instance has ~12k daily users and is backed by GoodReads data.
+1. **Readarr was retired from the stack** (#545). Its upstream project is
+   archived and its own metadata service is gone, it cannot log in to
+   qBittorrent 5.2 and later, and LazyLibrarian already tracks ebooks and
+   audiobooks here (Mylar tracks comics). A deployment that ran it keeps its
+   data: `configs/readarr/` and the files under `data/media` are not touched,
+   and `make update` stops starting it. What an earlier `make wire_connections`
+   set up for it stays until removed by hand:
 
-   This stack also uses Readarr for comics under `data/media/comics`; see
-   [docs/READARR.md](docs/READARR.md) for the comic quality profile setup
-   script.
+   - qBittorrent: Tools > Options > WebUI, remove Readarr's address from
+     "Bypass authentication for clients in whitelisted IP subnets" and switch
+     that option off. It was the only entry the stack put there.
+   - Cleanuparr: delete its Readarr instance.
+   - Prowlarr: delete the Readarr application.
+   - `.env`: the `READARR_*` settings are no longer read and can be deleted.
+     Take `readarr` out of `VPN_ON` too; until then make ignores it with a
+     warning.
+   - Docker only: `make down` leaves the container of a service the compose
+     files no longer define, so remove it by hand
+     (`docker rm --force <CONTAINER_PREFIX>readarr`). Under Podman `make down`
+     already removes it.
+   - Ownership: `data/media/ebooks` and `data/media/audiobooks` now belong to
+     LazyLibrarian and `data/media/comics` to Mylar, which
+     `make permissions_repair` applies.
 
-   The same retirement means Readarr cannot log in to qBittorrent 5.2 and
-   later, so `make wire_connections` gives its qBittorrent client no
-   credentials and has qBittorrent let Readarr's own address in without a
-   login. That does not work while Readarr is routed through the VPN
-   (`VPN_ON`), where it has no address of its own, so its qBittorrent client
-   is then not wired. See [docs/CONNECTIONS.md](docs/CONNECTIONS.md);
-   Readarr's SABnzbd client is unaffected.
-
-   **Longer-term alternatives:**
-   - [pennydreadful/bookshelf](https://github.com/pennydreadful/bookshelf): the most active
-     community fork (~600 stars), drop-in replacement, backward-compatible DB, supports GoodReads
-     and Hardcover metadata.
-   - [Faustvii/Readarr](https://github.com/Faustvii/Readarr): smaller fork, GoodReads only, but
-     actively releasing.
+   To keep tracking those books, add the authors in LazyLibrarian, which can
+   also import an existing library folder. Community forks such as
+   [pennydreadful/bookshelf](https://github.com/pennydreadful/bookshelf) exist
+   for anyone who wants Readarr itself, outside this stack.
 
 If you can help working on any of these issues and require more information,
 please feel free to open a issue and reach out.

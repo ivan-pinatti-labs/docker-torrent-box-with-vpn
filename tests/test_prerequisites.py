@@ -194,7 +194,6 @@ RUNTIME_STATE = [
     "configs/prowlarr/config/prowlarr.db",
     "configs/qbittorrent/config/qBittorrent/qBittorrent.conf",
     "configs/radarr/config/radarr.db",
-    "configs/readarr/config/readarr.db",
     "configs/sabnzbd/config/sabnzbd.ini",
     "configs/sonarr/config/sonarr.db",
     "configs/whisparr/config/whisparr.db",
@@ -336,3 +335,42 @@ def test_homepage_grafana_auth_seed_matches_grafana_admin():
         f"without rotating gets HTTP 403 from Homepage's Grafana widget. "
         f"Expected {expected!r}, found {actual!r}."
     )
+
+
+@pytest.mark.parametrize(
+    ("vpn_on", "routes", "warns", "fails"),
+    [
+        ("readarr", "", True, False),
+        ("readarr,sonarr", "docker-compose.routes/sonarr-vpn.yml", True, False),
+        ("sonarr", "docker-compose.routes/sonarr-vpn.yml", False, False),
+        ("bogus", None, False, True),
+    ],
+)
+def test_makefile_ignores_a_retired_vpn_on_service(vpn_on, routes, warns, fails):
+    """A retired service in VPN_ON is ignored with a warning, not refused (#545).
+
+    Every target parses VPN_ON first, so refusing a token an older .env still
+    carries would stop `make update` too. An unknown token is still refused.
+    """
+    result = subprocess.run(  # nosec B603 B607 - fixed arguments
+        [
+            "make",
+            "--no-print-directory",
+            "--eval",
+            "show_routes: ; @echo ROUTES=$(ROUTE_FILES)",
+            "show_routes",
+            f"VPN_ON={vpn_on}",
+        ],
+        cwd=pathlib.Path(__file__).resolve().parent.parent,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if fails:
+        assert result.returncode != 0
+        assert "Unknown VPN_ON service(s) [bogus]" in result.stderr
+        return
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split("ROUTES=", 1)[1].split() == routes.split()
+    assert ("no longer part of this stack" in result.stderr) is warns

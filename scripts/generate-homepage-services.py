@@ -41,7 +41,6 @@ SERVICE_PROFILE = {
     "Sonarr": "SONARR_PROFILE",
     "Radarr": "RADARR_PROFILE",
     "Lidarr": "LIDARR_PROFILE",
-    "Readarr": "READARR_PROFILE",
     "Mylar": "MYLAR_PROFILE",
     "Whisparr": "WHISPARR_PROFILE",
     "Bazarr": "BAZARR_PROFILE",

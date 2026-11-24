@@ -52,15 +52,15 @@ Downloaders own their own incoming areas:
 | `data/torrents/tv` | `qbittorrent` | `sonarr` |
 | `data/torrents/movies` | `qbittorrent` | `radarr` |
 | `data/torrents/music` | `qbittorrent` | `lidarr` |
-| `data/torrents/ebooks` | `qbittorrent` | `readarr`, `lazylibrarian` |
-| `data/torrents/comics` | `qbittorrent` | `readarr`, `mylar` |
+| `data/torrents/ebooks` | `qbittorrent` | `lazylibrarian` |
+| `data/torrents/comics` | `qbittorrent` | `mylar` |
 | `data/torrents/mature` | `qbittorrent` | `whisparr` |
 | `data/usenet/complete/tv` | `sabnzbd` | `sonarr` |
 | `data/usenet/complete/movies` | `sabnzbd` | `radarr` |
 | `data/usenet/complete/music` | `sabnzbd` | `lidarr` |
-| `data/usenet/complete/ebooks` | `sabnzbd` | `readarr`, `lazylibrarian` |
-| `data/usenet/complete/audiobooks` | `sabnzbd` | `readarr`, `lazylibrarian` |
-| `data/usenet/complete/comics` | `sabnzbd` | `readarr`, `mylar` |
+| `data/usenet/complete/ebooks` | `sabnzbd` | `lazylibrarian` |
+| `data/usenet/complete/audiobooks` | `sabnzbd` | `lazylibrarian` |
+| `data/usenet/complete/comics` | `sabnzbd` | `mylar` |
 | `data/usenet/complete/mature` | `sabnzbd` | `whisparr` |
 | `data/usenet/complete` | `root` | `sabnzbd` |
 | `data/usenet/blackhole` | `root` | `sabnzbd`, `nzbhydra2`, `lazylibrarian` |
@@ -77,9 +77,9 @@ Importers own only their target libraries and recycle folders:
 | `data/media/movies` | `radarr` | `bazarr` write, `jellyfin` read |
 | `data/media/music` | `lidarr` | `jellyfin` read |
 | `data/media/musicVideos` | `root` | `jellyfin` read |
-| `data/media/ebooks` | `readarr` | `lazylibrarian` write, `audiobookshelf` read, `calibre` write |
-| `data/media/audiobooks` | `readarr` | `lazylibrarian` write, `audiobookshelf` read |
-| `data/media/comics` | `readarr` | `mylar` write, `calibre` read |
+| `data/media/ebooks` | `lazylibrarian` | `audiobookshelf` read, `calibre` write |
+| `data/media/audiobooks` | `lazylibrarian` | `audiobookshelf` read |
+| `data/media/comics` | `mylar` | `calibre` read |
 | `data/media/mature` | `whisparr` | `jellyfin` read |
 | `data/media/podcasts` | `root` | `audiobookshelf` write |
 | `data/media/calibre-library` | `calibre` | `calibre_web` read |
@@ -95,7 +95,7 @@ pattern rather than the shared-library one above, with no cross-app ACLs:
 | `data/media/covers/<app>` | that app | `/config/MediaCover` |
 | `data/backups/<app>` | that app | `/config/Backups` |
 
-`<app>` is `sonarr`, `radarr`, `readarr`, `lidarr` or `whisparr` for covers,
+`<app>` is `sonarr`, `radarr`, `lidarr` or `whisparr` for covers,
 plus `prowlarr` for backups. Neither has an app setting to relocate it, so both
 are bind mounts back over the app's own config paths. See
 [STORAGE.md](STORAGE.md) for why they live out here.
@@ -147,8 +147,8 @@ tries to hardlink it as the importer uid for the declared media paths.
 
 ## Known Alignment
 
-SABnzbd category `ebooks` maps to `data/usenet/complete/ebooks`. Readarr's
-SABnzbd download client is configured to use the same category.
+SABnzbd category `ebooks` maps to `data/usenet/complete/ebooks`.
+LazyLibrarian's SABnzbd download client uses the same category.
 
 ---
 

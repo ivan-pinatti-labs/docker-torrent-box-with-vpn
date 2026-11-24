@@ -1,8 +1,7 @@
 """Smoke tests for the standalone maintenance scripts in scripts/.
 
 These tests never mutate live stack state. Filesystem scenarios run against
-temporary directories, permissions.py runs in dry-run mode, the Readarr
-profile script runs against a throwaway copy of the database, and the
+temporary directories, permissions.py runs in dry-run mode, and the
 korsync/exporter checks are read-only probes that skip when the container is
 not running.
 
@@ -11,17 +10,15 @@ Run explicitly with:
 """
 
 import os
-import sqlite3
 import subprocess
 
 import pytest
 
-from conftest import REPO_ROOT, container_name, live_db
+from conftest import REPO_ROOT, container_name
 
 pytestmark = pytest.mark.scripts
 
 SCRIPTS = REPO_ROOT / "scripts"
-READARR_DB = REPO_ROOT / "configs/readarr/config/readarr.db"
 
 
 def _skip_unless_running(service: str) -> None:
@@ -149,52 +146,6 @@ def test_permissions_dry_run_prints_commands_only(tmp_path):
     assert "chmod" in result.stdout
     assert "setfacl" in result.stdout
     assert marker.read_text() == "before\n"
-
-
-# ---------------------------------------------------------------------------
-# readarr-add-comic-profile.py
-# ---------------------------------------------------------------------------
-
-
-def test_readarr_comic_profile_is_idempotent(tmp_path):
-    if not READARR_DB.exists():
-        pytest.skip("readarr database not present")
-    db_copy = tmp_path / "readarr.db"
-    with live_db(READARR_DB) as source:
-        target = sqlite3.connect(db_copy)
-        with target:
-            source.backup(target)
-        target.close()
-
-    env = {"READARR_DB": str(db_copy)}
-    script = str(SCRIPTS / "readarr-add-comic-profile.py")
-
-    first = _run(["python3", script], env=env)
-    assert first.returncode == 0, first.stderr
-
-    second = _run(["python3", script], env=env)
-    assert second.returncode == 0, second.stderr
-    assert "already exists" in second.stdout
-
-    con = sqlite3.connect(db_copy)
-    try:
-        profiles = con.execute(
-            "SELECT COUNT(*) FROM QualityProfiles WHERE Name = 'Comic'"
-        ).fetchone()[0]
-        formats = con.execute(
-            "SELECT COUNT(*) FROM CustomFormats WHERE Name IN ('CBZ', 'CBR')"
-        ).fetchone()[0]
-    finally:
-        con.close()
-    assert profiles == 1
-    assert formats == 2
-
-
-def test_readarr_comic_profile_fails_cleanly_without_db(tmp_path):
-    env = {"READARR_DB": str(tmp_path / "missing.db")}
-    result = _run(["python3", str(SCRIPTS / "readarr-add-comic-profile.py")], env=env)
-    assert result.returncode != 0
-    assert "Database not found" in result.stderr
 
 
 # ---------------------------------------------------------------------------

@@ -756,8 +756,6 @@ KNOWN_DECOYS = [
     ("docker.io/linuxserver/mylar3", "5.9.5"),
     ("docker.io/linuxserver/qbittorrent", "20.04.1"),  # PR #137
     ("docker.io/linuxserver/qbittorrent", "14.3.9"),
-    ("docker.io/linuxserver/readarr", "1.0.1126"),
-    ("docker.io/linuxserver/readarr", "0.4.19-develop"),
     ("docker.io/linuxserver/lidarr", "8.1.2135"),
     ("docker.io/linuxserver/lazylibrarian", "latest"),
     ("docker.io/linuxserver/lazylibrarian", "version-4e8f22d9"),
@@ -817,7 +815,7 @@ def test_tag_shape_admits_the_next_release(variable):
 
     The pin's tag with each number after the first moved on in turn: a minor,
     a patch, a rebuild. The first number is left alone, since a shape may cap
-    it on purpose to shut out a decoy line (readarr stays on 0).
+    it on purpose to shut out a decoy line above the real one.
     """
     package = _annotations()[variable]
     tag = _pins()[variable].split("@", 1)[0]

@@ -20,10 +20,8 @@ Run explicitly with:
     pytest -m wiring tests/test_wire_connections.py
 """
 
-import ipaddress
 import json
 import os
-import re
 import subprocess
 import time
 from datetime import UTC
@@ -31,7 +29,6 @@ from datetime import UTC
 import pytest
 import requests
 import urllib3
-from dotenv import dotenv_values
 
 from conftest import (
     CLEANUPARR_ARR_NAMES,
@@ -61,7 +58,6 @@ SCRIPT = REPO_ROOT / "scripts" / "wire-connections.sh"
 ARR_APPS = {
     "lidarr": ("https", "LIDARR_HTTPS_PORT", "v1", "music"),
     "radarr": ("https", "RADARR_HTTPS_PORT", "v3", "movies"),
-    "readarr": ("https", "READARR_HTTPS_PORT", "v1", "ebooks"),
     "sonarr": ("http", "SONARR_HTTP_PORT", "v3", "tv"),
     "whisparr": ("https", "WHISPARR_HTTPS_PORT", "v3", "mature"),
 }
@@ -71,7 +67,6 @@ PROWLARR_APPLICATIONS = [
     "Lidarr",
     "Mylar",
     "Radarr",
-    "Readarr",
     "Sonarr",
     "Whisparr",
 ]
@@ -114,44 +109,6 @@ def _field(client: dict, name: str) -> object:
         if f["name"] == name:
             return f["value"]
     raise KeyError(name)
-
-
-def _readarr_services_ip() -> str:
-    """READARR_SERVICES_IP as make passes it: .env's, else .env.example's."""
-    value = ENV.get("READARR_SERVICES_IP") or dotenv_values(
-        REPO_ROOT / ".env.example"
-    ).get("READARR_SERVICES_IP")
-    assert value, "READARR_SERVICES_IP is set in neither .env nor .env.example"
-    return value
-
-
-def _readarr_holds_its_address() -> bool:
-    """Whether Readarr has READARR_SERVICES_IP, as wire-connections.sh checks.
-
-    It does not when routed through the VPN (VPN_ON), and then gets no
-    qBittorrent client and no login bypass (#411).
-    """
-    result = subprocess.run(  # nosec B603 B607 - fixed arguments, no user input
-        [
-            "podman",
-            "inspect",
-            "--format",
-            "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
-            container_name("readarr"),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=TIMEOUT,
-    )
-    return _readarr_services_ip() in result.stdout.split()
-
-
-def _skip_unless_readarr_holds_its_address() -> None:
-    if not _readarr_holds_its_address():
-        pytest.skip(
-            "Readarr does not hold READARR_SERVICES_IP (routed through the VPN?), "
-            "so it gets no qBittorrent client"
-        )
 
 
 def _assert_sabnzbd_address(label: str, client: dict) -> None:
@@ -208,8 +165,6 @@ def run_wire_connections(request):
 def test_qbittorrent_client_wired(app, running_containers):
     if not is_enabled(app):
         pytest.skip(f"service '{app}' profile is disabled")
-    if app == "readarr":
-        _skip_unless_readarr_holds_its_address()
     clients = _download_clients(app, running_containers)
     matches = [c for c in clients if c["implementation"] == "QBittorrent"]
     assert len(matches) == 1, (
@@ -227,11 +182,6 @@ def test_qbittorrent_client_wired(app, running_containers):
         if f["name"].endswith("Category") and "Imported" not in f["name"]
     )
     assert _field(client, category_field) == app
-    # Readarr sends no login when its client has no credentials, which is the
-    # one way it reaches qBittorrent 5.2 and later (#411).
-    if app == "readarr":
-        assert not _field(client, "username"), "Readarr's client has a username"
-        assert not _field(client, "password"), "Readarr's client has a password"
 
 
 @pytest.mark.parametrize("app", sorted(ARR_APPS))
@@ -540,11 +490,6 @@ def test_wiring_is_idempotent(running_containers):
             continue
         clients = _download_clients(app, running_containers)
         implementations = ("QBittorrent", "Sabnzbd")
-        # Routed through the VPN, Readarr gets no qBittorrent client at all
-        # (see the comment above ensure_qbittorrent_client in
-        # scripts/wire-connections.sh).
-        if app == "readarr" and not _readarr_holds_its_address():
-            implementations = ("Sabnzbd",)
         for implementation in implementations:
             matches = [c for c in clients if c["implementation"] == implementation]
             assert len(matches) == 1, (
@@ -698,10 +643,9 @@ def _jellyfin_connection(app: str, running_containers: dict) -> dict | None:
 def test_jellyfin_connection_matches_what_the_app_supports(app, running_containers):
     """Wired exactly when the app offers MediaBrowser, and not otherwise.
 
-    Readarr does not offer it: Jellyfin does not take a book library from it,
-    so its equivalents there are Kavita and Subsonic. Written as an
-    equivalence rather than a hardcoded app list so it stays correct if
-    upstream adds or drops support.
+    Written as an equivalence rather than a hardcoded app list so it stays
+    correct if upstream adds or drops support (Readarr, before it left the
+    stack, did not offer it).
     """
     if not is_enabled(app):
         pytest.skip(f"service '{app}' profile is disabled")
@@ -845,21 +789,18 @@ def test_qbittorrent_trusts_only_nginx(running_containers):
 
 
 # ---------------------------------------------------------------------------
-# Readarr's qBittorrent login bypass (#411)
+# qBittorrent's login
 #
-# Readarr cannot log in to qBittorrent 5.2 and later, so its client has no
-# credentials and qBittorrent lets READARR_SERVICES_IP in without a login. That
-# address alone: no other container holds it, and nginx overwrites
-# X-Forwarded-For, so no browser can claim it. Read only, so wiring_readonly.
+# Every client logs in. Readarr's address was the one exception (#411) until
+# Readarr left the stack (#545). nginx overwrites X-Forwarded-For, so no
+# browser can claim another address through it. Read only, so wiring_readonly.
 # ---------------------------------------------------------------------------
 
 
-def _skip_unless_readarr_bypass_applies(running_containers) -> None:
-    if not is_enabled("qbittorrent") or not is_enabled("readarr"):
-        pytest.skip("qbittorrent or readarr profile is disabled")
+def _skip_unless_qbittorrent(running_containers) -> None:
+    if not is_enabled("qbittorrent"):
+        pytest.skip("qbittorrent profile is disabled")
     skip_if_not_running("qbittorrent", running_containers)
-    skip_if_not_running("readarr", running_containers)
-    _skip_unless_readarr_holds_its_address()
 
 
 def _qbittorrent_version_url() -> str:
@@ -871,80 +812,32 @@ def _qbittorrent_version_url() -> str:
 
 
 @pytest.mark.wiring_readonly
-def test_qbittorrent_lets_only_readarr_in_without_a_login(running_containers):
-    """The bypass is on, holds Readarr's address, and lets in nothing shared.
-
-    Not nginx's address, which every browser arrives from, nor gluetun's, which
-    every app routed through the VPN shares. Localhost keeps its login.
-    """
-    _skip_unless_readarr_bypass_applies(running_containers)
+def test_qbittorrent_lets_nothing_in_without_a_login(running_containers):
+    """No subnet skips the login, and neither does localhost."""
+    _skip_unless_qbittorrent(running_containers)
     preferences = qbittorrent_preferences(TIMEOUT)
 
-    assert preferences.get("bypass_auth_subnet_whitelist_enabled") is True
-    entries = [
-        entry.strip()
-        for entry in re.split(
-            r"[\n,]", preferences.get("bypass_auth_subnet_whitelist") or ""
-        )
-        if entry.strip()
-    ]
-    own = f"{_readarr_services_ip()}/32"
-    assert own in entries, entries
-    services = ipaddress.ip_network(_env("SERVICES_SUBNET"))
-    for entry in entries:
-        if entry == own:
-            continue
-        network = ipaddress.ip_network(entry, strict=False)
-        assert not network.overlaps(services), (
-            f"bypass entry {entry} lets other containers on {services} in"
-        )
-        assert not network.is_loopback, f"bypass entry {entry} lets loopback in"
+    assert preferences.get("bypass_auth_subnet_whitelist_enabled") is False, (
+        "qBittorrent lets "
+        f"{preferences.get('bypass_auth_subnet_whitelist')!r} in without a login"
+    )
     assert preferences.get("bypass_local_auth") is False, (
         "qBittorrent lets localhost in without a login"
     )
 
 
 @pytest.mark.wiring_readonly
-def test_readarr_reaches_qbittorrent_without_a_login(running_containers):
-    _skip_unless_readarr_bypass_applies(running_containers)
-    status, body = container_http(
-        container_name("readarr"), _qbittorrent_version_url(), timeout=TIMEOUT
-    )
-    assert status == 200, f"qBittorrent refused Readarr: {status} {body[:200]}"
-
-
-@pytest.mark.wiring_readonly
-def test_readarr_qbittorrent_client_passes_its_own_test(running_containers):
-    """The check the Test button in Readarr's UI performs."""
-    _skip_unless_readarr_bypass_applies(running_containers)
-    clients = _download_clients("readarr", running_containers)
-    client = next(c for c in clients if c["implementation"] == "QBittorrent")
-    scheme, port_var, api_ver, _ = ARR_APPS["readarr"]
-    status, body = container_http(
-        container_name("readarr"),
-        f"{scheme}://127.0.0.1:{_env(port_var)}/readarr/api/{api_ver}/downloadclient/test",
-        headers={"X-Api-Key": _api_key("readarr"), "Content-Type": "application/json"},
-        method="POST",
-        data=json.dumps(client),
-        timeout=60,
-    )
-    assert status == 200, (
-        f"Readarr's qBittorrent client failed its own Test: {status} {body[:300]}"
-    )
-
-
-@pytest.mark.wiring_readonly
-def test_other_services_containers_still_need_a_login(running_containers):
-    """Another container on services gets 403 where Readarr gets in."""
-    _skip_unless_readarr_bypass_applies(running_containers)
-    others = [
+def test_services_containers_need_a_login(running_containers):
+    """Every Servarr app on services gets 403 from qBittorrent without a session."""
+    _skip_unless_qbittorrent(running_containers)
+    apps = [
         app
         for app in ("sonarr", "radarr", "lidarr", "whisparr", "prowlarr")
         if is_enabled(app) and app in running_containers
     ]
-    if not others:
-        pytest.skip("no other Servarr app is running")
-    for app in others:
+    if not apps:
+        pytest.skip("no Servarr app is running")
+    for app in apps:
         status, body = container_http(
             container_name(app), _qbittorrent_version_url(), timeout=TIMEOUT
         )
@@ -954,22 +847,18 @@ def test_other_services_containers_still_need_a_login(running_containers):
 
 
 @pytest.mark.wiring_readonly
-@pytest.mark.parametrize("claimed", [None, "READARR_SERVICES_IP", "NGINX_SERVICES_IP"])
-def test_nginx_does_not_let_a_browser_claim_the_readarr_address(
-    claimed, running_containers
-):
+@pytest.mark.parametrize("claimed", [None, "GLUETUN_SERVICES_IP", "NGINX_SERVICES_IP"])
+def test_nginx_does_not_let_a_browser_claim_an_address(claimed, running_containers):
     """Through nginx, with no session, qBittorrent answers 403 whatever the header.
 
     nginx sets X-Forwarded-For to the real client rather than appending to the
-    one the browser sent, so a browser claiming Readarr's address, or nginx's,
+    one the browser sent, so a browser claiming gluetun's address, or nginx's,
     is still a browser.
     """
-    _skip_unless_readarr_bypass_applies(running_containers)
+    _skip_unless_qbittorrent(running_containers)
     skip_if_not_running("nginx", running_containers)
     headers = {}
-    if claimed == "READARR_SERVICES_IP":
-        headers["X-Forwarded-For"] = _readarr_services_ip()
-    elif claimed:
+    if claimed:
         headers["X-Forwarded-For"] = _env(claimed)
     response = requests.get(
         f"{base_url(https=True)}/qbittorrent/api/v2/app/version",

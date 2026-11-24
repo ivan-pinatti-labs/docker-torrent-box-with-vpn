@@ -4,7 +4,6 @@ include:
   - lidarr-vpn.yml
   - prowlarr-vpn.yml
   - radarr-vpn.yml
-  - readarr-vpn.yml
   - recyclarr-vpn.yml
   - sonarr-vpn.yml
   - whisparr-vpn.yml

@@ -16,7 +16,6 @@ flowchart LR
         Sonarr
         Radarr
         Lidarr
-        Readarr
         Whisparr
         Prowlarr
         Bazarr
@@ -44,7 +43,6 @@ flowchart LR
     Sonarr   -->|api_key| Prowlarr
     Radarr   -->|api_key| Prowlarr
     Lidarr   -->|api_key| Prowlarr
-    Readarr  -->|api_key| Prowlarr
     Whisparr -->|api_key| Prowlarr
 
     Sonarr   -->|api_key| Bazarr
@@ -56,13 +54,11 @@ flowchart LR
     Sonarr   -->|api_key| Cleanuparr
     Radarr   -->|api_key| Cleanuparr
     Lidarr   -->|api_key| Cleanuparr
-    Readarr  -->|api_key| Cleanuparr
     Whisparr -->|api_key| Cleanuparr
 
     Sonarr   -->|api_key| Homepage
     Radarr   -->|api_key| Homepage
     Lidarr   -->|api_key| Homepage
-    Readarr  -->|api_key| Homepage
     Whisparr -->|api_key| Homepage
     Prowlarr -->|api_key| Homepage
     Bazarr   -->|api_key| Homepage
@@ -78,7 +74,6 @@ flowchart LR
     SABnzbd -->|api_key| Sonarr
     SABnzbd -->|api_key| Radarr
     SABnzbd -->|api_key| Lidarr
-    SABnzbd -->|api_key| Readarr
     SABnzbd -->|api_key| Whisparr
     SABnzbd -->|api_key| Mylar
     SABnzbd -->|api_key| LazyLibrarian
@@ -95,19 +90,18 @@ Rows are producers. Columns are consumers. A cell contains the credential type t
 producer exposes and the consumer uses.
 
 ```text
-Producer \ Consumer  | Prowlarr | Bazarr | recyclarr | Sonarr | Radarr | Lidarr | Readarr | Whisparr | Mylar | LazyLibrarian | Notifiarr | Exporter | Homepage
----------------------|----------|--------|-----------|--------|--------|--------|---------|----------|-------|---------------|-----------|----------|---------
-Sonarr               | api_key  | api_key| api_key   |        |        |        |         |          |       |               |           |          | api_key
-Radarr               | api_key  | api_key| api_key   |        |        |        |         |          |       |               |           |          | api_key
-Lidarr               | api_key  |        |           |        |        |        |         |          |       |               |           |          | api_key
-Readarr              | api_key  |        |           |        |        |        |         |          |       |               |           |          | api_key
-Whisparr             | api_key  |        |           |        |        |        |         |          |       |               |           |          | api_key
-Prowlarr             |          |        |           |        |        |        |         |          |       |               |           |          | api_key
-Bazarr               |          |        |           |        |        |        |         |          |       |               |           |          | api_key
-Mylar                |          |        |           |        |        |        |         |          |       |               |           |          | api_key
-qBittorrent          |          |        |           | password| password| password|         | password |       |               |           |          | password
-SABnzbd              |          |        |           | api_key | api_key | api_key | api_key | api_key  | api_key/password | api_key/password | api_key | api_key | api_key
-Grafana              |          |        |           |         |         |         |         |          |       |               |           |          | admin_user/password
+Producer \ Consumer  | Prowlarr | Bazarr | recyclarr | Sonarr | Radarr | Lidarr | Whisparr | Mylar | LazyLibrarian | Notifiarr | Exporter | Homepage
+---------------------|----------|--------|-----------|--------|--------|--------|----------|-------|---------------|-----------|----------|---------
+Sonarr               | api_key  | api_key| api_key   |        |        |        |          |       |               |           |          | api_key
+Radarr               | api_key  | api_key| api_key   |        |        |        |          |       |               |           |          | api_key
+Lidarr               | api_key  |        |           |        |        |        |          |       |               |           |          | api_key
+Whisparr             | api_key  |        |           |        |        |        |          |       |               |           |          | api_key
+Prowlarr             |          |        |           |        |        |        |          |       |               |           |          | api_key
+Bazarr               |          |        |           |        |        |        |          |       |               |           |          | api_key
+Mylar                |          |        |           |        |        |        |          |       |               |           |          | api_key
+qBittorrent          |          |        |           | password| password| password| password |       |               |           |          | password
+SABnzbd              |          |        |           | api_key | api_key | api_key | api_key  | api_key/password | api_key/password | api_key | api_key | api_key
+Grafana              |          |        |           |         |         |         |          |       |               |           |          | admin_user/password
 ```
 
 ## Per-service credential detail
@@ -135,13 +129,6 @@ Grafana              |          |        |           |         |         |      
 - Consumes: qBittorrent password and SABnzbd API key/password (stored in DownloadClients
   table of lidarr.db)
 
-**Readarr**
-
-- Produces: API key (see `configs/readarr/config/config.xml` `<ApiKey>`)
-- Consumed by: Prowlarr (Applications table, id=2), Homepage (`HOMEPAGE_FILE_READARR_API_KEY`)
-- Consumes: SABnzbd API key/password (stored in DownloadClients table of readarr.db). Its
-  qBittorrent client has no credentials; see qBittorrent below
-
 **Whisparr**
 
 - Produces: API key (see `configs/whisparr/config/config.xml` `<ApiKey>`)
@@ -153,7 +140,7 @@ Grafana              |          |        |           |         |         |      
 
 - Produces: API key (see `configs/prowlarr/config/config.xml` `<ApiKey>`)
 - Consumed by: Homepage (compose secret, `configs/prowlarr/secrets/api_key.txt`)
-- Consumes: API keys of Sonarr, Radarr, Lidarr, Readarr, Whisparr (Applications table,
+- Consumes: API keys of Sonarr, Radarr, Lidarr, Whisparr (Applications table,
   Settings JSON field `apiKey`)
 
 **Bazarr**
@@ -168,9 +155,7 @@ Grafana              |          |        |           |         |         |      
 - Produces: WebUI password (username `qbittorrent`, see DownloadClients table in Sonarr's
   DB for current value)
 - Consumed by: Sonarr, Radarr, Lidarr, Whisparr, Prowlarr (each app's DownloadClients
-  table), Cleanuparr (its download client). Not Readarr, whose client has no
-  credentials: qBittorrent lets `READARR_SERVICES_IP` in without a login (see
-  [CONNECTIONS.md](CONNECTIONS.md))
+  table), Cleanuparr (its download client)
 - Consumes: nothing from other services
 
 **Cleanuparr**
@@ -179,14 +164,14 @@ Grafana              |          |        |           |         |         |      
   `configs/cleanuparr/secrets/` and read only by the scripts
 - Consumed by: nobody else
 - Consumes: qBittorrent password (its download client) and the API keys of Sonarr,
-  Radarr, Lidarr, Readarr and Whisparr (one instance each), all held in its own
+  Radarr, Lidarr and Whisparr (one instance each), all held in its own
   database under `configs/cleanuparr/config`
 
 **SABnzbd**
 
 - Produces: API key, NZB key, and WebUI password (username `sabnzbd`, see
   `configs/sabnzbd/config/sabnzbd.ini`)
-- Consumed by: Sonarr, Radarr, Lidarr, Readarr, Whisparr, Mylar, LazyLibrarian, Notifiarr,
+- Consumed by: Sonarr, Radarr, Lidarr, Whisparr, Mylar, LazyLibrarian, Notifiarr,
   and `sabnzbd_exporter`
 - Consumes: shared TLS certificate files from `certs/`
 
@@ -204,7 +189,6 @@ Grafana              |          |        |           |         |         |      
 | Sonarr        | API key                   | `configs/sonarr/config/config.xml` (`<ApiKey>`)                       | plain text XML element                                    |
 | Radarr        | API key                   | `configs/radarr/config/config.xml` (`<ApiKey>`)                       | plain text XML element                                    |
 | Lidarr        | API key                   | `configs/lidarr/config/config.xml` (`<ApiKey>`)                       | plain text XML element                                    |
-| Readarr       | API key                   | `configs/readarr/config/config.xml` (`<ApiKey>`)                      | plain text XML element                                    |
 | Whisparr      | API key                   | `configs/whisparr/config/config.xml` (`<ApiKey>`)                     | plain text XML element                                    |
 | Prowlarr      | API key                   | `configs/prowlarr/config/config.xml` (`<ApiKey>`)                     | plain text XML element                                    |
 | Prowlarr      | app API keys              | `configs/prowlarr/config/prowlarr.db` (Applications table)            | plain text JSON in Settings                               |
@@ -220,7 +204,6 @@ Grafana              |          |        |           |         |         |      
 | Sonarr        | login password            | `configs/sonarr/config/sonarr.db` (Users table)                       | PBKDF2-SHA512 hash                                        |
 | Radarr        | login password            | `configs/radarr/config/radarr.db` (Users table)                       | PBKDF2-SHA512 hash                                        |
 | Lidarr        | login password            | `configs/lidarr/config/lidarr.db` (Users table)                       | PBKDF2-SHA512 hash                                        |
-| Readarr       | login password            | `configs/readarr/config/readarr.db` (Users table)                     | PBKDF2-SHA512 hash                                        |
 | Whisparr      | login password            | `configs/whisparr/config/whisparr.db` (Users table)                   | PBKDF2-SHA512 hash                                        |
 | Prowlarr      | login password            | `configs/prowlarr/config/prowlarr.db` (Users table)                   | PBKDF2-SHA512 hash                                        |
 | qBittorrent   | WebUI password            | `configs/qbittorrent/config/qBittorrent/qBittorrent.conf`             | PBKDF2 hash in WebUI section                              |
@@ -238,12 +221,10 @@ Grafana              |          |        |           |         |         |      
 | Sonarr        | SABnzbd API key/password  | `configs/sonarr/config/sonarr.db` (DownloadClients table)             | plain text JSON in Settings                               |
 | Radarr        | SABnzbd API key/password  | `configs/radarr/config/radarr.db` (DownloadClients table)             | plain text JSON in Settings                               |
 | Lidarr        | SABnzbd API key/password  | `configs/lidarr/config/lidarr.db` (DownloadClients table)             | plain text JSON in Settings                               |
-| Readarr       | SABnzbd API key/password  | `configs/readarr/config/readarr.db` (DownloadClients table)           | plain text JSON in Settings                               |
 | Whisparr      | SABnzbd API key/password  | `configs/whisparr/config/whisparr3.db` (DownloadClients table)        | plain text JSON in Settings                               |
 | Homepage      | Sonarr API key            | compose secret, `configs/sonarr/secrets/api_key.txt`                  | mounted file, `HOMEPAGE_FILE_SONARR_API_KEY`              |
 | Homepage      | Radarr API key            | compose secret, `configs/radarr/secrets/api_key.txt`                  | mounted file, `HOMEPAGE_FILE_RADARR_API_KEY`              |
 | Homepage      | Lidarr API key            | compose secret, `configs/lidarr/secrets/api_key.txt`                  | mounted file, `HOMEPAGE_FILE_LIDARR_API_KEY`              |
-| Homepage      | Readarr API key           | compose secret, `configs/readarr/secrets/api_key.txt`                 | mounted file, `HOMEPAGE_FILE_READARR_API_KEY`             |
 | Homepage      | Whisparr API key          | compose secret, `configs/whisparr/secrets/api_key.txt`                | mounted file, `HOMEPAGE_FILE_WHISPARR_API_KEY`            |
 | Homepage      | Prowlarr API key          | compose secret, `configs/prowlarr/secrets/api_key.txt`                | mounted file, `HOMEPAGE_FILE_PROWLARR_API_KEY`            |
 | Homepage      | Bazarr API key            | compose secret, `configs/bazarr/secrets/api_key.txt`                  | mounted file, `HOMEPAGE_FILE_BAZARR_API_KEY`              |

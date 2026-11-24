@@ -34,7 +34,7 @@ $(if $(VERSION_VARS),$(eval export $(VERSION_VARS)))
 JELLYFIN_BASE_URL ?= /jellyfin
 JELLYFIN_KNOWN_PROXY ?= $(NGINX_MEDIA_IP)
 
-# The apps subnet, nginx's two trusted addresses, Readarr's services address,
+# The apps subnet, nginx's two trusted addresses,
 # Cleanuparr's settings and the app host name domain arrived after most .env files were seeded, and
 # seed-configs.sh never rewrites an existing .env. A .env without them takes
 # .env.example's values instead of handing `network create --subnet`, an
@@ -46,13 +46,12 @@ APPS_SUBNET ?= $(call env_example_default,APPS_SUBNET)
 APPS_DYNAMIC_IP_RANGE ?= $(call env_example_default,APPS_DYNAMIC_IP_RANGE)
 NGINX_APPS_IP ?= $(call env_example_default,NGINX_APPS_IP)
 NGINX_SERVICES_IP ?= $(call env_example_default,NGINX_SERVICES_IP)
-READARR_SERVICES_IP ?= $(call env_example_default,READARR_SERVICES_IP)
 CLEANUPARR_UID ?= $(call env_example_default,CLEANUPARR_UID)
 CLEANUPARR_GID ?= $(call env_example_default,CLEANUPARR_GID)
 CLEANUPARR_PROFILE ?= $(call env_example_default,CLEANUPARR_PROFILE)
 CLEANUPARR_HTTP_PORT ?= $(call env_example_default,CLEANUPARR_HTTP_PORT)
 APP_PROXY_DOMAIN ?= $(call env_example_default,APP_PROXY_DOMAIN)
-export APPS_SUBNET APPS_DYNAMIC_IP_RANGE NGINX_APPS_IP NGINX_SERVICES_IP READARR_SERVICES_IP \
+export APPS_SUBNET APPS_DYNAMIC_IP_RANGE NGINX_APPS_IP NGINX_SERVICES_IP \
 	CLEANUPARR_UID CLEANUPARR_GID CLEANUPARR_PROFILE CLEANUPARR_HTTP_PORT APP_PROXY_DOMAIN
 
 # CONTAINER_RUNTIME can be set in .env to 'podman' or 'docker'.
@@ -73,9 +72,17 @@ space := $(empty) $(empty)
 
 VPN_ON ?=
 VPN_ON_LIST := $(strip $(subst $(comma),$(space),$(VPN_ON)))
-VPN_ROUTE_SERVICES := bazarr flaresolverr lazylibrarian lidarr mylar prowlarr radarr readarr recyclarr sonarr whisparr
+VPN_ROUTE_SERVICES := bazarr flaresolverr lazylibrarian lidarr mylar prowlarr radarr recyclarr sonarr whisparr
 VPN_VALID_TOKENS := servarr $(VPN_ROUTE_SERVICES)
-VPN_UNKNOWN_TOKENS := $(filter-out $(VPN_VALID_TOKENS),$(VPN_ON_LIST))
+# Services that left the stack. An older .env may still route one through the
+# VPN, and refusing it would stop every target, `make update` included, so it
+# is ignored with a warning instead (#545).
+VPN_RETIRED_TOKENS := readarr
+VPN_RETIRED_IN_USE := $(filter $(VPN_RETIRED_TOKENS),$(VPN_ON_LIST))
+ifneq ($(VPN_RETIRED_IN_USE),)
+$(warning VPN_ON names [$(VPN_RETIRED_IN_USE)], no longer part of this stack; ignored. Remove it from VPN_ON in .env.)
+endif
+VPN_UNKNOWN_TOKENS := $(filter-out $(VPN_VALID_TOKENS) $(VPN_RETIRED_TOKENS),$(VPN_ON_LIST))
 ifneq ($(VPN_UNKNOWN_TOKENS),)
 $(error Unknown VPN_ON service(s) [$(VPN_UNKNOWN_TOKENS)]. Valid values are [$(VPN_VALID_TOKENS)])
 endif
@@ -355,7 +362,6 @@ seed_all: seed_flaresolverr_chromedriver
 	@./scripts/seed-secrets.sh configs/jdownloader2
 	@./scripts/seed-secrets.sh configs/sonarr
 	@./scripts/seed-secrets.sh configs/radarr
-	@./scripts/seed-secrets.sh configs/readarr
 	@./scripts/seed-secrets.sh configs/bazarr
 	@./scripts/seed-secrets.sh configs/prowlarr
 	@./scripts/seed-secrets.sh configs/lidarr
@@ -370,7 +376,6 @@ seed_all: seed_flaresolverr_chromedriver
 	@./scripts/seed-configs.sh configs/sonarr/config/config.xml
 	@./scripts/seed-configs.sh configs/radarr/config/config.xml
 	@./scripts/seed-configs.sh configs/lidarr/config/config.xml
-	@./scripts/seed-configs.sh configs/readarr/config/config.xml
 	@./scripts/seed-configs.sh configs/prowlarr/config/config.xml
 	@./scripts/seed-configs.sh configs/whisparr/config/config.xml
 	@./scripts/seed-configs.sh configs/jellyfin/config/network.xml
@@ -567,7 +572,7 @@ down:
 # overwriting it), with BaseUrl/EnableHttps/CertificatePath/KnownProxies
 # already set to their .env.example-matching defaults, and
 # CertificatePassword patched by generate_certificate before the stack ever
-# starts, exactly like Lidarr/Prowlarr/Radarr/Readarr/Sonarr/Whisparr. This
+# starts, exactly like Lidarr/Prowlarr/Radarr/Sonarr/Whisparr. This
 # target is now only needed to correct drift from a non-default
 # JELLYFIN_BASE_URL or NGINX_MEDIA_IP; bootstrap still calls it automatically
 # after `make start` as an idempotent safety net, and it's a clean no-op
@@ -703,7 +708,6 @@ generate_certificate:
 	$(call patch_cert_xml,Lidarr,configs/lidarr/config/config.xml,/Config/SslCertPassword)
 	$(call patch_cert_xml,Prowlarr,configs/prowlarr/config/config.xml,/Config/SslCertPassword)
 	$(call patch_cert_xml,Radarr,configs/radarr/config/config.xml,/Config/SslCertPassword)
-	$(call patch_cert_xml,Readarr,configs/readarr/config/config.xml,/Config/SslCertPassword)
 	$(call patch_cert_xml,Sonarr,configs/sonarr/config/config.xml,/Config/SslCertPassword)
 	$(call patch_cert_xml,Whisparr,configs/whisparr/config/config.xml,/Config/SslCertPassword)
 	$(call patch_cert_xml,Jellyfin,configs/jellyfin/config/network.xml,/NetworkConfiguration/CertificatePassword)
@@ -970,7 +974,7 @@ rotate_api_keys:
 rotate_passwords:
 	@./scripts/rotate-passwords.sh $(or $(SERVICE),all)
 
-# Wires qBittorrent/SABnzbd into Sonarr/Radarr/Lidarr/Readarr/Whisparr as
+# Wires qBittorrent/SABnzbd into Sonarr/Radarr/Lidarr/Whisparr as
 # download clients, and those apps (plus LazyLibrarian/Mylar) into Prowlarr
 # as Applications, all through each app's own live API. Idempotent: safe to
 # re-run any time, including after a rotation. See docs/CONNECTIONS.md for

@@ -22,7 +22,7 @@ __bash="$(command -v bash)"
 __scratch="$(mktemp -d)"
 trap 'rm -rf "${__scratch}"' EXIT
 __failures=0
-__apps="lidarr prowlarr radarr readarr sonarr whisparr"
+__apps="lidarr prowlarr radarr sonarr whisparr"
 
 stub() {
   local dir="${1}" name="${2}" body="${3}"

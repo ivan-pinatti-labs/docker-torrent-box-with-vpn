@@ -43,9 +43,6 @@ secrets:
   radarr_api_key:
     file: ./configs/radarr/secrets/api_key.txt
     x-podman.relabel: z
-  readarr_api_key:
-    file: ./configs/readarr/secrets/api_key.txt
-    x-podman.relabel: z
   bazarr_api_key:
     file: ./configs/bazarr/secrets/api_key.txt
     x-podman.relabel: z
@@ -126,9 +123,6 @@ services:
       RADARR_UPSTREAM_SCHEME: https
       RADARR_UPSTREAM_HOST: radarr-https
       RADARR_UPSTREAM_PORT: "${RADARR_HTTPS_PORT}"
-      READARR_UPSTREAM_SCHEME: https
-      READARR_UPSTREAM_HOST: readarr-https
-      READARR_UPSTREAM_PORT: "${READARR_HTTPS_PORT}"
       NZBHYDRA2_UPSTREAM_SCHEME: https
       NZBHYDRA2_UPSTREAM_HOST: nzbhydra2-https
       NZBHYDRA2_UPSTREAM_PORT: "${NZBHYDRA2_HTTPS_PORT}"
@@ -229,7 +223,6 @@ services:
       - HOMEPAGE_FILE_QBITTORRENT_PASS=/run/secrets/qbittorrent_password
       - HOMEPAGE_FILE_SONARR_API_KEY=/run/secrets/sonarr_api_key
       - HOMEPAGE_FILE_RADARR_API_KEY=/run/secrets/radarr_api_key
-      - HOMEPAGE_FILE_READARR_API_KEY=/run/secrets/readarr_api_key
       - HOMEPAGE_FILE_BAZARR_API_KEY=/run/secrets/bazarr_api_key
       - HOMEPAGE_FILE_PROWLARR_API_KEY=/run/secrets/prowlarr_api_key
       - HOMEPAGE_FILE_LIDARR_API_KEY=/run/secrets/lidarr_api_key
@@ -247,7 +240,6 @@ services:
         qbittorrent_password,
         sonarr_api_key,
         radarr_api_key,
-        readarr_api_key,
         bazarr_api_key,
         prowlarr_api_key,
         lidarr_api_key,

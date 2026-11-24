@@ -18,7 +18,6 @@ identities:
   sonarr: {uid: 1201, gid: 1201}
   radarr: {uid: 1202, gid: 1202}
   lidarr: {uid: 1203, gid: 1203}
-  readarr: {uid: 1204, gid: 1204}
   whisparr: {uid: 1205, gid: 1205}
   bazarr: {uid: 1206, gid: 1206}
   lazylibrarian: {uid: 1207, gid: 1207}
@@ -80,22 +79,18 @@ paths:
     mode: "0750"
     acl:
       - {identity: qbittorrent, perms: rwx}
-      - {identity: readarr, perms: rwx}
       - {identity: lazylibrarian, perms: rwx}
     default_acl:
       - {identity: qbittorrent, perms: rwx}
-      - {identity: readarr, perms: rwx}
       - {identity: lazylibrarian, perms: rwx}
   - path: data/torrents/comics
     owner: qbittorrent
     mode: "0750"
     acl:
       - {identity: qbittorrent, perms: rwx}
-      - {identity: readarr, perms: rwx}
       - {identity: mylar, perms: rwx}
     default_acl:
       - {identity: qbittorrent, perms: rwx}
-      - {identity: readarr, perms: rwx}
       - {identity: mylar, perms: rwx}
   - path: data/torrents/mature
     owner: qbittorrent
@@ -170,33 +165,27 @@ paths:
     mode: "0750"
     acl:
       - {identity: sabnzbd, perms: rwx}
-      - {identity: readarr, perms: rwx}
       - {identity: lazylibrarian, perms: rwx}
     default_acl:
       - {identity: sabnzbd, perms: rwx}
-      - {identity: readarr, perms: rwx}
       - {identity: lazylibrarian, perms: rwx}
   - path: data/usenet/complete/audiobooks
     owner: sabnzbd
     mode: "0750"
     acl:
       - {identity: sabnzbd, perms: rwx}
-      - {identity: readarr, perms: rwx}
       - {identity: lazylibrarian, perms: rwx}
     default_acl:
       - {identity: sabnzbd, perms: rwx}
-      - {identity: readarr, perms: rwx}
       - {identity: lazylibrarian, perms: rwx}
   - path: data/usenet/complete/comics
     owner: sabnzbd
     mode: "0750"
     acl:
       - {identity: sabnzbd, perms: rwx}
-      - {identity: readarr, perms: rwx}
       - {identity: mylar, perms: rwx}
     default_acl:
       - {identity: sabnzbd, perms: rwx}
-      - {identity: readarr, perms: rwx}
       - {identity: mylar, perms: rwx}
   - path: data/usenet/complete/mature
     owner: sabnzbd
@@ -290,7 +279,7 @@ paths:
     default_acl:
       - {identity: jellyfin, perms: r-x}
   - path: data/media/ebooks
-    owner: readarr
+    owner: lazylibrarian
     mode: "0750"
     acl:
       - {identity: lazylibrarian, perms: rwx}
@@ -301,7 +290,7 @@ paths:
       - {identity: audiobookshelf, perms: r-x}
       - {identity: calibre, perms: rwx}
   - path: data/media/audiobooks
-    owner: readarr
+    owner: lazylibrarian
     mode: "0750"
     acl:
       - {identity: lazylibrarian, perms: rwx}
@@ -310,7 +299,7 @@ paths:
       - {identity: lazylibrarian, perms: rwx}
       - {identity: audiobookshelf, perms: r-x}
   - path: data/media/comics
-    owner: readarr
+    owner: mylar
     mode: "0750"
     acl:
       - {identity: mylar, perms: rwx}
@@ -353,10 +342,6 @@ paths:
     owner: radarr
     mode: "0750"
     chown_files: true
-  - path: data/media/covers/readarr
-    owner: readarr
-    mode: "0750"
-    chown_files: true
   - path: data/media/covers/sonarr
     owner: sonarr
     mode: "0750"
@@ -383,10 +368,6 @@ paths:
     owner: radarr
     mode: "0750"
     chown_files: true
-  - path: data/backups/readarr
-    owner: readarr
-    mode: "0750"
-    chown_files: true
   - path: data/backups/sonarr
     owner: sonarr
     mode: "0750"
@@ -407,15 +388,6 @@ paths:
     mode: "0750"
   - path: data/recycle/music
     owner: lidarr
-    mode: "0750"
-  - path: data/recycle/ebooks
-    owner: readarr
-    mode: "0750"
-  - path: data/recycle/audiobooks
-    owner: readarr
-    mode: "0750"
-  - path: data/recycle/comics
-    owner: readarr
     mode: "0750"
   - path: data/recycle/mature
     owner: whisparr
@@ -451,10 +423,6 @@ paths:
     chown_files: true
   - path: configs/radarr/config
     owner: radarr
-    mode: "0750"
-    chown_files: true
-  - path: configs/readarr/config
-    owner: readarr
     mode: "0750"
     chown_files: true
   - path: configs/recyclarr/config
@@ -582,8 +550,6 @@ symlinks:
     target: /mediacover
   - path: configs/radarr/config/MediaCover
     target: /mediacover
-  - path: configs/readarr/config/MediaCover
-    target: /mediacover
   - path: configs/sonarr/config/MediaCover
     target: /mediacover
   - path: configs/whisparr/config/MediaCover
@@ -593,8 +559,6 @@ symlinks:
   - path: configs/prowlarr/config/Backups
     target: /appbackups
   - path: configs/radarr/config/Backups
-    target: /appbackups
-  - path: configs/readarr/config/Backups
     target: /appbackups
   - path: configs/sonarr/config/Backups
     target: /appbackups
@@ -618,7 +582,7 @@ smoke_tests:
     - name: torrent_ebooks_to_media_ebooks
       source_dir: data/torrents/ebooks
       target_dir: data/media/ebooks
-      user: readarr
+      user: lazylibrarian
     - name: usenet_tv_to_media_tv
       source_dir: data/usenet/complete/tv
       target_dir: data/media/tv

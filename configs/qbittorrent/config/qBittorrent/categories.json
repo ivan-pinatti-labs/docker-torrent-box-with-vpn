@@ -11,9 +11,6 @@
     "lazylibrarian": {
         "save_path": "/data/torrents/ebooks"
     },
-    "readarr": {
-        "save_path": "/data/torrents/ebooks"
-    },
     "sonarr": {
         "save_path": "/data/torrents/tv"
     },

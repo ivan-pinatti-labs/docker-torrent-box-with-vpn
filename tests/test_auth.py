@@ -158,13 +158,11 @@ def test_sabnzbd_api_auth(running_containers):
 
 
 # ---------------------------------------------------------------------------
-# Servarr apps (Sonarr, Radarr, Prowlarr, Readarr): API key as auth
+# Servarr apps (Sonarr, Radarr, Prowlarr, Lidarr): API key as auth
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "service_name", ["sonarr", "radarr", "prowlarr", "readarr", "lidarr"]
-)
+@pytest.mark.parametrize("service_name", ["sonarr", "radarr", "prowlarr", "lidarr"])
 def test_arr_api_key_auth(service_name, running_containers):
     """API key must grant access to the service status endpoint."""
     if not is_enabled(service_name):
@@ -185,9 +183,7 @@ def test_arr_api_key_auth(service_name, running_containers):
     )
 
 
-@pytest.mark.parametrize(
-    "service_name", ["sonarr", "radarr", "prowlarr", "readarr", "lidarr"]
-)
+@pytest.mark.parametrize("service_name", ["sonarr", "radarr", "prowlarr", "lidarr"])
 def test_arr_rejects_invalid_api_key(service_name, running_containers):
     """Invalid API key must be rejected with 401."""
     if not is_enabled(service_name):
