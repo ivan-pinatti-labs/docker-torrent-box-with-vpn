@@ -141,7 +141,7 @@ JELLYFIN_BASE_URL=/jellyfin
 AUDIOBOOKSHELF_HTTP_PORT=13378
 CALIBREWEB_VERSION=0.6
 FLARESOLVERR_HTTP_PORT=8191
-NGINX_SERVICES_IP=10.0.0.5
+NGINX_SERVICES_IP=192.0.2.5
 SERVICES_SUBNET=10.0.0.0/24
 CLEANUPARR_HTTP_PORT=11011
 EOF
@@ -227,7 +227,7 @@ EOF
   # Mylar answering.
   rule 'mylar curl -sk --max-time 10 -o /dev/null' 0 200
   # qBittorrent, already trusting only nginx as its reverse proxy.
-  rule "${QBT_PREFERENCES}" 0 '{"web_ui_reverse_proxy_enabled": true, "web_ui_reverse_proxies_list": "10.0.0.5"}'
+  rule "${QBT_PREFERENCES}" 0 '{"web_ui_reverse_proxy_enabled": true, "web_ui_reverse_proxies_list": "192.0.2.5"}'
   # Cleanuparr, set up, with its key saved, qBittorrent and every arr app
   # connected, and its queue cleaner on. Requests carry no --fail, so each
   # answer is the body, then the status curl's -w appends.
@@ -334,9 +334,9 @@ check "Cleanuparr reaches each arr app over HTTPS" 0 log "${instances[@]}"
 check "its queue cleaner strikes the excluded file types, keeping the pattern it had" 0 log \
   '"enabled":true' '"maxStrikes":3,"patternMode":"Include","patterns":[".exe",".scr",".bat",".cmd",".pif",".msi",".lnk",".vbs",".ps1"]'
 check "qBittorrent trusts only nginx" 0 out \
-  "[qBittorrent] Trusting only nginx (10.0.0.5) as its reverse proxy..." "[qBittorrent] Done."
+  "[qBittorrent] Trusting only nginx (192.0.2.5) as its reverse proxy..." "[qBittorrent] Done."
 check "qBittorrent is given nginx's address" 0 log \
-  'json={"web_ui_reverse_proxy_enabled":true,"web_ui_reverse_proxies_list":"10.0.0.5"}' \
+  'json={"web_ui_reverse_proxy_enabled":true,"web_ui_reverse_proxies_list":"192.0.2.5"}' \
   "podman exec qbittorrent rm -f /tmp/qbt_wire_cookies."
 check "a fresh stack is wired" 0 out \
   "[Audiobookshelf] Creating initial root user..." "[Audiobookshelf] Creating initial API key..." "[Audiobookshelf] Done." \
@@ -394,7 +394,7 @@ check "a wired stack is left alone" 0 out \
   "[Prowlarr] Application 'Sonarr' already exists, skipping." \
   "[Prowlarr] Indexer 'Internet Archive' already exists, skipping." \
   "[Prowlarr] Indexers present in every enabled arr app." "[Mylar] Already has comics, skipping placeholder." \
-  "[qBittorrent] Already trusts only nginx (10.0.0.5) as its reverse proxy, skipping." \
+  "[qBittorrent] Already trusts only nginx (192.0.2.5) as its reverse proxy, skipping." \
   "[Mylar] Download client addresses already match GLUETUN_SERVICES_IP, skipping." \
   "[LazyLibrarian] Download client addresses already match GLUETUN_SERVICES_IP, skipping." \
   "[Cleanuparr] qBittorrent already connected, skipping." "[Cleanuparr] Sonarr already connected, skipping." \
