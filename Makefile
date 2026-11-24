@@ -74,7 +74,15 @@ VPN_ON ?=
 VPN_ON_LIST := $(strip $(subst $(comma),$(space),$(VPN_ON)))
 VPN_ROUTE_SERVICES := bazarr flaresolverr lazylibrarian lidarr mylar prowlarr radarr recyclarr sonarr whisparr
 VPN_VALID_TOKENS := servarr $(VPN_ROUTE_SERVICES)
-VPN_UNKNOWN_TOKENS := $(filter-out $(VPN_VALID_TOKENS),$(VPN_ON_LIST))
+# Services that left the stack. An older .env may still route one through the
+# VPN, and refusing it would stop every target, `make update` included, so it
+# is ignored with a warning instead (#545).
+VPN_RETIRED_TOKENS := readarr
+VPN_RETIRED_IN_USE := $(filter $(VPN_RETIRED_TOKENS),$(VPN_ON_LIST))
+ifneq ($(VPN_RETIRED_IN_USE),)
+$(warning VPN_ON names [$(VPN_RETIRED_IN_USE)], no longer part of this stack; ignored. Remove it from VPN_ON in .env.)
+endif
+VPN_UNKNOWN_TOKENS := $(filter-out $(VPN_VALID_TOKENS) $(VPN_RETIRED_TOKENS),$(VPN_ON_LIST))
 ifneq ($(VPN_UNKNOWN_TOKENS),)
 $(error Unknown VPN_ON service(s) [$(VPN_UNKNOWN_TOKENS)]. Valid values are [$(VPN_VALID_TOKENS)])
 endif

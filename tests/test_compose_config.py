@@ -476,7 +476,7 @@ def test_readarr_is_retired():
     for path in sorted(REPO_ROOT.glob("docker-compose*.yml")) + sorted(
         (REPO_ROOT / "docker-compose.routes").glob("*.yml")
     ):
-        compose = yaml.safe_load(path.read_text()) or {}
+        compose = yaml.load(path.read_text(), Loader=_ComposeLoader) or {}  # nosec B506 - SafeLoader subclass
         assert "readarr" not in (compose.get("services") or {}), path.name
         assert not any(
             "readarr" in str(item) for item in compose.get("include") or []

@@ -381,6 +381,14 @@ run jellyfin
 check "an arr app that does not list its connections is reported" 0 out \
   "[Jellyfin] WARNING: sonarr did not list its connections, so its Jellyfin connection still holds the old key."
 
+# An arr app whose connections hold no Jellyfin one is left alone.
+deployment
+containers sonarr jellyfin
+rule 'sonarr curl -sk --fail --max-time 30 -H X-Api-Key: \S+ \S+/notification$' 0 '[{"id": 5, "implementation": "Discord"}]'
+run jellyfin
+refute "an app without a Jellyfin connection is left alone" out "Updated sonarr's Jellyfin connection"
+refute "and no connection is sent" log "sonarr curl -sk --fail --max-time 30 -X PUT"
+
 # homepage that will not recreate.
 deployment
 rule '^podman-compose ' 1 ""

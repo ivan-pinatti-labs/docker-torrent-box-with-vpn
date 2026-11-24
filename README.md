@@ -489,6 +489,12 @@ services, dashboards, and alert rules.
    - Cleanuparr: delete its Readarr instance.
    - Prowlarr: delete the Readarr application.
    - `.env`: the `READARR_*` settings are no longer read and can be deleted.
+     Take `readarr` out of `VPN_ON` too; until then make ignores it with a
+     warning.
+   - Docker only: `make down` leaves the container of a service the compose
+     files no longer define, so remove it by hand
+     (`docker rm --force <CONTAINER_PREFIX>readarr`). Under Podman `make down`
+     already removes it.
    - Ownership: `data/media/ebooks` and `data/media/audiobooks` now belong to
      LazyLibrarian and `data/media/comics` to Mylar, which
      `make permissions_repair` applies.
