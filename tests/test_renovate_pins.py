@@ -759,6 +759,9 @@ KNOWN_DECOYS = [
     ("docker.io/linuxserver/readarr", "1.0.1126"),
     ("docker.io/linuxserver/readarr", "0.4.19-develop"),
     ("docker.io/linuxserver/lidarr", "8.1.2135"),
+    ("docker.io/linuxserver/lazylibrarian", "latest"),
+    ("docker.io/linuxserver/lazylibrarian", "version-4e8f22d9"),
+    ("docker.io/linuxserver/lazylibrarian", "amd64-4e8f22d9-ls405"),
     ("docker.io/linuxserver/jellyfin", "2021.12.16"),
     ("docker.io/linuxserver/calibre-web", "2021.12.16"),
     ("docker.io/linuxserver/calibre-web", "5.33.2"),
@@ -805,7 +808,7 @@ def test_pin_has_a_tag_shape_its_own_tag_matches(variable):
 
 
 # Pins that follow one alias and move by digest only, so no newer tag exists.
-FIXED_ALIASES = {"LAZYLIBRARIAN_VERSION": "latest", "WHISPARR_VERSION": "v3"}
+FIXED_ALIASES = {"WHISPARR_VERSION": "v3"}
 
 
 @pytest.mark.parametrize("variable", sorted(_annotations()))
@@ -864,3 +867,33 @@ def test_known_decoy_is_refused(package, tag):
         f"{tag} is a decoy in {package}'s tag history, and its tag shape in "
         f"{RENOVATE_CONFIG.name} lets Renovate offer it."
     )
+
+
+def test_lazylibrarian_build_bump_is_a_patch_update():
+    """A newer LazyLibrarian build is a patch update, not a major one.
+
+    The composite tag is ordered by its `ls` number alone, captured as
+    `patch` by the inline `versioning=regex:` annotation. Captured as `major`,
+    or with no regex at all, every build would match no automerge rule and
+    wait for a person, which the tag shape tests above would not notice.
+    Renovate's regex versioning reads a group that is not captured as 0.
+    """
+    block = _versions_block()
+    index = next(
+        i for i, line in enumerate(block) if line.startswith("LAZYLIBRARIAN_VERSION=")
+    )
+    declared = re.search(r"\bversioning=regex:(\S+)", block[index - 1])
+    assert declared, "LAZYLIBRARIAN_VERSION carries no versioning=regex: annotation"
+    scheme = re.compile(_to_python_regex(declared.group(1)))
+
+    def release(tag: str) -> tuple[int, int, int]:
+        groups = scheme.fullmatch(tag).groupdict()
+        return tuple(int(groups.get(name) or 0) for name in ("major", "minor", "patch"))
+
+    # Fixed tags rather than the live pin, so the test still holds once
+    # Renovate moves the pin. The pin's own tag must parse, or nothing orders.
+    assert scheme.fullmatch(_pins()["LAZYLIBRARIAN_VERSION"].split("@", 1)[0])
+    current = release("649e8201-ls394")
+    newer = release("4e8f22d9-ls405")
+    assert newer[:2] == current[:2], "a newer build is not a patch update"
+    assert newer[2] > current[2], "a newer build does not order above the pin"
