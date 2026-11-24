@@ -759,6 +759,9 @@ KNOWN_DECOYS = [
     ("docker.io/linuxserver/readarr", "1.0.1126"),
     ("docker.io/linuxserver/readarr", "0.4.19-develop"),
     ("docker.io/linuxserver/lidarr", "8.1.2135"),
+    ("docker.io/linuxserver/lazylibrarian", "latest"),
+    ("docker.io/linuxserver/lazylibrarian", "version-4e8f22d9"),
+    ("docker.io/linuxserver/lazylibrarian", "amd64-4e8f22d9-ls405"),
     ("docker.io/linuxserver/jellyfin", "2021.12.16"),
     ("docker.io/linuxserver/calibre-web", "2021.12.16"),
     ("docker.io/linuxserver/calibre-web", "5.33.2"),
@@ -805,7 +808,7 @@ def test_pin_has_a_tag_shape_its_own_tag_matches(variable):
 
 
 # Pins that follow one alias and move by digest only, so no newer tag exists.
-FIXED_ALIASES = {"LAZYLIBRARIAN_VERSION": "latest", "WHISPARR_VERSION": "v3"}
+FIXED_ALIASES = {"WHISPARR_VERSION": "v3"}
 
 
 @pytest.mark.parametrize("variable", sorted(_annotations()))

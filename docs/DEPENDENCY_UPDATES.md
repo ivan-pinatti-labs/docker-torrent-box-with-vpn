@@ -544,7 +544,7 @@ the release tag to the new build along with `v3`. What names one build and stays
 `WHISPARR_VERSION` was held on `v3-3.4.0-release.1387`'s digest, the release immediately before
 the broken one, until 2026-10-21, and is now on build `v3-7fb9b23` of `3.6.5-release.1886`,
 which carries the fix. `versioning=loose` because the tag is not semver Renovate can order
-(`v3-` prefix, `-release.NNNN` suffix), the same reasoning as `LAZYLIBRARIAN_VERSION` below.
+(`v3-` prefix, `-release.NNNN` suffix).
 Renovate never collects the next build on its own: GHCR records no push date Renovate can
 read, and hotio rebuilds `v3` faster than the window, so each update is released by hand, one
 build back, as [docs/MANUAL_IMAGE_RELEASES.md](MANUAL_IMAGE_RELEASES.md) describes. The suite
@@ -569,10 +569,20 @@ times in the last hundred releases. LazyLibrarian publishes no versions upstream
 is why linuxserver has none to put in a tag, and why `mylar3` gets `v0.9.0-lsNNN` and this image
 does not.
 
-So it is not ordered. `LAZYLIBRARIAN_VERSION=latest@sha256:...` tracks the tag linuxserver
-actually documents, and Renovate refreshes the digest as it moves. There is no ranking to get
-wrong, the pin is still immutable because the digest decides what runs, and the automerge rule
-already covers `digest` updates.
+The first answer was not to order it at all: `LAZYLIBRARIAN_VERSION=latest@sha256:...`, with
+Renovate refreshing the digest as the tag moved. That never worked. linuxserver pushes `latest`
+several times a day, so the digest Renovate finds is never seven days old, and the seven day
+`minimumReleaseAge` window held every refresh under "Pending Status Checks" on the dependency
+dashboard. The pin stayed on `82aad29e-ls342` from 2026-09-03 until it was bumped by hand.
+
+So it is ordered after all, by the `ls` number alone:
+`versioning=regex:^[0-9a-f]+-ls(?<patch>\d+)$`, with the same shape as its `allowedVersions`.
+The counter has never reset on this image (`ls405` is the highest of every tag in the registry on
+2026-11-24), each composite tag is pushed once and keeps its own date for the window to age, and
+capturing the number as `patch` makes each newer build a patch update, which the automerge rule
+covers. Builds that share one `ls` number compare equal, so none of them replaces another; the
+next number moves the pin, and linuxserver increments it daily or close to it. The digest still
+decides what runs.
 
 `KORSYNC_VERSION` used to be the other case, pinned to `sha-7bcefd34...`, a commit tag nothing can
 order. Upstream publishes plain semantic tags and has since well before that pin landed here on

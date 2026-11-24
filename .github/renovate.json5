@@ -370,10 +370,21 @@
     // scheme can order. Two releases can even share one ls number, since that
     // half only moves when linuxserver's side changes.
     //
-    // Solved by not ordering it. The pin is now `latest@sha256:...`, so
-    // Renovate refreshes the digest as the tag moves and never has to rank
-    // anything. That needed the variable to stop doubling as the wrapper's
-    // own image tag first; see docker-compose-servarr.yml.
+    // The first answer was not to order it: `latest@sha256:...`, refreshed by
+    // digest. That needed the variable to stop doubling as the wrapper's own
+    // image tag first; see docker-compose-servarr.yml. It never moved again,
+    // though. linuxserver pushes `latest` several times a day, so its digest
+    // is never seven days old, and the minimumReleaseAge window above held
+    // every refresh as pending from 2026-09-03 on.
+    //
+    // So the pin is back on the composite tag, ordered by the ls number alone
+    // (`versioning=regex:...` in versions.env, #119's candidate). Each
+    // composite tag is pushed once and keeps its date, so the window can age
+    // it. The number is captured as `patch` rather than `major`, which makes
+    // a newer build a patch update, the same path the digest refresh was
+    // meant to take. Two builds sharing one ls number compare equal and
+    // neither replaces the other; the next number takes the pin forward, and
+    // it moves daily or close to it.
     //
     // mylar came off this list with #106. Mylar v0.11.0 carries the
     // qBittorrent HTTPS fix its five patched files added, so the patch went,
@@ -446,8 +457,8 @@
     // `8.1.2135`, calibre-web's `5.33.2`). The bounds leave room for real majors, which still wait
     // for a person. The caps were measured against `skopeo list-tags` for
     // every image on 2026-11-08. Later rules win, so the per image ones come
-    // last. lazylibrarian (`latest`) and whisparr (`v3`) move by digest only,
-    // and their shape is the one alias they follow.
+    // last. whisparr (`v3`) moves by digest only, and its shape is the one
+    // alias it follows.
     {
       matchPackageNames: [
         "docker.io/advplyr/audiobookshelf",
@@ -510,7 +521,7 @@
     },
     {
       matchPackageNames: ["docker.io/linuxserver/lazylibrarian"],
-      allowedVersions: "/^latest$/",
+      allowedVersions: "/^[0-9a-f]+-ls\\d+$/",
     },
     {
       matchPackageNames: ["ghcr.io/hotio/whisparr"],
