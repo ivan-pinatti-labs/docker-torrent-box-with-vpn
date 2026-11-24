@@ -386,6 +386,7 @@ deployment
 containers sonarr jellyfin
 rule 'sonarr curl -sk --fail --max-time 30 -H X-Api-Key: \S+ \S+/notification$' 0 '[{"id": 5, "implementation": "Discord"}]'
 run jellyfin
+check "and Jellyfin's rotation completes" 0 out "$(ok jellyfin)"
 refute "an app without a Jellyfin connection is left alone" out "Updated sonarr's Jellyfin connection"
 refute "and no connection is sent" log "sonarr curl -sk --fail --max-time 30 -X PUT"
 
