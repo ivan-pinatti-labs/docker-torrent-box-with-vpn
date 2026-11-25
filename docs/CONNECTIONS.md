@@ -97,9 +97,11 @@ seeding time left on the global limits; Mylar's own copy in
 `data/media/comics` is a hardlink or a copy, and stays. The seed
 `categories.json` sets it, and the script sets it on an existing `mylar`
 category through `torrents/editCategory`, only while the category's action is
-still `Default`, so an action chosen by hand is kept. It reads the category back
-afterwards: a qBittorrent before 5.3 accepts the call and changes nothing, and
-is then reported with where to set it by hand. This runs whether or not
+still `Default`, so an action chosen by hand is kept. It only sends the edit
+to qBittorrent 5.3 and later: before that, `editCategory` ignores the action
+and resets the category's other settings, so an older qBittorrent is left
+alone and the message says where to set it by hand. It reads the category back
+afterwards and warns if the action did not change. This runs whether or not
 `NGINX_SERVICES_IP` is set, which only reverse proxy trust needs.
 
 ### Jellyfin library updates (Sonarr, Radarr, Lidarr, Whisparr → Jellyfin)

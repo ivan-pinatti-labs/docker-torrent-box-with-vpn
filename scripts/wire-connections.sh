@@ -1221,7 +1221,20 @@ ensure_qbittorrent_mylar_share_action() {
     echo "[qBittorrent] The mylar category already acts at its share limit (${action}), skipping."
     return 0
   fi
-  # savePath goes back unchanged: qBittorrent 5.2's editCategory requires it.
+  # Before 5.3, editCategory rebuilds the category from the fields it is
+  # sent, resetting the rest (download path, limits), and ignores
+  # shareLimitAction, so it is not sent there at all.
+  local version major minor
+  if ! version=$(container_curl qbittorrent -sk --fail -b "$jar" "${base_url}/app/version"); then
+    echo "[qBittorrent] WARNING: could not read its version, so mylar's share limit action was not set."
+    return 1
+  fi
+  IFS=. read -r major minor _ <<<"${version#v}"
+  if [[ ! "$major" =~ ^[0-9]+$ || ! "$minor" =~ ^[0-9]+$ ]] || ((major < 5 || (major == 5 && minor < 3))); then
+    echo "[qBittorrent] ${version} cannot set a category's share limit action through its API; set mylar's to Remove torrent and its files under Tools > Options > Categories."
+    return 0
+  fi
+  # savePath goes back unchanged, so the edit changes only the action.
   save_path=$(jq -r '.mylar.savePath // ""' <<<"$categories")
   echo "[qBittorrent] Removing mylar's torrents with their files at the share limit..."
   if ! container_curl qbittorrent -sk --fail -b "$jar" -o /dev/null \
@@ -1230,12 +1243,14 @@ ensure_qbittorrent_mylar_share_action() {
     echo "[qBittorrent] WARNING: editCategory failed, so mylar's share limit action was not set."
     return 1
   fi
-  # Read back: a qBittorrent whose editCategory has no share limits (before
-  # 5.3) answers 200 and changes nothing.
-  if ! categories=$(container_curl qbittorrent -sk --fail -b "$jar" "${base_url}/torrents/categories") ||
-    [[ "$(jq -er "$(mylar_share_action_jq)" <<<"$categories" 2>/dev/null)" != RemoveWithContent ]]; then
-    echo "[qBittorrent] This qBittorrent did not take mylar's share limit action through its API; set it under Tools > Options > Categories, or upgrade."
-    return 0
+  # Read back, so a silently ignored edit is not reported as done.
+  if ! categories=$(container_curl qbittorrent -sk --fail -b "$jar" "${base_url}/torrents/categories"); then
+    echo "[qBittorrent] WARNING: could not read its categories back, so mylar's share limit action is unconfirmed."
+    return 1
+  fi
+  if [[ "$(jq -er "$(mylar_share_action_jq)" <<<"$categories" 2>/dev/null)" != RemoveWithContent ]]; then
+    echo "[qBittorrent] WARNING: qBittorrent accepted the edit but mylar's share limit action is still not RemoveWithContent."
+    return 1
   fi
   echo "[qBittorrent] Done."
 }

@@ -233,6 +233,7 @@ EOF
   rule "${QBT_PREFERENCES}" 0 '{"web_ui_reverse_proxy_enabled": true, "web_ui_reverse_proxies_list": "192.0.2.5"}'
   # ... and removing mylar's torrents with their files at the share limit.
   rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "share_limit_action": "RemoveWithContent"}, "sonarr": {"name": "sonarr", "share_limit_action": "Default"}}'
+  rule 'exec qbittorrent curl -sk --fail -b \S+ \S+/api/v2/app/version$' 0 "v5.3.0"
   # Cleanuparr, set up, with its key saved, qBittorrent and every arr app
   # connected, and its queue cleaner on. Requests carry no --fail, so each
   # answer is the body, then the status curl's -w appends.
@@ -689,14 +690,43 @@ check "through editCategory, its save path sent back unchanged" 0 log \
   "--data-urlencode category=mylar --data-urlencode savePath=/data/torrents/comics --data-urlencode shareLimitAction=RemoveWithContent" \
   "/api/v2/torrents/editCategory"
 
-# A qBittorrent that takes the edit but keeps Default (5.2) is reported, not
-# counted as a failure.
+# An edit qBittorrent accepts but does not apply is reported.
 deployment
 containers qbittorrent
 rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "savePath": "/data/torrents/comics", "share_limit_action": "Default"}}'
 run
 check "an edit that does not take is reported" 0 out \
-  "[qBittorrent] This qBittorrent did not take mylar's share limit action through its API; set it under Tools > Options > Categories, or upgrade."
+  "[qBittorrent] WARNING: qBittorrent accepted the edit but mylar's share limit action is still not RemoveWithContent."
+
+# A read back that fails after a successful edit is reported as unconfirmed.
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 22 ""
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "savePath": "/data/torrents/comics", "share_limit_action": "Default"}}' 1
+run
+check "a read back that fails after the edit is reported" 0 out \
+  "[qBittorrent] Removing mylar's torrents with their files at the share limit..." \
+  "[qBittorrent] WARNING: could not read its categories back, so mylar's share limit action is unconfirmed."
+
+# qBittorrent 5.2 reports the action but its editCategory would reset the
+# category's other settings, so nothing is sent.
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "savePath": "/data/torrents/comics", "download_path": "/data/incomplete", "ratio_limit": 1.5, "share_limit_action": "Default"}}'
+rule 'exec qbittorrent curl -sk --fail -b \S+ \S+/api/v2/app/version$' 0 "v5.2.4"
+run
+check "qBittorrent 5.2 is left alone" 0 out \
+  "[qBittorrent] v5.2.4 cannot set a category's share limit action through its API; set mylar's to Remove torrent and its files under Tools > Options > Categories."
+refute "with no edit that would reset it" log "editCategory"
+
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "share_limit_action": "Default"}}'
+rule 'exec qbittorrent curl -sk --fail -b \S+ \S+/api/v2/app/version$' 22 ""
+run
+check "an unreadable version is reported" 0 out \
+  "[qBittorrent] WARNING: could not read its version, so mylar's share limit action was not set."
+refute "and nothing is edited" log "editCategory"
 
 # Without nginx's address, the category is still set.
 deployment
