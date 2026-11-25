@@ -895,3 +895,71 @@ groups:
         labels:
           severity: warning
         isPaused: false
+
+  # Downloads an arr app finished but could not import (#556). They hold the
+  # only copy of their files until imported, and nothing removes them. The
+  # gauge comes from exportarr (#442): until that exporter runs, the rule has
+  # no data, which is OK, so it stays quiet rather than alerting on its absence.
+  # It needs one series per download_state, which exportarr's main counts;
+  # v2.3.0 sends one series per app, labelled by its last queue item. Whisparr
+  # is left out: exportarr has no collector for it.
+  - orgId: 1
+    name: Arr Import Alerts
+    folder: Torrent Box
+    interval: 5m
+    rules:
+      - uid: arr-import-failed-6h
+        title: Import Failed > 6 Hours
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: >-
+                sum by (url) ({__name__=~"(sonarr|radarr|lidarr)_queue_total",
+                download_state=~"importFailed|importBlocked"})
+              refId: A
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              refId: B
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: C
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    type: last
+                    params: []
+        noDataState: OK
+        execErrState: Error
+        for: 6h
+        annotations:
+          summary: "A finished download could not be imported"
+          description: >-
+            {{ printf "%.0f" $values.B.Value }} finished download(s) in {{ $labels.url }} have
+            waited in importFailed or importBlocked for over six hours. Nothing removes them,
+            and they hold the only copy of their files until imported: open the app's Activity
+            queue, read each item's message, and import it by hand or remove it.
+        labels:
+          severity: warning
+        isPaused: false

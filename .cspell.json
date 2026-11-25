@@ -828,6 +828,7 @@
     "zoneinfo",
     "zricethezav",
     "PYTHONPATH",
-    "sitecustomize"
+    "sitecustomize",
+    "exportarr"
   ]
 }

@@ -8,7 +8,7 @@ start. Notifications are delivered by email (AWS SES) and Telegram.
 
 Rule groups and their evaluation interval: Container Resource Alerts (1m), Disk Growth
 Alerts (5m), SABnzbd Alerts (1m), qBittorrent Alerts (1m), qBittorrent Slow Checks (1h, for
-conditions that only change over hours/days), and Gluetun Alerts (1m).
+conditions that only change over hours/days), Gluetun Alerts (1m), and Arr Import Alerts (5m).
 
 | **Rule** | **Condition** | **Pending for** | **Severity** |
 | -------- | ------------- | --------------- | ------------ |
@@ -28,6 +28,7 @@ conditions that only change over hours/days), and Gluetun Alerts (1m).
 | Gluetun VPN Disconnected | qBittorrent reports no BitTorrent network connectivity | 5 m | critical |
 | Gluetun NAT PMP Port Lost | qBittorrent is firewalled, the forwarded-port lease may have expired | 15 m | warning |
 | qBittorrent Port Mismatch | qBittorrent's listen port is not the port gluetun forwards | 15 m | warning |
+| Import Failed > 6 Hours | An arr app has a finished download waiting in `importFailed` or `importBlocked` | 6 h | warning |
 
 Container metrics come from `podman_exporter` rather than cAdvisor. In rootless Podman, cAdvisor
 only exposes the root cgroup and cannot provide per-container breakdowns. The CPU and memory
@@ -53,6 +54,19 @@ The match cannot tell stacks apart, so it assumes one stack per podman user: wit
 gluetun is its own alert instance, but a running gluetun from the other stack keeps the rule out
 of no data when this stack's gluetun container is removed altogether (a stopped one still alerts).
 `tests/unit/test_grafana_alert_rules.py` refuses an exact `name="..."` selector.
+
+Import Failed > 6 Hours sums exportarr's `<app>_queue_total` gauge for items whose
+`download_state` is `importFailed` or `importBlocked`, per app (`url`), for Sonarr, Radarr
+and Lidarr. Such a download finished but could not be imported (no matching edition,
+a wrong file type): it holds the only copy of its files and nothing removes it, so the app's
+Activity queue needs a manual import or a removal. Six hours leaves room for a retry. The
+exporters are #442; until they run the rule has no data, which is OK, so it stays quiet
+instead of firing on their absence (#556).
+
+The rule needs one series per `download_state`. exportarr's `main` sends that; its v2.3.0
+release sends one series per app instead, whose value is the whole queue and whose labels
+are the last queue item's, so there it would miss most blocked imports. Whisparr is not
+covered: exportarr has no collector for it.
 
 ## Email via AWS SES
 
@@ -103,7 +117,7 @@ via a child route with `continue: true`, so both channels always fire. Policy is
 Default timing: `group_wait=30s`, `group_interval=5m`, `repeat_interval=4h`. The
 "Torrent Stalled > 1 Week" alert overrides this with `group_interval=24h` and
 `repeat_interval=24h`, since re-notifying every 4 hours for a condition that only changes
-over days would just be noise.
+over days would just be noise. "Import Failed > 6 Hours" has the same daily route.
 
 ## Internet Access
 
