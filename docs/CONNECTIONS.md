@@ -100,7 +100,7 @@ category through `torrents/editCategory`, only while the category's action is
 still `Default`, so an action chosen by hand is kept. It only sends the edit
 to qBittorrent 5.3 and later: before that, `editCategory` ignores the action
 and resets the category's other settings, so an older qBittorrent is left
-alone and the message says where to set it by hand. It reads the category back
+alone and the message says so. It reads the category back
 afterwards and warns if the action did not change. This runs whether or not
 `NGINX_SERVICES_IP` is set, which only reverse proxy trust needs.
 

@@ -686,9 +686,10 @@ rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "savePath": "/data/torre
 run
 check "a Default mylar action becomes RemoveWithContent" 0 out \
   "[qBittorrent] Removing mylar's torrents with their files at the share limit..." "[qBittorrent] Done."
-check "through editCategory, its save path sent back unchanged" 0 log \
-  "--data-urlencode category=mylar --data-urlencode savePath=/data/torrents/comics --data-urlencode shareLimitAction=RemoveWithContent" \
+check "through editCategory, with the action alone" 0 log \
+  "--data-urlencode category=mylar --data-urlencode shareLimitAction=RemoveWithContent" \
   "/api/v2/torrents/editCategory"
+refute "and not its save path" log "savePath="
 
 # An edit qBittorrent accepts but does not apply is reported.
 deployment
@@ -716,8 +717,18 @@ rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "savePath": "/data/torre
 rule 'exec qbittorrent curl -sk --fail -b \S+ \S+/api/v2/app/version$' 0 "v5.2.4"
 run
 check "qBittorrent 5.2 is left alone" 0 out \
-  "[qBittorrent] v5.2.4 cannot set a category's share limit action through its API; set mylar's to Remove torrent and its files under Tools > Options > Categories."
+  "[qBittorrent] v5.2.4 cannot set a category's share limit action through its API; mylar's stays Default until qBittorrent is 5.3 or later."
 refute "with no edit that would reset it" log "editCategory"
+
+# A version the check cannot parse is treated as too old.
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "share_limit_action": "Default"}}'
+rule 'exec qbittorrent curl -sk --fail -b \S+ \S+/api/v2/app/version$' 0 "v5.x.0"
+run
+check "an unparsable version is left alone" 0 out \
+  "[qBittorrent] v5.x.0 cannot set a category's share limit action through its API; mylar's stays Default until qBittorrent is 5.3 or later."
+refute "with no edit" log "editCategory"
 
 deployment
 containers qbittorrent

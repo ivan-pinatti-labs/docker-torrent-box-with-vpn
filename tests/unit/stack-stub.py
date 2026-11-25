@@ -252,7 +252,6 @@ FILTERS = {
     ".": lambda d, a: [d],
     # The mylar category's share limit action, "none" without the category
     # and "unsupported" when qBittorrent reports no action for it.
-    '.mylar.savePath // ""': lambda d, a: [d.get("mylar", {}).get("savePath") or ""],
     'if has("mylar") then (.mylar.share_limit_action // "unsupported") else "none" end': lambda d, a: [
         (d["mylar"].get("share_limit_action") or "unsupported")
         if "mylar" in d

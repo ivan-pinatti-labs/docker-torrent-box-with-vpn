@@ -1205,7 +1205,7 @@ ensure_qbittorrent_reverse_proxy() {
 # share limits for a category, and is left as it is.
 # Args: base_url jar
 ensure_qbittorrent_mylar_share_action() {
-  local base_url="$1" jar="$2" categories action save_path
+  local base_url="$1" jar="$2" categories action
   if ! categories=$(container_curl qbittorrent -sk --fail -b "$jar" "${base_url}/torrents/categories") ||
     ! action=$(jq -er "$(mylar_share_action_jq)" <<<"$categories" 2>/dev/null); then
     echo "[qBittorrent] WARNING: could not read its categories, so the mylar share limit action was not checked."
@@ -1231,15 +1231,13 @@ ensure_qbittorrent_mylar_share_action() {
   fi
   IFS=. read -r major minor _ <<<"${version#v}"
   if [[ ! "$major" =~ ^[0-9]+$ || ! "$minor" =~ ^[0-9]+$ ]] || ((major < 5 || (major == 5 && minor < 3))); then
-    echo "[qBittorrent] ${version} cannot set a category's share limit action through its API; set mylar's to Remove torrent and its files under Tools > Options > Categories."
+    echo "[qBittorrent] ${version} cannot set a category's share limit action through its API; mylar's stays Default until qBittorrent is 5.3 or later."
     return 0
   fi
-  # savePath goes back unchanged, so the edit changes only the action.
-  save_path=$(jq -r '.mylar.savePath // ""' <<<"$categories")
   echo "[qBittorrent] Removing mylar's torrents with their files at the share limit..."
   if ! container_curl qbittorrent -sk --fail -b "$jar" -o /dev/null \
-    --data-urlencode "category=mylar" --data-urlencode "savePath=${save_path}" \
-    --data-urlencode "shareLimitAction=RemoveWithContent" "${base_url}/torrents/editCategory"; then
+    --data-urlencode "category=mylar" --data-urlencode "shareLimitAction=RemoveWithContent" \
+    "${base_url}/torrents/editCategory"; then
     echo "[qBittorrent] WARNING: editCategory failed, so mylar's share limit action was not set."
     return 1
   fi
