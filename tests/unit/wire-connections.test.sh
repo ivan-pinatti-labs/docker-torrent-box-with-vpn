@@ -505,7 +505,7 @@ check "missing audiobook types are added" 0 out \
   "[LazyLibrarian] Adding audiobook types: m4a opus ogg aac..." \
   "[LazyLibrarian]   audiobook_type = m4b, flac, mp3, wav, m4a, opus, ogg, aac"
 same_file "and kept after the ones it had" configs/lazylibrarian/config/config.ini \
-  $'[GENERAL]\naudiobook_type = m4b, flac, mp3, wav, m4a, opus, ogg, aac\napi_key = key-lazylibrarian\n'
+  $'[GENERAL]\naudiobook_type = m4b, flac, mp3, wav, m4a, opus, ogg, aac\napi_key = key-lazylibrarian\n\n'
 check "running LazyLibrarian is stopped and started around the edit" 0 log \
   "podman stop --time 60 lazylibrarian" "podman start lazylibrarian"
 
@@ -519,7 +519,7 @@ EOF
 stopped lazylibrarian
 run
 same_file "a missing key is added under [GENERAL]" configs/lazylibrarian/config/config.ini \
-  $'[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\napi_key = key-lazylibrarian\n'
+  $'[GENERAL]\napi_key = key-lazylibrarian\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\n\n'
 refute "a stopped LazyLibrarian is not stopped for it" log "podman stop --time 60 lazylibrarian"
 
 # A file with no [GENERAL] section yet is left to LazyLibrarian.
@@ -541,7 +541,7 @@ EOF
 stopped lazylibrarian
 run
 same_file "a key written without spaces is replaced, keeping its types" configs/lazylibrarian/config/config.ini \
-  $'[GENERAL]\naudiobook_type = m4b, wav, m4a, mp3, flac, opus, ogg, aac\napi_key = key-lazylibrarian\n'
+  $'[GENERAL]\naudiobook_type = m4b, wav, m4a, mp3, flac, opus, ogg, aac\napi_key = key-lazylibrarian\n\n'
 if [[ "$(grep -c -i '^audiobook_type' "${__repo}/configs/lazylibrarian/config/config.ini")" -ne 1 ]]; then
   fail "the key is not added a second time"
 fi
@@ -627,13 +627,29 @@ put configs/lazylibrarian/config/config.ini $'[SABNZBD]\naudiobook_type = mp3\n[
 stopped lazylibrarian
 run
 same_file "only the [GENERAL] key changes" configs/lazylibrarian/config/config.ini \
-  $'[SABNZBD]\naudiobook_type = mp3\n[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\n'
+  $'[SABNZBD]\naudiobook_type = mp3\n\n[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\n\n'
 deployment
 put configs/lazylibrarian/config/config.ini $'[SABNZBD]\naudiobook_type = mp3\n'
 run
 check "a key outside [GENERAL] is not taken for it" 0 out \
   "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its audiobook types to LazyLibrarian."
 same_file "and the file is unchanged" configs/lazylibrarian/config/config.ini $'[SABNZBD]\naudiobook_type = mp3\n'
+
+# What ConfigParser accepts, LazyLibrarian included, is read the same way: an
+# indented section header ends [GENERAL], and a continuation line belongs to
+# the value above it.
+deployment
+put configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = m4b,\n  wav\napi_key = key-lazylibrarian\n'
+stopped lazylibrarian
+run
+same_file "a continuation line is part of the value" configs/lazylibrarian/config/config.ini \
+  $'[GENERAL]\naudiobook_type = m4b, wav, m4a, mp3, flac, opus, ogg, aac\napi_key = key-lazylibrarian\n\n'
+deployment
+put configs/lazylibrarian/config/config.ini $'[GENERAL]\n  [SABNZBD]\naudiobook_type = wav\n'
+stopped lazylibrarian
+run
+same_file "an indented header ends [GENERAL]" configs/lazylibrarian/config/config.ini \
+  $'[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\n\n[SABNZBD]\naudiobook_type = wav\n\n'
 
 # A file the check cannot read fails the run instead of passing as complete.
 deployment

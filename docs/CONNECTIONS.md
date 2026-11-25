@@ -357,7 +357,9 @@ set up just confirms it and moves on.
   formats audiobook releases come in that Audiobookshelf plays. The script
   appends any of those an existing `config.ini` lacks (one seeded before
   `m4a` was added, say), keeps the types already there and removes none, and
-  stops a running LazyLibrarian for the edit, like the addresses above.
+  stops a running LazyLibrarian for the edit, like the addresses above. It
+  reads and writes the file with Python's ConfigParser, as LazyLibrarian does,
+  so the file comes back in the layout LazyLibrarian's own save gives it.
 
 ## Credentials this script sets up
 

@@ -903,42 +903,38 @@ ensure_ini_client_addresses() {
 readonly LAZYLIBRARIAN_AUDIOBOOK_TYPES=(m4b m4a mp3 flac opus ogg aac)
 
 # Reads or rewrites the audiobook_type of config.ini's [GENERAL] section, the
-# only one LazyLibrarian reads it from, the way its ConfigParser reads it:
-# any case, `=` or `:`, spaces optional. `check` prints the wanted types the
-# section lacks, and `write` appends them to the ones it has and prints the
-# result, adding the key to the section when it is missing. Both exit 3, and
-# change nothing, when the file has no [GENERAL] section.
+# only one LazyLibrarian reads it from, with the same ConfigParser LazyLibrarian
+# reads and writes the file with, so its rules for case, delimiters,
+# indentation and continuation lines apply here too. `check` prints the wanted
+# types the section lacks, and `write` appends them to the ones it has and
+# prints the result. Like LazyLibrarian's own save on shutdown, `write` writes
+# the whole file back in ConfigParser's layout. Both exit 3, and change
+# nothing, when the file has no [GENERAL] section.
 # Args: check|write ini type...
 lazylibrarian_audiobook_types() {
   python3 - "$@" <<'PYEOF'
+import configparser
 import os
-import re
 import sys
 import tempfile
 
 mode, path, wanted = sys.argv[1], sys.argv[2], sys.argv[3:]
-with open(path, encoding="utf-8") as handle:
-    text = handle.read()
-general = re.search(r"^\[GENERAL\][ \t]*$", text, re.IGNORECASE | re.MULTILINE)
-if not general:
+config = configparser.ConfigParser(interpolation=None)
+try:
+    with open(path, encoding="utf-8") as handle:
+        config.read_file(handle)
+except configparser.MissingSectionHeaderError:
     sys.exit(3)
-# LazyLibrarian reads the key from [GENERAL] only, so the search ends at the
-# next section.
-following = re.search(r"^\[", text[general.end() :], re.MULTILINE)
-end = general.end() + following.start() if following else len(text)
-key = re.compile(r"^audiobook_type[ \t]*[=:][ \t]*(.*)$", re.IGNORECASE | re.MULTILINE).search(
-    text, general.end(), end
-)
-have = [t.strip().lower() for t in key.group(1).split(",") if t.strip()] if key else []
+if not config.has_section("GENERAL"):
+    sys.exit(3)
+current = config.get("GENERAL", "audiobook_type", fallback="")
+have = [t.strip().lower() for t in current.split(",") if t.strip()]
 missing = [t for t in wanted if t not in have]
 if mode == "check":
     print(" ".join(missing))
     sys.exit(0)
-line = "audiobook_type = " + ", ".join(have + missing)
-if key:
-    text = text[: key.start()] + line + text[key.end() :]
-else:
-    text = text[: general.end()] + "\n" + line + text[general.end() :]
+value = ", ".join(have + missing)
+config.set("GENERAL", "audiobook_type", value)
 # Written beside the file and moved over it, so a failed write leaves the
 # original whole.
 with tempfile.NamedTemporaryFile(
@@ -947,13 +943,13 @@ with tempfile.NamedTemporaryFile(
     temp = handle.name
 try:
     with open(temp, "w", encoding="utf-8") as handle:
-        handle.write(text)
+        config.write(handle)
     os.chmod(temp, os.stat(path).st_mode & 0o7777)
     os.replace(temp, path)
 except BaseException:
     os.unlink(temp)
     raise
-print(line)
+print("audiobook_type = " + value)
 PYEOF
 }
 
