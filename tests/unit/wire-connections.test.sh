@@ -573,6 +573,53 @@ if compgen -G "${__repo}/configs/lazylibrarian/config/.config.ini.*" >/dev/null;
   fail "no temporary file is left behind"
 fi
 
+# A write that fails partway, after some of the new content is out, leaves
+# the original whole too.
+deployment
+put configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
+mkdir -p "${__scratch}/fail-write"
+cat >"${__scratch}/fail-write/sitecustomize.py" <<'PYEOF'
+import builtins
+import os
+
+_open = builtins.open
+
+
+class _Partial:
+    def __init__(self, handle):
+        self._handle = handle
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        self._handle.close()
+
+    def write(self, text):
+        self._handle.write(text[:5])
+        self._handle.flush()
+        raise OSError(28, "No space left on device")
+
+
+def _patched(path, mode="r", *args, **named):
+    handle = _open(path, mode, *args, **named)
+    if "w" in mode and os.path.basename(str(path)).startswith(".config.ini."):
+        return _Partial(handle)
+    return handle
+
+
+builtins.open = _patched
+PYEOF
+printf '#!/usr/bin/env bash\nPYTHONPATH=%q exec %q "$@"\n' "${__scratch}/fail-write" "$(command -v python3)" >"${__bin}/python3"
+chmod +x "${__bin}/python3"
+run
+rm "${__bin}/python3"
+check "a write that fails partway is reported" 1 out "[LazyLibrarian] WARNING: could not write its audiobook types (exit 1)."
+same_file "and the file is left whole" configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
+if compgen -G "${__repo}/configs/lazylibrarian/config/.config.ini.*" >/dev/null; then
+  fail "no temporary file is left behind after a partial write"
+fi
+
 # Only [GENERAL] is read: a key in another section before it is left alone,
 # and a file without [GENERAL] is not changed at all.
 deployment
