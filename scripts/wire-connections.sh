@@ -889,36 +889,49 @@ ensure_ini_client_addresses() {
   echo "[${display_name}] Updated."
 }
 
-# The audiobook file types LazyLibrarian accepts (#547). Before it snatches a
-# release it compares the torrent's file list with AUDIOBOOK_TYPE, and turns
-# down one whose files are all of a type the list lacks ("has no AudioBook
-# files (m4a)"), so that book stays Wanted. These are the formats audiobook
-# releases come in that Audiobookshelf, which reads data/media/audiobooks,
-# plays. config.ini is seeded once, so a deployment seeded before a type was
-# added gets it here: types the file lacks are appended to the ones it has,
-# in this order, and none is removed. A file without the key gets it under
-# [GENERAL], where LazyLibrarian keeps it. Like ensure_ini_client_addresses,
-# a running LazyLibrarian is stopped for the edit and started again, since it
-# writes its config back on shutdown.
+# LazyLibrarian's settings that config.ini is seeded with once, and that a
+# deployment seeded before they changed gets here. A running LazyLibrarian is
+# stopped for the edit and started again, once for all of them, like
+# ensure_ini_client_addresses, since it writes its config back on shutdown.
+#
+# - audiobook_type (#547): before it snatches a release LazyLibrarian compares
+#   the torrent's file list with it, and turns down one whose files are all of
+#   a type the list lacks ("has no AudioBook files (m4a)"), so that book stays
+#   Wanted. These are the formats audiobook releases come in that
+#   Audiobookshelf, which reads data/media/audiobooks, plays.
+# - download_dir (#554): the folders its post-processing looks in, so the ones
+#   qBittorrent's lazylibrarian category and SABnzbd's ebooks category finish
+#   in, beside its own direct downloads.
+# - ebook_dir (#554): with the Calibre import on, LazyLibrarian looks for the
+#   imported book under it, so it is the Calibre library; under the old
+#   default, every import reached Calibre and was then marked Failed.
+#
+# The lists gain what they lack, appended after what they have, and lose
+# nothing; a key the file does not have is left to LazyLibrarian, except
+# audiobook_type, which is added under [GENERAL]. ebook_dir only moves while it
+# is still the old default and the Calibre import is on.
 readonly LAZYLIBRARIAN_AUDIOBOOK_TYPES=(m4b m4a mp3 flac opus ogg aac)
+readonly LAZYLIBRARIAN_DOWNLOAD_DIRS=(/data/downloads /data/torrents/ebooks /data/usenet/complete/ebooks)
 
-# Reads or rewrites the audiobook_type of config.ini's [GENERAL] section, the
-# only one LazyLibrarian reads it from, with the same ConfigParser LazyLibrarian
+# Reads or rewrites those settings in config.ini's [GENERAL] section, the only
+# one LazyLibrarian reads them from, with the same ConfigParser LazyLibrarian
 # reads and writes the file with, so its rules for case, delimiters,
-# indentation and continuation lines apply here too. `check` prints the wanted
-# types the section lacks, and `write` appends them to the ones it has and
-# prints the result. Like LazyLibrarian's own save on shutdown, `write` writes
-# the whole file back in ConfigParser's layout. Both exit 3, and change
-# nothing, when the file has no [GENERAL] section.
-# Args: check|write ini type...
-lazylibrarian_audiobook_types() {
+# indentation and continuation lines apply here too. `check` prints one line
+# per setting that would change, and `write` changes them and prints each
+# resulting `key = value` line. Like LazyLibrarian's own save on shutdown,
+# `write` writes the whole file back in ConfigParser's layout. Both exit 3,
+# and change nothing, when the file has no [GENERAL] section.
+# Args: check|write ini audiobook_types download_dirs (each space separated)
+lazylibrarian_settings() {
   python3 - "$@" <<'PYEOF'
 import configparser
 import os
 import sys
 import tempfile
 
-mode, path, wanted = sys.argv[1], sys.argv[2], sys.argv[3:]
+mode, path = sys.argv[1], sys.argv[2]
+types, dirs = sys.argv[3].split(), sys.argv[4].split()
+OLD_EBOOK_DIR, CALIBRE_LIBRARY = "/data/media/ebooks", "/data/media/calibre-library"
 config = configparser.ConfigParser(interpolation=None)
 try:
     with open(path, encoding="utf-8") as handle:
@@ -927,14 +940,38 @@ except configparser.MissingSectionHeaderError:
     sys.exit(3)
 if not config.has_section("GENERAL"):
     sys.exit(3)
-current = config.get("GENERAL", "audiobook_type", fallback="")
-have = [t.strip().lower() for t in current.split(",") if t.strip()]
-missing = [t for t in wanted if t not in have]
+
+
+def merged(key, wanted, lower, separator):
+    current = config.get("GENERAL", key, fallback="")
+    have = [v.strip().lower() if lower else v.strip() for v in current.split(",") if v.strip()]
+    missing = [v for v in wanted if v not in have]
+    return missing, separator.join(have + missing)
+
+
+changes = {}
+missing, value = merged("audiobook_type", types, True, ", ")
+if missing:
+    changes["audiobook_type"] = (f"audiobook types {' '.join(missing)}", value)
+if config.has_option("GENERAL", "download_dir"):
+    # LazyLibrarian splits this one on bare commas, so none get spaces.
+    missing, value = merged("download_dir", dirs, False, ",")
+    if missing:
+        changes["download_dir"] = (f"download folders {' '.join(missing)}", value)
+calibre_import = config.get("CALIBRE", "imp_calibre_ebook", fallback="").strip().lower()
+if config.get("GENERAL", "ebook_dir", fallback="").strip() == OLD_EBOOK_DIR and calibre_import in (
+    "1",
+    "true",
+    "yes",
+    "on",
+):
+    changes["ebook_dir"] = (f"ebook folder {CALIBRE_LIBRARY}", CALIBRE_LIBRARY)
 if mode == "check":
-    print(" ".join(missing))
+    for what, _ in changes.values():
+        print(what)
     sys.exit(0)
-value = ", ".join(have + missing)
-config.set("GENERAL", "audiobook_type", value)
+for key, (_, value) in changes.items():
+    config.set("GENERAL", key, value)
 # Written beside the file and moved over it, so a failed write leaves the
 # original whole.
 with tempfile.NamedTemporaryFile(
@@ -949,29 +986,33 @@ try:
 except BaseException:
     os.unlink(temp)
     raise
-print("audiobook_type = " + value)
+for key, (_, value) in changes.items():
+    print(f"{key} = {value}")
 PYEOF
 }
 
-ensure_lazylibrarian_audiobook_types() {
+ensure_lazylibrarian_settings() {
   local ini="$LAZYLIBRARIAN_INI"
   [[ -f "$ini" ]] || return 0
-  local missing status=0
-  missing=$(lazylibrarian_audiobook_types check "$ini" "${LAZYLIBRARIAN_AUDIOBOOK_TYPES[@]}") || status=$?
+  local pending status=0
+  pending=$(lazylibrarian_settings check "$ini" "${LAZYLIBRARIAN_AUDIOBOOK_TYPES[*]}" "${LAZYLIBRARIAN_DOWNLOAD_DIRS[*]}") || status=$?
   if [[ "$status" -eq 3 ]]; then
-    echo "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its audiobook types to LazyLibrarian."
+    echo "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its settings to LazyLibrarian."
     return 0
   elif [[ "$status" -ne 0 ]]; then
-    echo "[LazyLibrarian] WARNING: could not read its audiobook types (exit ${status})."
+    echo "[LazyLibrarian] WARNING: could not read its settings (exit ${status})."
     return 1
   fi
-  if [[ -z "$missing" ]]; then
-    echo "[LazyLibrarian] Audiobook types already include ${LAZYLIBRARIAN_AUDIOBOOK_TYPES[*]}, skipping."
+  if [[ -z "$pending" ]]; then
+    echo "[LazyLibrarian] Audiobook types, download folders and ebook folder already set, skipping."
     return 0
   fi
 
-  echo "[LazyLibrarian] Adding audiobook types: ${missing}..."
-  local running=false line
+  local item
+  while IFS= read -r item; do
+    echo "[LazyLibrarian] Adding ${item}..."
+  done <<<"$pending"
+  local running=false lines
   if podman container inspect -f '{{.State.Running}}' "$(cname lazylibrarian)" 2>/dev/null | grep -q '^true$'; then
     running=true
     stop_container lazylibrarian
@@ -979,15 +1020,17 @@ ensure_lazylibrarian_audiobook_types() {
   # Read again once it is stopped: LazyLibrarian rewrites the file on
   # shutdown. A failed edit still restarts it, then fails the step.
   status=0
-  line=$(lazylibrarian_audiobook_types write "$ini" "${LAZYLIBRARIAN_AUDIOBOOK_TYPES[@]}") || status=$?
+  lines=$(lazylibrarian_settings write "$ini" "${LAZYLIBRARIAN_AUDIOBOOK_TYPES[*]}" "${LAZYLIBRARIAN_DOWNLOAD_DIRS[*]}") || status=$?
   if [[ "$running" == true ]]; then
     podman start "$(cname lazylibrarian)" >/dev/null
   fi
   if [[ "$status" -ne 0 ]]; then
-    echo "[LazyLibrarian] WARNING: could not write its audiobook types (exit ${status})."
+    echo "[LazyLibrarian] WARNING: could not write its settings (exit ${status})."
     return 1
   fi
-  echo "[LazyLibrarian]   ${line}"
+  while IFS= read -r item; do
+    echo "[LazyLibrarian]   ${item}"
+  done <<<"$lines"
 }
 
 # ---------------------------------------------------------------------------
@@ -2423,7 +2466,7 @@ ensure_ini_client_addresses mylar Mylar "$MYLAR_INI" \
   "sab_host=https://${GLUETUN_SERVICES_IP}:${SABNZBD_HTTPS_PORT}/sabnzbd" \
   "qbittorrent_host=https://${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}" \
   "jd2_url=http://${GLUETUN_SERVICES_IP}:3128"
-ensure_lazylibrarian_audiobook_types
+ensure_lazylibrarian_settings
 ensure_ini_client_addresses lazylibrarian LazyLibrarian "$LAZYLIBRARIAN_INI" \
   "sab_host=https://${GLUETUN_SERVICES_IP}" "sab_port=${SABNZBD_HTTPS_PORT}" \
   "qbittorrent_host=https://${GLUETUN_SERVICES_IP}" "qbittorrent_port=${QBITTORRENT_HTTPS_PORT}"
