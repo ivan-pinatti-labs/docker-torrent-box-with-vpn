@@ -134,8 +134,10 @@ def test_import_failed_watches_the_arr_queues():
     (expr,) = _exprs(_rule("Import Failed > 6 Hours"))
     assert 'download_state=~"importFailed|importBlocked"' in expr
     assert "sum by (url)" in expr
-    for app in ("sonarr", "radarr", "lidarr", "whisparr"):
+    for app in ("sonarr", "radarr", "lidarr"):
         assert app in expr
+    # exportarr has no Whisparr collector.
+    assert "whisparr" not in expr
 
 
 def test_import_failed_is_quiet_without_its_exporter():

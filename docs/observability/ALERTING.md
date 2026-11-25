@@ -56,12 +56,17 @@ of no data when this stack's gluetun container is removed altogether (a stopped 
 `tests/unit/test_grafana_alert_rules.py` refuses an exact `name="..."` selector.
 
 Import Failed > 6 Hours sums exportarr's `<app>_queue_total` gauge for items whose
-`download_state` is `importFailed` or `importBlocked`, per app (`url`), for Sonarr, Radarr,
-Lidarr and Whisparr. Such a download finished but could not be imported (no matching edition,
+`download_state` is `importFailed` or `importBlocked`, per app (`url`), for Sonarr, Radarr
+and Lidarr. Such a download finished but could not be imported (no matching edition,
 a wrong file type): it holds the only copy of its files and nothing removes it, so the app's
 Activity queue needs a manual import or a removal. Six hours leaves room for a retry. The
 exporters are #442; until they run the rule has no data, which is OK, so it stays quiet
 instead of firing on their absence (#556).
+
+The rule needs one series per `download_state`. exportarr's `main` sends that; its v2.3.0
+release sends one series per app instead, whose value is the whole queue and whose labels
+are the last queue item's, so there it would miss most blocked imports. Whisparr is not
+covered: exportarr has no collector for it.
 
 ## Email via AWS SES
 
