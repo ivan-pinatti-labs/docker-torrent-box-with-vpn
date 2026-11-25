@@ -91,6 +91,16 @@ this repo should preselect. Refer to the
 [upstream LazyLibrarian project](https://gitlab.com/LazyLibrarian/LazyLibrarian)
 for the section keys each provider type expects.
 
+## Audiobook file types
+
+`audiobook_type` in `config.ini.example` lists `m4b, m4a, mp3, flac, opus,
+ogg, aac`: the formats audiobook releases come in that Audiobookshelf plays.
+LazyLibrarian checks a release's files against it before snatching, and turns
+down one with none of these types (`has no AudioBook files (m4a)` in its log),
+so a missing type keeps a book Wanted. `make wire_connections` adds any listed
+type an existing `config.ini` lacks and removes none, so a type added by hand
+stays (see [CONNECTIONS.md](CONNECTIONS.md)).
+
 ## Editing the config
 
 LazyLibrarian writes its in-memory config back to disk on shutdown. Editing

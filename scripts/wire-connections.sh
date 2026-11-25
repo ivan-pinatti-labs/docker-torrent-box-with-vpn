@@ -869,15 +869,125 @@ ensure_ini_client_addresses() {
     running=true
     stop_container "$service"
   fi
+  # A failed edit still restarts the app, then fails the step.
+  local status=0
   for pair in "${stale[@]}"; do
     key="${pair%%=*}" value="${pair#*=}"
-    sed -i "s|^${key} = .*|${key} = ${value}|" "$ini"
+    sed -i "s|^${key} = .*|${key} = ${value}|" "$ini" || {
+      status=$?
+      break
+    }
     echo "[${display_name}]   ${key} = ${value}"
   done
   if [[ "$running" == true ]]; then
     podman start "$(cname "$service")" >/dev/null
   fi
+  if [[ "$status" -ne 0 ]]; then
+    echo "[${display_name}] WARNING: could not edit ${ini} (exit ${status})."
+    return 1
+  fi
   echo "[${display_name}] Updated."
+}
+
+# The audiobook file types LazyLibrarian accepts (#547). Before it snatches a
+# release it compares the torrent's file list with AUDIOBOOK_TYPE, and turns
+# down one whose files are all of a type the list lacks ("has no AudioBook
+# files (m4a)"), so that book stays Wanted. These are the formats audiobook
+# releases come in that Audiobookshelf, which reads data/media/audiobooks,
+# plays. config.ini is seeded once, so a deployment seeded before a type was
+# added gets it here: types the file lacks are appended to the ones it has,
+# in this order, and none is removed. A file without the key gets it under
+# [GENERAL], where LazyLibrarian keeps it. Like ensure_ini_client_addresses,
+# a running LazyLibrarian is stopped for the edit and started again, since it
+# writes its config back on shutdown.
+readonly LAZYLIBRARIAN_AUDIOBOOK_TYPES=(m4b m4a mp3 flac opus ogg aac)
+
+# Reads or rewrites the audiobook_type of config.ini's [GENERAL] section, the
+# only one LazyLibrarian reads it from, with the same ConfigParser LazyLibrarian
+# reads and writes the file with, so its rules for case, delimiters,
+# indentation and continuation lines apply here too. `check` prints the wanted
+# types the section lacks, and `write` appends them to the ones it has and
+# prints the result. Like LazyLibrarian's own save on shutdown, `write` writes
+# the whole file back in ConfigParser's layout. Both exit 3, and change
+# nothing, when the file has no [GENERAL] section.
+# Args: check|write ini type...
+lazylibrarian_audiobook_types() {
+  python3 - "$@" <<'PYEOF'
+import configparser
+import os
+import sys
+import tempfile
+
+mode, path, wanted = sys.argv[1], sys.argv[2], sys.argv[3:]
+config = configparser.ConfigParser(interpolation=None)
+try:
+    with open(path, encoding="utf-8") as handle:
+        config.read_file(handle)
+except configparser.MissingSectionHeaderError:
+    sys.exit(3)
+if not config.has_section("GENERAL"):
+    sys.exit(3)
+current = config.get("GENERAL", "audiobook_type", fallback="")
+have = [t.strip().lower() for t in current.split(",") if t.strip()]
+missing = [t for t in wanted if t not in have]
+if mode == "check":
+    print(" ".join(missing))
+    sys.exit(0)
+value = ", ".join(have + missing)
+config.set("GENERAL", "audiobook_type", value)
+# Written beside the file and moved over it, so a failed write leaves the
+# original whole.
+with tempfile.NamedTemporaryFile(
+    "w", encoding="utf-8", dir=os.path.dirname(path) or ".", prefix=".config.ini.", delete=False
+) as handle:
+    temp = handle.name
+try:
+    with open(temp, "w", encoding="utf-8") as handle:
+        config.write(handle)
+    os.chmod(temp, os.stat(path).st_mode & 0o7777)
+    os.replace(temp, path)
+except BaseException:
+    os.unlink(temp)
+    raise
+print("audiobook_type = " + value)
+PYEOF
+}
+
+ensure_lazylibrarian_audiobook_types() {
+  local ini="$LAZYLIBRARIAN_INI"
+  [[ -f "$ini" ]] || return 0
+  local missing status=0
+  missing=$(lazylibrarian_audiobook_types check "$ini" "${LAZYLIBRARIAN_AUDIOBOOK_TYPES[@]}") || status=$?
+  if [[ "$status" -eq 3 ]]; then
+    echo "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its audiobook types to LazyLibrarian."
+    return 0
+  elif [[ "$status" -ne 0 ]]; then
+    echo "[LazyLibrarian] WARNING: could not read its audiobook types (exit ${status})."
+    return 1
+  fi
+  if [[ -z "$missing" ]]; then
+    echo "[LazyLibrarian] Audiobook types already include ${LAZYLIBRARIAN_AUDIOBOOK_TYPES[*]}, skipping."
+    return 0
+  fi
+
+  echo "[LazyLibrarian] Adding audiobook types: ${missing}..."
+  local running=false line
+  if podman container inspect -f '{{.State.Running}}' "$(cname lazylibrarian)" 2>/dev/null | grep -q '^true$'; then
+    running=true
+    stop_container lazylibrarian
+  fi
+  # Read again once it is stopped: LazyLibrarian rewrites the file on
+  # shutdown. A failed edit still restarts it, then fails the step.
+  status=0
+  line=$(lazylibrarian_audiobook_types write "$ini" "${LAZYLIBRARIAN_AUDIOBOOK_TYPES[@]}") || status=$?
+  if [[ "$running" == true ]]; then
+    podman start "$(cname lazylibrarian)" >/dev/null
+  fi
+  if [[ "$status" -ne 0 ]]; then
+    echo "[LazyLibrarian] WARNING: could not write its audiobook types (exit ${status})."
+    return 1
+  fi
+  echo "[LazyLibrarian]   ${line}"
 }
 
 # ---------------------------------------------------------------------------
@@ -2245,6 +2355,7 @@ ensure_ini_client_addresses mylar Mylar "$MYLAR_INI" \
   "sab_host=https://${GLUETUN_SERVICES_IP}:${SABNZBD_HTTPS_PORT}/sabnzbd" \
   "qbittorrent_host=https://${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}" \
   "jd2_url=http://${GLUETUN_SERVICES_IP}:3128"
+ensure_lazylibrarian_audiobook_types
 ensure_ini_client_addresses lazylibrarian LazyLibrarian "$LAZYLIBRARIAN_INI" \
   "sab_host=https://${GLUETUN_SERVICES_IP}" "sab_port=${SABNZBD_HTTPS_PORT}" \
   "qbittorrent_host=https://${GLUETUN_SERVICES_IP}" "qbittorrent_port=${QBITTORRENT_HTTPS_PORT}"

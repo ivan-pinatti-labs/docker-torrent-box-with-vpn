@@ -153,6 +153,8 @@ EOF
   done
   # Download client addresses where the .env above says.
   put configs/lazylibrarian/config/config.ini <<'EOF'
+[GENERAL]
+audiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac
 api_key = key-lazylibrarian
 [SABNZBD]
 sab_host = https://10.0.0.2
@@ -397,6 +399,7 @@ check "a wired stack is left alone" 0 out \
   "[qBittorrent] Already trusts only nginx (192.0.2.5) as its reverse proxy, skipping." \
   "[Mylar] Download client addresses already match GLUETUN_SERVICES_IP, skipping." \
   "[LazyLibrarian] Download client addresses already match GLUETUN_SERVICES_IP, skipping." \
+  "[LazyLibrarian] Audiobook types already include m4b m4a mp3 flac opus ogg aac, skipping." \
   "[Cleanuparr] qBittorrent already connected, skipping." "[Cleanuparr] Sonarr already connected, skipping." \
   "[Cleanuparr] Whisparr already connected, skipping." "[Cleanuparr] Done."
 check "a wired Cleanuparr still has its stored secrets tested" 0 log \
@@ -478,6 +481,195 @@ refute "an address that matches is not rewritten" out "[Mylar]   qbittorrent_hos
 check "running Mylar is stopped and started around the edit" 0 log "podman stop mylar" "podman start mylar"
 refute "stopped LazyLibrarian is not stopped" log "podman stop --time 60 lazylibrarian"
 refute "nor started" log "podman start lazylibrarian"
+
+# same_file <name> <path> <content>: the file under the scratch repository
+# is exactly that content, byte for byte. check matches each line on its own,
+# so it cannot tell a whole file from one that only shares a line with it.
+same_file() {
+  if ! printf '%s' "${3}" | cmp -s - "${__repo}/${2}"; then
+    fail "${1}: ${2} is not exactly what was expected"
+  fi
+}
+
+# Audiobook types (#547): a list seeded before m4a and the others existed gets
+# them appended, kept in its own order and case folded; LazyLibrarian runs, so
+# it is stopped for the edit and started again.
+deployment
+put configs/lazylibrarian/config/config.ini <<'EOF'
+[GENERAL]
+audiobook_type = M4B, flac, mp3, wav
+api_key = key-lazylibrarian
+EOF
+run
+check "missing audiobook types are added" 0 out \
+  "[LazyLibrarian] Adding audiobook types: m4a opus ogg aac..." \
+  "[LazyLibrarian]   audiobook_type = m4b, flac, mp3, wav, m4a, opus, ogg, aac"
+same_file "and kept after the ones it had" configs/lazylibrarian/config/config.ini \
+  $'[GENERAL]\naudiobook_type = m4b, flac, mp3, wav, m4a, opus, ogg, aac\napi_key = key-lazylibrarian\n\n'
+check "running LazyLibrarian is stopped and started around the edit" 0 log \
+  "podman stop --time 60 lazylibrarian" "podman start lazylibrarian"
+
+# A file without the key, LazyLibrarian stopped: the key goes under
+# [GENERAL], and nothing is stopped or started.
+deployment
+put configs/lazylibrarian/config/config.ini <<'EOF'
+[GENERAL]
+api_key = key-lazylibrarian
+EOF
+stopped lazylibrarian
+run
+same_file "a missing key is added under [GENERAL]" configs/lazylibrarian/config/config.ini \
+  $'[GENERAL]\napi_key = key-lazylibrarian\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\n\n'
+refute "a stopped LazyLibrarian is not stopped for it" log "podman stop --time 60 lazylibrarian"
+
+# A file with no [GENERAL] section yet is left to LazyLibrarian.
+deployment
+put configs/lazylibrarian/config/config.ini "api_key = key-lazylibrarian"
+run
+check "a file without [GENERAL] is left alone" 0 out \
+  "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its audiobook types to LazyLibrarian."
+refute "and gains no key" configs/lazylibrarian/config/config.ini "audiobook_type"
+
+# Spelled the other ways LazyLibrarian's ConfigParser reads it: the key is
+# replaced, keeping its types, never added a second time.
+deployment
+put configs/lazylibrarian/config/config.ini <<'EOF'
+[GENERAL]
+Audiobook_Type=m4b, wav
+api_key = key-lazylibrarian
+EOF
+stopped lazylibrarian
+run
+same_file "a key written without spaces is replaced, keeping its types" configs/lazylibrarian/config/config.ini \
+  $'[GENERAL]\naudiobook_type = m4b, wav, m4a, mp3, flac, opus, ogg, aac\napi_key = key-lazylibrarian\n\n'
+if [[ "$(grep -c -i '^audiobook_type' "${__repo}/configs/lazylibrarian/config/config.ini")" -ne 1 ]]; then
+  fail "the key is not added a second time"
+fi
+
+# A write that fails still starts LazyLibrarian again, then fails the run.
+deployment
+put configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
+printf '#!/usr/bin/env bash\n[[ "${2:-}" == write ]] && exit 1\nexec %q "$@"\n' "$(command -v python3)" >"${__bin}/python3"
+chmod +x "${__bin}/python3"
+run
+rm "${__bin}/python3"
+check "a failed write is reported" 1 out "[LazyLibrarian] WARNING: could not write its audiobook types (exit 1)."
+check "and LazyLibrarian is started again" 1 log "podman stop --time 60 lazylibrarian" "podman start lazylibrarian"
+same_file "and its file is left as it was" configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
+
+# A write that fails after the new content is written (here, moving it over
+# the old file) leaves the original whole and no temporary file behind.
+deployment
+put configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
+mkdir -p "${__scratch}/fail-move"
+printf 'import os\n\ndef _fail(*_args, **_named):\n    raise OSError(28, "No space left on device")\n\nos.replace = _fail\n' >"${__scratch}/fail-move/sitecustomize.py"
+printf '#!/usr/bin/env bash\nPYTHONPATH=%q exec %q "$@"\n' "${__scratch}/fail-move" "$(command -v python3)" >"${__bin}/python3"
+chmod +x "${__bin}/python3"
+run
+rm "${__bin}/python3"
+check "a write that fails midway is reported" 1 out "[LazyLibrarian] WARNING: could not write its audiobook types (exit 1)."
+same_file "and the file is left whole" configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
+if compgen -G "${__repo}/configs/lazylibrarian/config/.config.ini.*" >/dev/null; then
+  fail "no temporary file is left behind"
+fi
+
+# A write that fails partway, after some of the new content is out, leaves
+# the original whole too.
+deployment
+put configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
+mkdir -p "${__scratch}/fail-write"
+cat >"${__scratch}/fail-write/sitecustomize.py" <<'PYEOF'
+import builtins
+import os
+
+_open = builtins.open
+
+
+class _Partial:
+    def __init__(self, handle):
+        self._handle = handle
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        self._handle.close()
+
+    def write(self, text):
+        self._handle.write(text[:5])
+        self._handle.flush()
+        raise OSError(28, "No space left on device")
+
+
+def _patched(path, mode="r", *args, **named):
+    handle = _open(path, mode, *args, **named)
+    if "w" in mode and os.path.basename(str(path)).startswith(".config.ini."):
+        return _Partial(handle)
+    return handle
+
+
+builtins.open = _patched
+PYEOF
+printf '#!/usr/bin/env bash\nPYTHONPATH=%q exec %q "$@"\n' "${__scratch}/fail-write" "$(command -v python3)" >"${__bin}/python3"
+chmod +x "${__bin}/python3"
+run
+rm "${__bin}/python3"
+check "a write that fails partway is reported" 1 out "[LazyLibrarian] WARNING: could not write its audiobook types (exit 1)."
+same_file "and the file is left whole" configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
+if compgen -G "${__repo}/configs/lazylibrarian/config/.config.ini.*" >/dev/null; then
+  fail "no temporary file is left behind after a partial write"
+fi
+
+# Only [GENERAL] is read: a key in another section before it is left alone,
+# and a file without [GENERAL] is not changed at all.
+deployment
+put configs/lazylibrarian/config/config.ini $'[SABNZBD]\naudiobook_type = mp3\n[GENERAL]\naudiobook_type = m4b\n'
+stopped lazylibrarian
+run
+same_file "only the [GENERAL] key changes" configs/lazylibrarian/config/config.ini \
+  $'[SABNZBD]\naudiobook_type = mp3\n\n[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\n\n'
+deployment
+put configs/lazylibrarian/config/config.ini $'[SABNZBD]\naudiobook_type = mp3\n'
+run
+check "a key outside [GENERAL] is not taken for it" 0 out \
+  "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its audiobook types to LazyLibrarian."
+same_file "and the file is unchanged" configs/lazylibrarian/config/config.ini $'[SABNZBD]\naudiobook_type = mp3\n'
+
+# What ConfigParser accepts, LazyLibrarian included, is read the same way: an
+# indented section header ends [GENERAL], and a continuation line belongs to
+# the value above it.
+deployment
+put configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = m4b,\n  wav\napi_key = key-lazylibrarian\n'
+stopped lazylibrarian
+run
+same_file "a continuation line is part of the value" configs/lazylibrarian/config/config.ini \
+  $'[GENERAL]\naudiobook_type = m4b, wav, m4a, mp3, flac, opus, ogg, aac\napi_key = key-lazylibrarian\n\n'
+deployment
+put configs/lazylibrarian/config/config.ini $'[GENERAL]\n  [SABNZBD]\naudiobook_type = wav\n'
+stopped lazylibrarian
+run
+same_file "an indented header ends [GENERAL]" configs/lazylibrarian/config/config.ini \
+  $'[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\n\n[SABNZBD]\naudiobook_type = wav\n\n'
+
+# A file the check cannot read fails the run instead of passing as complete.
+deployment
+put configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
+printf '#!/usr/bin/env bash\n[[ "${2:-}" == check ]] && exit 1\nexec %q "$@"\n' "$(command -v python3)" >"${__bin}/python3"
+chmod +x "${__bin}/python3"
+run
+rm "${__bin}/python3"
+check "a failed read is reported" 1 out "[LazyLibrarian] WARNING: could not read its audiobook types (exit 1)."
+refute "not passed as complete" out "[LazyLibrarian] Audiobook types already include"
+
+# The same for a download client address Mylar's file will not take.
+deployment
+put configs/mylar/config/mylar/config.ini $'api_key = key-mylar\n[SABnzbd]\nsab_host = https://192.0.2.10:8087/sabnzbd\n'
+printf '#!/usr/bin/env bash\n[[ "${*: -1}" == *mylar/config.ini ]] && exit 4\nexec %q "$@"\n' "$(command -v sed)" >"${__bin}/sed"
+chmod +x "${__bin}/sed"
+run
+rm "${__bin}/sed"
+check "a failed address edit is reported" 1 out "[Mylar] WARNING: could not edit configs/mylar/config/mylar/config.ini (exit 4)."
+check "and Mylar is started again" 1 log "podman stop mylar" "podman start mylar"
 
 # Run C: no containers at all, and no LazyLibrarian config.
 deployment

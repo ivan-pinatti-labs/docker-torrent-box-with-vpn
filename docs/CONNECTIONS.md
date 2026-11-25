@@ -350,6 +350,16 @@ set up just confirms it and moves on.
   shutdown). This matters most for Mylar: on every start it checks SABnzbd
   with no timeout before opening its own port, so a wrong address held each
   restart up for about 270s on CI runners (issue #379).
+- **LazyLibrarian's audiobook file types** (#547): before snatching an
+  audiobook, LazyLibrarian compares the release's files with `audiobook_type`
+  and turns down one whose files are all of a type the list lacks, so the
+  book stays Wanted. The seed lists `m4b, m4a, mp3, flac, opus, ogg, aac`, the
+  formats audiobook releases come in that Audiobookshelf plays. The script
+  appends any of those an existing `config.ini` lacks (one seeded before
+  `m4a` was added, say), keeps the types already there and removes none, and
+  stops a running LazyLibrarian for the edit, like the addresses above. It
+  reads and writes the file with Python's ConfigParser, as LazyLibrarian does,
+  so the file comes back in the layout LazyLibrarian's own save gives it.
 
 ## Credentials this script sets up
 
