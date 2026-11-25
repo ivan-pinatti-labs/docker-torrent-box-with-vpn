@@ -546,10 +546,21 @@ run
 rm "${__bin}/python3"
 check "a failed write is reported" 1 out "[LazyLibrarian] WARNING: could not write its audiobook types (exit 1)."
 check "and LazyLibrarian is started again" 1 log "podman stop --time 60 lazylibrarian" "podman start lazylibrarian"
+check "and its file is left as it was" 1 configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
+
+# A file the check cannot read fails the run instead of passing as complete.
+deployment
+put configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
+printf '#!/usr/bin/env bash\n[[ "${2:-}" == check ]] && exit 1\nexec %q "$@"\n' "$(command -v python3)" >"${__bin}/python3"
+chmod +x "${__bin}/python3"
+run
+rm "${__bin}/python3"
+check "a failed read is reported" 1 out "[LazyLibrarian] WARNING: could not read its audiobook types (exit 1)."
+refute "not passed as complete" out "[LazyLibrarian] Audiobook types already include"
 
 # The same for a download client address Mylar's file will not take.
 deployment
-put configs/mylar/config/mylar/config.ini $'api_key = key-mylar\n[SABnzbd]\nsab_host = https://172.28.0.10:8087/sabnzbd\n'
+put configs/mylar/config/mylar/config.ini $'api_key = key-mylar\n[SABnzbd]\nsab_host = https://192.0.2.10:8087/sabnzbd\n'
 printf '#!/usr/bin/env bash\n[[ "${*: -1}" == *mylar/config.ini ]] && exit 4\nexec %q "$@"\n' "$(command -v sed)" >"${__bin}/sed"
 chmod +x "${__bin}/sed"
 run

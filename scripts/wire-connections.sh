@@ -910,8 +910,10 @@ readonly LAZYLIBRARIAN_AUDIOBOOK_TYPES=(m4b m4a mp3 flac opus ogg aac)
 # Args: check|write ini type...
 lazylibrarian_audiobook_types() {
   python3 - "$@" <<'PYEOF'
+import os
 import re
 import sys
+import tempfile
 
 mode, path, wanted = sys.argv[1], sys.argv[2], sys.argv[3:]
 with open(path, encoding="utf-8") as handle:
@@ -930,8 +932,20 @@ if key:
     text = text[: key.start()] + line + text[key.end() :]
 else:
     text = text[: general.end()] + "\n" + line + text[general.end() :]
-with open(path, "w", encoding="utf-8") as handle:
-    handle.write(text)
+# Written beside the file and moved over it, so a failed write leaves the
+# original whole.
+with tempfile.NamedTemporaryFile(
+    "w", encoding="utf-8", dir=os.path.dirname(path) or ".", prefix=".config.ini.", delete=False
+) as handle:
+    temp = handle.name
+try:
+    with open(temp, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    os.chmod(temp, os.stat(path).st_mode & 0o7777)
+    os.replace(temp, path)
+except BaseException:
+    os.unlink(temp)
+    raise
 print(line)
 PYEOF
 }
@@ -944,6 +958,9 @@ ensure_lazylibrarian_audiobook_types() {
   if [[ "$status" -eq 3 ]]; then
     echo "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its audiobook types to LazyLibrarian."
     return 0
+  elif [[ "$status" -ne 0 ]]; then
+    echo "[LazyLibrarian] WARNING: could not read its audiobook types (exit ${status})."
+    return 1
   fi
   if [[ -z "$missing" ]]; then
     echo "[LazyLibrarian] Audiobook types already include ${LAZYLIBRARIAN_AUDIOBOOK_TYPES[*]}, skipping."
