@@ -102,7 +102,8 @@ downloaded. LazyLibrarian splits the list on bare commas. `ebook_dir` is
 (`imp_calibre_ebook`), LazyLibrarian looks for the imported book there after
 `calibredb add`, and under any other folder it marks the import Failed and
 downloads the book again (#554). `make wire_connections` adds the missing
-download folders to an existing `config.ini`, keeping any added by hand, and
+download folders to an existing `config.ini` that has a `download_dir` (one
+without it is left to LazyLibrarian), keeping any added by hand, and
 moves `ebook_dir` to the Calibre library only while it is still the old
 default `/data/media/ebooks` and the Calibre import is on.
 

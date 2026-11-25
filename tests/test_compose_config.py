@@ -762,3 +762,17 @@ def test_compose_profiles_survive_a_route_file(tmp_path):
         "radarr": ["${RADARR_PROFILE}"],
         "gluetun": [],
     }
+
+
+def test_lazylibrarian_seed_folders():
+    """The seed looks where the clients finish and imports into Calibre (#554)."""
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.read_string(
+        (REPO_ROOT / "configs/lazylibrarian/config/config.ini.example").read_text()
+    )
+    assert parser.get("GENERAL", "ebook_dir") == "/data/media/calibre-library"
+    assert parser.get("GENERAL", "download_dir").split(",") == [
+        "/data/downloads",
+        "/data/torrents/ebooks",
+        "/data/usenet/complete/ebooks",
+    ]

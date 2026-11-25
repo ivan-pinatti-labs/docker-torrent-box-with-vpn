@@ -682,6 +682,18 @@ same_file "only the download folders change" configs/lazylibrarian/config/config
   $'[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\nebook_dir = /data/media/ebooks\ndownload_dir = /data/downloads,/srv/books,/data/torrents/ebooks,/data/usenet/complete/ebooks\n\n[CALIBRE]\nimp_calibre_ebook = False\n\n'
 refute "and the ebook folder is not touched" out "Adding ebook folder"
 
+# Complete folders are a rerun with nothing to do: the file is left as it is,
+# and LazyLibrarian is not stopped.
+deployment
+put configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\nebook_dir = /data/media/calibre-library\ndownload_dir = /data/downloads,/data/torrents/ebooks,/data/usenet/complete/ebooks\n[CALIBRE]\nimp_calibre_ebook = True\n'
+run
+check "complete settings are skipped" 0 out \
+  "[LazyLibrarian] Audiobook types, download folders and ebook folder already set, skipping."
+same_file "and the file is untouched" configs/lazylibrarian/config/config.ini \
+  $'[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\nebook_dir = /data/media/calibre-library\ndownload_dir = /data/downloads,/data/torrents/ebooks,/data/usenet/complete/ebooks\n[CALIBRE]\nimp_calibre_ebook = True\n'
+refute "with no download folders added" out "Adding download folders"
+refute "nor LazyLibrarian stopped" log "podman stop --time 60 lazylibrarian"
+
 # A file the check cannot read fails the run instead of passing as complete.
 deployment
 put configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
