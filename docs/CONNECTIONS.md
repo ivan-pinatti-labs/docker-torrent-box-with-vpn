@@ -87,6 +87,19 @@ the one the browser sent: qBittorrent trusts nginx as its reverse proxy and
 takes the client from that header, for its failed login bans among other
 things.
 
+**Mylar's torrents are removed with their files at the share limit.** The
+seeded `qBittorrent.conf` stops a torrent at its global share limit, which is
+enough for the arr apps and LazyLibrarian, since they remove what qBittorrent
+stopped. Mylar never removes its torrents, so with `Stop` they stayed in
+qBittorrent and in `data/torrents/comics` for ever (#550). The `mylar`
+category's share limit action is `RemoveWithContent`, with its ratio and
+seeding time left on the global limits; Mylar's own copy in
+`data/media/comics` is a hardlink or a copy, and stays. The seed
+`categories.json` sets it, and the script sets it on an existing `mylar`
+category through `torrents/editCategory` (qBittorrent 5.3 and later), only
+while the category's action is still `Default`, so an action chosen by hand is
+kept.
+
 ### Jellyfin library updates (Sonarr, Radarr, Lidarr, Whisparr → Jellyfin)
 
 Each app gets a Connection of type `MediaBrowser`, which is the \*arr name for

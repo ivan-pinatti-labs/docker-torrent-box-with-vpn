@@ -18,6 +18,7 @@
         "save_path": "/data/torrents/mature"
     },
     "mylar": {
-        "save_path": "/data/torrents/comics"
+        "save_path": "/data/torrents/comics",
+        "share_limit_action": "RemoveWithContent"
     }
 }
