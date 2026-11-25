@@ -482,6 +482,15 @@ check "running Mylar is stopped and started around the edit" 0 log "podman stop 
 refute "stopped LazyLibrarian is not stopped" log "podman stop --time 60 lazylibrarian"
 refute "nor started" log "podman start lazylibrarian"
 
+# same_file <name> <path> <content>: the file under the scratch repository
+# is exactly that content, byte for byte. check matches each line on its own,
+# so it cannot tell a whole file from one that only shares a line with it.
+same_file() {
+  if ! printf '%s' "${3}" | cmp -s - "${__repo}/${2}"; then
+    fail "${1}: ${2} is not exactly what was expected"
+  fi
+}
+
 # Audiobook types (#547): a list seeded before m4a and the others existed gets
 # them appended, kept in its own order and case folded; LazyLibrarian runs, so
 # it is stopped for the edit and started again.
@@ -495,8 +504,8 @@ run
 check "missing audiobook types are added" 0 out \
   "[LazyLibrarian] Adding audiobook types: m4a opus ogg aac..." \
   "[LazyLibrarian]   audiobook_type = m4b, flac, mp3, wav, m4a, opus, ogg, aac"
-check "and kept after the ones it had" 0 configs/lazylibrarian/config/config.ini \
-  "audiobook_type = m4b, flac, mp3, wav, m4a, opus, ogg, aac"
+same_file "and kept after the ones it had" configs/lazylibrarian/config/config.ini \
+  $'[GENERAL]\naudiobook_type = m4b, flac, mp3, wav, m4a, opus, ogg, aac\napi_key = key-lazylibrarian\n'
 check "running LazyLibrarian is stopped and started around the edit" 0 log \
   "podman stop --time 60 lazylibrarian" "podman start lazylibrarian"
 
@@ -509,8 +518,8 @@ api_key = key-lazylibrarian
 EOF
 stopped lazylibrarian
 run
-check "a missing key is added under [GENERAL]" 0 configs/lazylibrarian/config/config.ini \
-  $'[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\napi_key'
+same_file "a missing key is added under [GENERAL]" configs/lazylibrarian/config/config.ini \
+  $'[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\napi_key = key-lazylibrarian\n'
 refute "a stopped LazyLibrarian is not stopped for it" log "podman stop --time 60 lazylibrarian"
 
 # A file with no [GENERAL] section yet is left to LazyLibrarian.
@@ -531,8 +540,8 @@ api_key = key-lazylibrarian
 EOF
 stopped lazylibrarian
 run
-check "a key written without spaces is replaced, keeping its types" 0 configs/lazylibrarian/config/config.ini \
-  $'[GENERAL]\naudiobook_type = m4b, wav, m4a, mp3, flac, opus, ogg, aac\napi_key'
+same_file "a key written without spaces is replaced, keeping its types" configs/lazylibrarian/config/config.ini \
+  $'[GENERAL]\naudiobook_type = m4b, wav, m4a, mp3, flac, opus, ogg, aac\napi_key = key-lazylibrarian\n'
 if [[ "$(grep -c -i '^audiobook_type' "${__repo}/configs/lazylibrarian/config/config.ini")" -ne 1 ]]; then
   fail "the key is not added a second time"
 fi
@@ -546,7 +555,7 @@ run
 rm "${__bin}/python3"
 check "a failed write is reported" 1 out "[LazyLibrarian] WARNING: could not write its audiobook types (exit 1)."
 check "and LazyLibrarian is started again" 1 log "podman stop --time 60 lazylibrarian" "podman start lazylibrarian"
-check "and its file is left as it was" 1 configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
+same_file "and its file is left as it was" configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
 
 # A write that fails after the new content is written (here, moving it over
 # the old file) leaves the original whole and no temporary file behind.
@@ -559,7 +568,7 @@ chmod +x "${__bin}/python3"
 run
 rm "${__bin}/python3"
 check "a write that fails midway is reported" 1 out "[LazyLibrarian] WARNING: could not write its audiobook types (exit 1)."
-check "and the file is left whole" 1 configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
+same_file "and the file is left whole" configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
 if compgen -G "${__repo}/configs/lazylibrarian/config/.config.ini.*" >/dev/null; then
   fail "no temporary file is left behind"
 fi
@@ -570,14 +579,14 @@ deployment
 put configs/lazylibrarian/config/config.ini $'[SABNZBD]\naudiobook_type = mp3\n[GENERAL]\naudiobook_type = m4b\n'
 stopped lazylibrarian
 run
-check "only the [GENERAL] key changes" 0 configs/lazylibrarian/config/config.ini \
+same_file "only the [GENERAL] key changes" configs/lazylibrarian/config/config.ini \
   $'[SABNZBD]\naudiobook_type = mp3\n[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\n'
 deployment
 put configs/lazylibrarian/config/config.ini $'[SABNZBD]\naudiobook_type = mp3\n'
 run
 check "a key outside [GENERAL] is not taken for it" 0 out \
   "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its audiobook types to LazyLibrarian."
-check "and the file is unchanged" 0 configs/lazylibrarian/config/config.ini $'[SABNZBD]\naudiobook_type = mp3\n'
+same_file "and the file is unchanged" configs/lazylibrarian/config/config.ini $'[SABNZBD]\naudiobook_type = mp3\n'
 
 # A file the check cannot read fails the run instead of passing as complete.
 deployment
