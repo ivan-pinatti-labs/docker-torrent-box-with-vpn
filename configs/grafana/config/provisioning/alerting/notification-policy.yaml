@@ -23,3 +23,9 @@ policies:
         receiver: Email
         group_interval: 24h
         repeat_interval: 24h
+      # Same for a download an arr app could not import: it waits for days.
+      - matchers:
+          - alertname = "Import Failed > 6 Hours"
+        receiver: Email
+        group_interval: 24h
+        repeat_interval: 24h

@@ -123,3 +123,34 @@ def test_port_mismatch_alerts_after_15_minutes():
     # The test above holds the floor; this holds the chosen value, so a return
     # to the old 30m fails here.
     assert _port_mismatch_rule()["for"] == "15m"
+
+
+def _rule(title: str) -> dict:
+    return next(rule for rule in _rules() if rule["title"] == title)
+
+
+def test_import_failed_watches_the_arr_queues():
+    """Finished downloads stuck before import, per app, from exportarr (#556)."""
+    (expr,) = _exprs(_rule("Import Failed > 6 Hours"))
+    assert 'download_state=~"importFailed|importBlocked"' in expr
+    assert "sum by (url)" in expr
+    for app in ("sonarr", "radarr", "lidarr", "whisparr"):
+        assert app in expr
+
+
+def test_import_failed_is_quiet_without_its_exporter():
+    """Until exportarr runs (#442) there is no data, which must not alert."""
+    rule = _rule("Import Failed > 6 Hours")
+    assert rule["noDataState"] == "OK"
+    assert rule["for"] == "6h"
+
+
+def test_import_failed_notifies_daily():
+    policy = yaml.safe_load((RULES.parent / "notification-policy.yaml").read_text())
+    routes = policy["policies"][0]["routes"]
+    route = next(
+        r
+        for r in routes
+        if 'alertname = "Import Failed > 6 Hours"' in r.get("matchers", [])
+    )
+    assert route["repeat_interval"] == "24h"
