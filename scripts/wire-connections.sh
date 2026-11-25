@@ -2362,17 +2362,43 @@ ensure_cleanuparr_qbittorrent() {
     configuration/download_client/test configuration/download_client password clientId "$payload"
 }
 
+# The instance this script made for an arr app, found by its name, deleted:
+# left in place for an app that is gone, Cleanuparr fails every health check
+# trying to reach it. Instances added by hand under other names are kept.
+# Args: app name reason
+remove_cleanuparr_arr() {
+  local app="$1" name="$2" reason="$3" list existing response
+  if ! list=$(cleanuparr_keyed GET "configuration/${app}"); then
+    echo "[Cleanuparr] WARNING: could not list its ${name} instances: ${list:0:300}"
+    return 1
+  fi
+  existing=$(jq --arg key instances --arg name "$name" '.[$key] | map(select(.name == $name)) | first' <<<"$list")
+  if [[ "$existing" == null ]]; then
+    return 0
+  fi
+  echo "[Cleanuparr] Removing ${name}, ${reason}..."
+  if ! response=$(cleanuparr_keyed DELETE "configuration/${app}/instances/$(jq -r '.id' <<<"$existing")"); then
+    echo "[Cleanuparr] WARNING: could not remove ${name}: ${response:0:300}"
+    return 1
+  fi
+}
+
 # An arr app, over HTTPS by its service name, with the key its config.xml
-# holds. Skipped when its profile is off. Sonarr too, on its HTTPS port,
+# holds. Removed when its profile is off. Sonarr too, on its HTTPS port,
 # although Prowlarr reaches it over plain HTTP: every app serves the stack's
 # certificate, which Cleanuparr accepts on local addresses. Cleanuparr only
 # reads the version to tell Whisparr 2 from 3. Args: app name url version
 ensure_cleanuparr_arr() {
   local app="$1" name="$2" url="$3" version="$4" payload profile
-  # A profile missing from .env counts as on, like everywhere else here; a
-  # container left behind by one switched off is not wired.
+  # A profile missing from .env counts as on, like everywhere else here. One
+  # switched off loses its instance, even with its container left behind; an
+  # app that is on but has no container yet is left alone until it has one.
   profile=$(env_value "${app^^}_PROFILE" 2>/dev/null) || profile=enabled
-  if [[ "$profile" != enabled ]] || ! podman container exists "$(cname "$app")" 2>/dev/null; then
+  if [[ "$profile" != enabled ]]; then
+    remove_cleanuparr_arr "$app" "$name" "its profile is off"
+    return
+  fi
+  if ! podman container exists "$(cname "$app")" 2>/dev/null; then
     return 0
   fi
   payload=$(jq -cn --arg name "$name" --arg url "$url" --arg apiKey "$(get_xml_apikey "configs/${app}/config/config.xml")" --argjson version "$version" '{enabled: true, name: $name, url: $url, apiKey: $apiKey, version: $version}')
@@ -2433,6 +2459,8 @@ wire_cleanuparr() {
   ensure_cleanuparr_arr radarr Radarr "https://radarr:${RADARR_HTTPS_PORT}/radarr" 6 || failed=1
   ensure_cleanuparr_arr sonarr Sonarr "https://sonarr:${SONARR_HTTPS_PORT}/sonarr" 4 || failed=1
   ensure_cleanuparr_arr whisparr Whisparr "https://whisparr:${WHISPARR_HTTPS_PORT}/whisparr" 3 || failed=1
+  # Retired from the stack (#545); a deployment that ran it still has one.
+  remove_cleanuparr_arr readarr Readarr "retired from the stack" || failed=1
   ensure_cleanuparr_queue_cleaner || failed=1
   if [[ "$failed" -ne 0 ]]; then
     echo "[Cleanuparr] WARNING: not everything was wired, see above. Re-run 'make wire_connections'."

@@ -251,6 +251,8 @@ EOF
     rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/${app}$" 0 \
       "{\"instances\": [{\"id\": \"${app}-id\", \"name\": \"${CLEANUPARR_NAME[${app}]}\", \"url\": \"${CLEANUPARR_URL[${app}]}\"}]}"$'\n200'
   done
+  # No Readarr instance left from before it was retired.
+  rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/readarr$" 0 $'{"instances": []}\n200'
   rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/queue_cleaner$" 0 "${QUEUE_CLEANER_WIRED}"$'\n200'
 }
 
@@ -1212,13 +1214,48 @@ check "a key that cannot be read is not saved" 0 out \
 check "and the old key file stays" 0 configs/cleanuparr/secrets/api_key.txt key-cleanuparr
 
 # An arr app whose profile is off is not wired, even with its container left
-# behind; one whose profile .env does not name is.
+# behind, and loses the instance this script made; one whose profile .env does
+# not name is wired, and one that is on but has no container yet is left
+# alone. Readarr, retired, loses its instance too; ones added by hand stay.
 deployment
 containers cleanuparr qbittorrent sonarr whisparr
 printf 'SONARR_PROFILE=disabled\n' >>"${__repo}/.env"
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/readarr$" 0 \
+  $'{"instances": [{"id": "mine", "name": "Readarr 4K"}, {"id": "readarr-id", "name": "Readarr"}]}\n200'
+rule "${CLEANUPARR} DELETE .*${CLEANUPARR_API}/configuration/[a-z]+/instances/[a-z-]+$" 0 $'\n204'
 run
-refute "a switched off app is not wired" log "/cleanuparr/api/configuration/sonarr"
+check "a switched off app and Readarr lose their instances" 0 out \
+  "[Cleanuparr] Removing Sonarr, its profile is off..." "[Cleanuparr] Removing Readarr, retired from the stack..." \
+  "[Cleanuparr] Done."
+check "by their ids" 0 log \
+  "/cleanuparr/api/configuration/sonarr/instances/sonarr-id" "/cleanuparr/api/configuration/readarr/instances/readarr-id"
+refute "a switched off app is not wired" log "/cleanuparr/api/configuration/sonarr/instances/test"
+refute "an instance added by hand stays" log "/instances/mine"
+refute "an app that is on keeps its instance without a container" log "/cleanuparr/api/configuration/radarr"
 check "an app .env names no profile for is" 0 log "/cleanuparr/api/configuration/whisparr"
+
+# Nothing to remove: a switched off app with no instance.
+deployment
+containers cleanuparr qbittorrent
+printf 'SONARR_PROFILE=disabled\n' >>"${__repo}/.env"
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/sonarr$" 0 $'{"instances": []}\n200'
+run
+refute "nothing is removed" log "DELETE"
+check "and nothing is reported" 0 out "[Cleanuparr] Done."
+
+# An instance that cannot be listed or removed is reported, and the rest goes on.
+deployment
+containers cleanuparr qbittorrent
+printf 'SONARR_PROFILE=disabled\n' >>"${__repo}/.env"
+rule "${CLEANUPARR} DELETE .*${CLEANUPARR_API}/configuration/sonarr/instances/sonarr-id$" 0 $'{"title": "delete refused"}\n500'
+rule "${CLEANUPARR} GET .*${CLEANUPARR_API}/configuration/readarr$" 0 $'{"title": "list refused"}\n500'
+run
+check "both failures are reported" 0 out \
+  "[Cleanuparr] Removing Sonarr, its profile is off..." \
+  "[Cleanuparr] WARNING: could not remove Sonarr: {\"title\": \"delete refused\"}" \
+  "[Cleanuparr] WARNING: could not list its Readarr instances: {\"title\": \"list refused\"}" \
+  "[Cleanuparr] WARNING: not everything was wired, see above. Re-run 'make wire_connections'."
+check "the queue cleaner is still checked" 0 log "/cleanuparr/api/configuration/queue_cleaner"
 
 # Every other part failing, in two runs, each failure reported and none
 # stopping the rest.
