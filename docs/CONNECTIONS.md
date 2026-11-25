@@ -367,6 +367,11 @@ set up just confirms it and moves on.
   shutdown). This matters most for Mylar: on every start it checks SABnzbd
   with no timeout before opening its own port, so a wrong address held each
   restart up for about 270s on CI runners (issue #379).
+- **LazyLibrarian's folders** (#554): `download_dir` gains the folders
+  qBittorrent's `lazylibrarian` category and SABnzbd's `ebooks` category finish
+  in, and `ebook_dir` moves from the old `/data/media/ebooks` to the Calibre
+  library while the Calibre import is on, in the same edit as the audiobook
+  types below; see [LAZYLIBRARIAN.md](LAZYLIBRARIAN.md#folders).
 - **LazyLibrarian's audiobook file types** (#547): before snatching an
   audiobook, LazyLibrarian compares the release's files with `audiobook_type`
   and turns down one whose files are all of a type the list lacks, so the

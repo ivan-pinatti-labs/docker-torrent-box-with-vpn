@@ -11,9 +11,9 @@ imp_comiccover = False
 opf_tags = False
 wishlist_tags = False
 wishlist_genres = False
-ebook_dir = /data/media/ebooks
+ebook_dir = /data/media/calibre-library
 audio_dir = /data/media/audiobooks
-download_dir = /data/downloads
+download_dir = /data/downloads,/data/torrents/ebooks,/data/usenet/complete/ebooks
 audiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac
 user_agent = Mozilla/5.0 (X11; Linux x86_64; rv:85.0) Gecko/20100101 Firefox/85.0
 

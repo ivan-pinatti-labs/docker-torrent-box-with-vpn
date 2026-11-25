@@ -404,7 +404,7 @@ check "a wired stack is left alone" 0 out \
   "[qBittorrent] The mylar category already acts at its share limit (RemoveWithContent), skipping." \
   "[Mylar] Download client addresses already match GLUETUN_SERVICES_IP, skipping." \
   "[LazyLibrarian] Download client addresses already match GLUETUN_SERVICES_IP, skipping." \
-  "[LazyLibrarian] Audiobook types already include m4b m4a mp3 flac opus ogg aac, skipping." \
+  "[LazyLibrarian] Audiobook types, download folders and ebook folder already set, skipping." \
   "[Cleanuparr] qBittorrent already connected, skipping." "[Cleanuparr] Sonarr already connected, skipping." \
   "[Cleanuparr] Whisparr already connected, skipping." "[Cleanuparr] Done."
 check "a wired Cleanuparr still has its stored secrets tested" 0 log \
@@ -507,7 +507,7 @@ api_key = key-lazylibrarian
 EOF
 run
 check "missing audiobook types are added" 0 out \
-  "[LazyLibrarian] Adding audiobook types: m4a opus ogg aac..." \
+  "[LazyLibrarian] Adding audiobook types m4a opus ogg aac..." \
   "[LazyLibrarian]   audiobook_type = m4b, flac, mp3, wav, m4a, opus, ogg, aac"
 same_file "and kept after the ones it had" configs/lazylibrarian/config/config.ini \
   $'[GENERAL]\naudiobook_type = m4b, flac, mp3, wav, m4a, opus, ogg, aac\napi_key = key-lazylibrarian\n\n'
@@ -532,7 +532,7 @@ deployment
 put configs/lazylibrarian/config/config.ini "api_key = key-lazylibrarian"
 run
 check "a file without [GENERAL] is left alone" 0 out \
-  "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its audiobook types to LazyLibrarian."
+  "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its settings to LazyLibrarian."
 refute "and gains no key" configs/lazylibrarian/config/config.ini "audiobook_type"
 
 # Spelled the other ways LazyLibrarian's ConfigParser reads it: the key is
@@ -558,7 +558,7 @@ printf '#!/usr/bin/env bash\n[[ "${2:-}" == write ]] && exit 1\nexec %q "$@"\n' 
 chmod +x "${__bin}/python3"
 run
 rm "${__bin}/python3"
-check "a failed write is reported" 1 out "[LazyLibrarian] WARNING: could not write its audiobook types (exit 1)."
+check "a failed write is reported" 1 out "[LazyLibrarian] WARNING: could not write its settings (exit 1)."
 check "and LazyLibrarian is started again" 1 log "podman stop --time 60 lazylibrarian" "podman start lazylibrarian"
 same_file "and its file is left as it was" configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
 
@@ -572,7 +572,7 @@ printf '#!/usr/bin/env bash\nPYTHONPATH=%q exec %q "$@"\n' "${__scratch}/fail-mo
 chmod +x "${__bin}/python3"
 run
 rm "${__bin}/python3"
-check "a write that fails midway is reported" 1 out "[LazyLibrarian] WARNING: could not write its audiobook types (exit 1)."
+check "a write that fails midway is reported" 1 out "[LazyLibrarian] WARNING: could not write its settings (exit 1)."
 same_file "and the file is left whole" configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
 if compgen -G "${__repo}/configs/lazylibrarian/config/.config.ini.*" >/dev/null; then
   fail "no temporary file is left behind"
@@ -619,7 +619,7 @@ printf '#!/usr/bin/env bash\nPYTHONPATH=%q exec %q "$@"\n' "${__scratch}/fail-wr
 chmod +x "${__bin}/python3"
 run
 rm "${__bin}/python3"
-check "a write that fails partway is reported" 1 out "[LazyLibrarian] WARNING: could not write its audiobook types (exit 1)."
+check "a write that fails partway is reported" 1 out "[LazyLibrarian] WARNING: could not write its settings (exit 1)."
 same_file "and the file is left whole" configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
 if compgen -G "${__repo}/configs/lazylibrarian/config/.config.ini.*" >/dev/null; then
   fail "no temporary file is left behind after a partial write"
@@ -637,7 +637,7 @@ deployment
 put configs/lazylibrarian/config/config.ini $'[SABNZBD]\naudiobook_type = mp3\n'
 run
 check "a key outside [GENERAL] is not taken for it" 0 out \
-  "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its audiobook types to LazyLibrarian."
+  "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its settings to LazyLibrarian."
 same_file "and the file is unchanged" configs/lazylibrarian/config/config.ini $'[SABNZBD]\naudiobook_type = mp3\n'
 
 # What ConfigParser accepts, LazyLibrarian included, is read the same way: an
@@ -656,6 +656,32 @@ run
 same_file "an indented header ends [GENERAL]" configs/lazylibrarian/config/config.ini \
   $'[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\n\n[SABNZBD]\naudiobook_type = wav\n\n'
 
+# Folders (#554): the download folders gain the ones qBittorrent and SABnzbd
+# finish in, and the ebook folder moves to the Calibre library while it is
+# still the old default and the Calibre import is on.
+deployment
+put configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\nebook_dir = /data/media/ebooks\ndownload_dir = /data/downloads\n[CALIBRE]\nimp_calibre_ebook = True\n'
+run
+check "the folders are corrected" 0 out \
+  "[LazyLibrarian] Adding download folders /data/torrents/ebooks /data/usenet/complete/ebooks..." \
+  "[LazyLibrarian] Adding ebook folder /data/media/calibre-library..." \
+  "[LazyLibrarian]   ebook_dir = /data/media/calibre-library"
+same_file "in one write" configs/lazylibrarian/config/config.ini \
+  $'[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\nebook_dir = /data/media/calibre-library\ndownload_dir = /data/downloads,/data/torrents/ebooks,/data/usenet/complete/ebooks\n\n[CALIBRE]\nimp_calibre_ebook = True\n\n'
+if [[ "$(grep -c 'podman stop --time 60 lazylibrarian' "${__state}/log")" -ne 1 ]]; then
+  fail "LazyLibrarian is stopped once for every setting"
+fi
+
+# Without the Calibre import the ebook folder stays, and a download folder
+# added by hand is kept.
+deployment
+put configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\nebook_dir = /data/media/ebooks\ndownload_dir = /data/downloads,/srv/books\n[CALIBRE]\nimp_calibre_ebook = False\n'
+stopped lazylibrarian
+run
+same_file "only the download folders change" configs/lazylibrarian/config/config.ini \
+  $'[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\nebook_dir = /data/media/ebooks\ndownload_dir = /data/downloads,/srv/books,/data/torrents/ebooks,/data/usenet/complete/ebooks\n\n[CALIBRE]\nimp_calibre_ebook = False\n\n'
+refute "and the ebook folder is not touched" out "Adding ebook folder"
+
 # A file the check cannot read fails the run instead of passing as complete.
 deployment
 put configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
@@ -663,8 +689,8 @@ printf '#!/usr/bin/env bash\n[[ "${2:-}" == check ]] && exit 1\nexec %q "$@"\n' 
 chmod +x "${__bin}/python3"
 run
 rm "${__bin}/python3"
-check "a failed read is reported" 1 out "[LazyLibrarian] WARNING: could not read its audiobook types (exit 1)."
-refute "not passed as complete" out "[LazyLibrarian] Audiobook types already include"
+check "a failed read is reported" 1 out "[LazyLibrarian] WARNING: could not read its settings (exit 1)."
+refute "not passed as complete" out "[LazyLibrarian] Audiobook types, download folders and ebook folder already set"
 
 # The same for a download client address Mylar's file will not take.
 deployment
