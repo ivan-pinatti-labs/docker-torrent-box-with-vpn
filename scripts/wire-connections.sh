@@ -1205,12 +1205,12 @@ ensure_qbittorrent_reverse_proxy() {
 # share limits for a category, and is left as it is.
 # Args: base_url jar
 ensure_qbittorrent_mylar_share_action() {
-  local base_url="$1" jar="$2" categories action
-  if ! categories=$(container_curl qbittorrent -sk --fail -b "$jar" "${base_url}/torrents/categories"); then
+  local base_url="$1" jar="$2" categories action save_path
+  if ! categories=$(container_curl qbittorrent -sk --fail -b "$jar" "${base_url}/torrents/categories") ||
+    ! action=$(jq -er "$(mylar_share_action_jq)" <<<"$categories" 2>/dev/null); then
     echo "[qBittorrent] WARNING: could not read its categories, so the mylar share limit action was not checked."
     return 1
   fi
-  action=$(jq -r 'if has("mylar") then (.mylar.share_limit_action // "unsupported") else "none" end' <<<"$categories")
   if [[ "$action" == none ]]; then
     echo "[qBittorrent] No mylar category, skipping its share limit action."
     return 0
@@ -1221,23 +1221,36 @@ ensure_qbittorrent_mylar_share_action() {
     echo "[qBittorrent] The mylar category already acts at its share limit (${action}), skipping."
     return 0
   fi
+  # savePath goes back unchanged: qBittorrent 5.2's editCategory requires it.
+  save_path=$(jq -r '.mylar.savePath // ""' <<<"$categories")
   echo "[qBittorrent] Removing mylar's torrents with their files at the share limit..."
   if ! container_curl qbittorrent -sk --fail -b "$jar" -o /dev/null \
-    --data-urlencode "category=mylar" --data-urlencode "shareLimitAction=RemoveWithContent" \
-    "${base_url}/torrents/editCategory"; then
+    --data-urlencode "category=mylar" --data-urlencode "savePath=${save_path}" \
+    --data-urlencode "shareLimitAction=RemoveWithContent" "${base_url}/torrents/editCategory"; then
     echo "[qBittorrent] WARNING: editCategory failed, so mylar's share limit action was not set."
     return 1
   fi
+  # Read back: a qBittorrent whose editCategory has no share limits (before
+  # 5.3) answers 200 and changes nothing.
+  if ! categories=$(container_curl qbittorrent -sk --fail -b "$jar" "${base_url}/torrents/categories") ||
+    [[ "$(jq -er "$(mylar_share_action_jq)" <<<"$categories" 2>/dev/null)" != RemoveWithContent ]]; then
+    echo "[qBittorrent] This qBittorrent did not take mylar's share limit action through its API; set it under Tools > Options > Categories, or upgrade."
+    return 0
+  fi
   echo "[qBittorrent] Done."
+}
+
+# The mylar category's share limit action: "none" without the category and
+# "unsupported" when qBittorrent reports no action for it.
+mylar_share_action_jq() {
+  cat <<'JQ'
+if has("mylar") then (.mylar.share_limit_action // "unsupported") else "none" end
+JQ
 }
 
 # Logs in, reads qBittorrent's preferences, sets reverse proxy trust and
 # mylar's share limit action.
 wire_qbittorrent() {
-  if [[ -z "$NGINX_SERVICES_IP" ]]; then
-    echo "[qBittorrent] NGINX_SERVICES_IP is not set, skipping reverse proxy trust."
-    return 0
-  fi
   if ! podman container exists "$(cname qbittorrent)" 2>/dev/null; then
     echo "[qBittorrent] Container doesn't exist, skipping."
     return 0
@@ -1251,13 +1264,16 @@ wire_qbittorrent() {
   password=$(<"$QBITTORRENT_PASSWORD_FILE")
   if ! retry 120 "[qBittorrent]" container_curl qbittorrent -sk --fail -c "$jar" -o /dev/null \
     --data-urlencode "username=${username}" --data-urlencode "password=${password}" "${base_url}/auth/login"; then
-    echo "[qBittorrent] Not reachable, skipping reverse proxy trust."
+    echo "[qBittorrent] Not reachable, skipping reverse proxy trust and mylar's share limit action."
     return 0
   fi
 
   # A refused login still answers 200 (see rotate-passwords.sh), so the
   # session is proven by this read succeeding, not by the login's status.
-  if ! preferences=$(container_curl qbittorrent -sk --fail -b "$jar" "${base_url}/app/preferences"); then
+  # Reverse proxy trust needs nginx's address; the category does not.
+  if [[ -z "$NGINX_SERVICES_IP" ]]; then
+    echo "[qBittorrent] NGINX_SERVICES_IP is not set, skipping reverse proxy trust."
+  elif ! preferences=$(container_curl qbittorrent -sk --fail -b "$jar" "${base_url}/app/preferences"); then
     echo "[qBittorrent] WARNING: could not read its preferences, so reverse proxy trust was not checked."
     status=1
   elif ! ensure_qbittorrent_reverse_proxy "$base_url" "$jar" "$preferences"; then

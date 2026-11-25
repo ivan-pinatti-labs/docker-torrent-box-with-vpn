@@ -96,9 +96,11 @@ category's share limit action is `RemoveWithContent`, with its ratio and
 seeding time left on the global limits; Mylar's own copy in
 `data/media/comics` is a hardlink or a copy, and stays. The seed
 `categories.json` sets it, and the script sets it on an existing `mylar`
-category through `torrents/editCategory` (qBittorrent 5.3 and later), only
-while the category's action is still `Default`, so an action chosen by hand is
-kept.
+category through `torrents/editCategory`, only while the category's action is
+still `Default`, so an action chosen by hand is kept. It reads the category back
+afterwards: a qBittorrent before 5.3 accepts the call and changes nothing, and
+is then reported with where to set it by hand. This runs whether or not
+`NGINX_SERVICES_IP` is set, which only reverse proxy trust needs.
 
 ### Jellyfin library updates (Sonarr, Radarr, Lidarr, Whisparr → Jellyfin)
 

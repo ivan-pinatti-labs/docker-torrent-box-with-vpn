@@ -679,12 +679,35 @@ check "and Mylar is started again" 1 log "podman stop mylar" "podman start mylar
 # and only then.
 deployment
 containers qbittorrent
-rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "share_limit_action": "Default"}}'
+# The read back after the edit finds the new action.
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "savePath": "/data/torrents/comics", "share_limit_action": "RemoveWithContent"}}'
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "savePath": "/data/torrents/comics", "share_limit_action": "Default"}}' 1
 run
 check "a Default mylar action becomes RemoveWithContent" 0 out \
-  "[qBittorrent] Removing mylar's torrents with their files at the share limit..."
-check "through editCategory" 0 log "--data-urlencode category=mylar --data-urlencode shareLimitAction=RemoveWithContent" \
+  "[qBittorrent] Removing mylar's torrents with their files at the share limit..." "[qBittorrent] Done."
+check "through editCategory, its save path sent back unchanged" 0 log \
+  "--data-urlencode category=mylar --data-urlencode savePath=/data/torrents/comics --data-urlencode shareLimitAction=RemoveWithContent" \
   "/api/v2/torrents/editCategory"
+
+# A qBittorrent that takes the edit but keeps Default (5.2) is reported, not
+# counted as a failure.
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "savePath": "/data/torrents/comics", "share_limit_action": "Default"}}'
+run
+check "an edit that does not take is reported" 0 out \
+  "[qBittorrent] This qBittorrent did not take mylar's share limit action through its API; set it under Tools > Options > Categories, or upgrade."
+
+# Without nginx's address, the category is still set.
+deployment
+sed -i 's/^NGINX_SERVICES_IP=.*/NGINX_SERVICES_IP=/' "${__repo}/.env"
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "share_limit_action": "RemoveWithContent"}}'
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "share_limit_action": "Default"}}' 1
+run
+check "an empty nginx address skips only reverse proxy trust" 0 out \
+  "[qBittorrent] NGINX_SERVICES_IP is not set, skipping reverse proxy trust." \
+  "[qBittorrent] Removing mylar's torrents with their files at the share limit..."
 
 deployment
 containers qbittorrent
@@ -713,6 +736,15 @@ rule "${QBT_CATEGORIES}" 22 ""
 run
 check "unreadable categories are reported" 0 out \
   "[qBittorrent] WARNING: could not read its categories, so the mylar share limit action was not checked."
+
+# An empty answer is no answer either.
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 0 ""
+run
+check "an empty category answer is reported" 0 out \
+  "[qBittorrent] WARNING: could not read its categories, so the mylar share limit action was not checked."
+refute "not taken for a set action" out "already acts at its share limit"
 
 deployment
 containers qbittorrent
@@ -773,7 +805,7 @@ rule 'mylar curl -sk --max-time 10 -o /dev/null' 28 000
 rule 'exec qbittorrent curl .*/api/v2/auth/login$' 7 ""
 run
 check "failures are reported and the rest carries on" 0 out \
-  "[qBittorrent] ...still waiting (30s/120s)" "[qBittorrent] Not reachable, skipping reverse proxy trust." \
+  "[qBittorrent] ...still waiting (30s/120s)" "[qBittorrent] Not reachable, skipping reverse proxy trust and mylar's share limit action." \
   "[Audiobookshelf] ...still waiting (30s/180s)" "[Audiobookshelf] Not reachable, skipping." \
   "[Calibre-Web] app.db not initialized yet after 180s, skipping." \
   "[Jellyfin] Not reachable, skipping." "[whisparr] Not reachable, skipping." \
@@ -919,9 +951,9 @@ check "a value make passes down comes before .env.example's" 0 out \
 deployment
 sed -i 's/^NGINX_SERVICES_IP=.*/NGINX_SERVICES_IP=/' "${__repo}/.env"
 put .env.example "NGINX_SERVICES_IP=198.51.100.7"
-containers
+containers qbittorrent
 NGINX_SERVICES_IP=192.0.2.7 run
-check "qBittorrent is skipped when nginx's address is empty" 0 out \
+check "reverse proxy trust is skipped when nginx's address is empty" 0 out \
   "[qBittorrent] NGINX_SERVICES_IP is not set, skipping reverse proxy trust."
 
 # A key in neither file stops the run with its name, before any output.
