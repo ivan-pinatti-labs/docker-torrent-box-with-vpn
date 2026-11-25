@@ -1194,12 +1194,76 @@ ensure_qbittorrent_reverse_proxy() {
   echo "[qBittorrent] Done."
 }
 
-# Logs in, reads qBittorrent's preferences and sets reverse proxy trust.
-wire_qbittorrent() {
-  if [[ -z "$NGINX_SERVICES_IP" ]]; then
-    echo "[qBittorrent] NGINX_SERVICES_IP is not set, skipping reverse proxy trust."
+# Mylar never removes the torrents it grabs, with any client (it copies or
+# hardlinks the comic into data/media/comics), so with qBittorrent's default
+# Stop action they would sit in qBittorrent and in data/torrents/comics for
+# ever (#550). The mylar category removes them with their files at the share
+# limit instead; its ratio and seeding time stay on the global ones. The seed
+# categories.json sets this, and categories.json is seeded once, so an
+# existing category is given it here, but only while its action is still
+# Default: an action chosen by hand is kept. qBittorrent before 5.3 reports no
+# share limits for a category, and is left as it is.
+# Args: base_url jar
+ensure_qbittorrent_mylar_share_action() {
+  local base_url="$1" jar="$2" categories action
+  if ! categories=$(container_curl qbittorrent -sk --fail -b "$jar" "${base_url}/torrents/categories") ||
+    ! action=$(jq -er "$(mylar_share_action_jq)" <<<"$categories" 2>/dev/null); then
+    echo "[qBittorrent] WARNING: could not read its categories, so the mylar share limit action was not checked."
+    return 1
+  fi
+  if [[ "$action" == none ]]; then
+    echo "[qBittorrent] No mylar category, skipping its share limit action."
+    return 0
+  elif [[ "$action" == unsupported ]]; then
+    echo "[qBittorrent] This qBittorrent sets no share limits per category, skipping mylar's."
+    return 0
+  elif [[ "$action" != Default ]]; then
+    echo "[qBittorrent] The mylar category already acts at its share limit (${action}), skipping."
     return 0
   fi
+  # Before 5.3, editCategory rebuilds the category from the fields it is
+  # sent, resetting the rest (download path, limits), and ignores
+  # shareLimitAction, so it is not sent there at all.
+  local version major minor
+  if ! version=$(container_curl qbittorrent -sk --fail -b "$jar" "${base_url}/app/version"); then
+    echo "[qBittorrent] WARNING: could not read its version, so mylar's share limit action was not set."
+    return 1
+  fi
+  IFS=. read -r major minor _ <<<"${version#v}"
+  if [[ ! "$major" =~ ^[0-9]+$ || ! "$minor" =~ ^[0-9]+$ ]] || ((major < 5 || (major == 5 && minor < 3))); then
+    echo "[qBittorrent] ${version} cannot set a category's share limit action through its API; mylar's stays Default until qBittorrent is 5.3 or later."
+    return 0
+  fi
+  echo "[qBittorrent] Removing mylar's torrents with their files at the share limit..."
+  if ! container_curl qbittorrent -sk --fail -b "$jar" -o /dev/null \
+    --data-urlencode "category=mylar" --data-urlencode "shareLimitAction=RemoveWithContent" \
+    "${base_url}/torrents/editCategory"; then
+    echo "[qBittorrent] WARNING: editCategory failed, so mylar's share limit action was not set."
+    return 1
+  fi
+  # Read back, so a silently ignored edit is not reported as done.
+  if ! categories=$(container_curl qbittorrent -sk --fail -b "$jar" "${base_url}/torrents/categories"); then
+    echo "[qBittorrent] WARNING: could not read its categories back, so mylar's share limit action is unconfirmed."
+    return 1
+  fi
+  if [[ "$(jq -er "$(mylar_share_action_jq)" <<<"$categories" 2>/dev/null)" != RemoveWithContent ]]; then
+    echo "[qBittorrent] WARNING: qBittorrent accepted the edit but mylar's share limit action is still not RemoveWithContent."
+    return 1
+  fi
+  echo "[qBittorrent] Done."
+}
+
+# The mylar category's share limit action: "none" without the category and
+# "unsupported" when qBittorrent reports no action for it.
+mylar_share_action_jq() {
+  cat <<'JQ'
+if has("mylar") then (.mylar.share_limit_action // "unsupported") else "none" end
+JQ
+}
+
+# Logs in, reads qBittorrent's preferences, sets reverse proxy trust and
+# mylar's share limit action.
+wire_qbittorrent() {
   if ! podman container exists "$(cname qbittorrent)" 2>/dev/null; then
     echo "[qBittorrent] Container doesn't exist, skipping."
     return 0
@@ -1213,18 +1277,22 @@ wire_qbittorrent() {
   password=$(<"$QBITTORRENT_PASSWORD_FILE")
   if ! retry 120 "[qBittorrent]" container_curl qbittorrent -sk --fail -c "$jar" -o /dev/null \
     --data-urlencode "username=${username}" --data-urlencode "password=${password}" "${base_url}/auth/login"; then
-    echo "[qBittorrent] Not reachable, skipping reverse proxy trust."
+    echo "[qBittorrent] Not reachable, skipping reverse proxy trust and mylar's share limit action."
     return 0
   fi
 
   # A refused login still answers 200 (see rotate-passwords.sh), so the
   # session is proven by this read succeeding, not by the login's status.
-  if ! preferences=$(container_curl qbittorrent -sk --fail -b "$jar" "${base_url}/app/preferences"); then
+  # Reverse proxy trust needs nginx's address; the category does not.
+  if [[ -z "$NGINX_SERVICES_IP" ]]; then
+    echo "[qBittorrent] NGINX_SERVICES_IP is not set, skipping reverse proxy trust."
+  elif ! preferences=$(container_curl qbittorrent -sk --fail -b "$jar" "${base_url}/app/preferences"); then
     echo "[qBittorrent] WARNING: could not read its preferences, so reverse proxy trust was not checked."
     status=1
   elif ! ensure_qbittorrent_reverse_proxy "$base_url" "$jar" "$preferences"; then
     status=1
   fi
+  ensure_qbittorrent_mylar_share_action "$base_url" "$jar" || status=1
   podman exec "$(cname qbittorrent)" rm -f "$jar"
   return "$status"
 }

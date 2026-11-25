@@ -250,6 +250,13 @@ def index_of(doc: dict, a: dict) -> list:
 
 FILTERS = {
     ".": lambda d, a: [d],
+    # The mylar category's share limit action, "none" without the category
+    # and "unsupported" when qBittorrent reports no action for it.
+    'if has("mylar") then (.mylar.share_limit_action // "unsupported") else "none" end': lambda d, a: [
+        (d["mylar"].get("share_limit_action") or "unsupported")
+        if "mylar" in d
+        else "none"
+    ],
     ".id": lambda d, a: [d.get("id")],
     ".name": lambda d, a: [d.get("name")],
     ".username": lambda d, a: [d.get("username")],

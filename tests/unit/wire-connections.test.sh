@@ -47,6 +47,7 @@ readonly QUEUE_CLEANER_WIRED='{"enabled":true,"cronExpression":"0 0/5 * * * ?","
 # What bootstrap seeds Jellyfin's key file with, a key Jellyfin never issued.
 readonly JELLYFIN_PLACEHOLDER=0123456789abcdef0123456789abcdef # pragma: allowlist secret
 readonly QBT_PREFERENCES='exec qbittorrent curl -sk --fail -b \S+ \S+/api/v2/app/preferences$'
+readonly QBT_CATEGORIES='exec qbittorrent curl -sk --fail -b \S+ \S+/api/v2/torrents/categories$'
 
 # calibre_web_db [<database dir>] [<users>] [<books dir>]: Calibre-Web's
 # app.db with its settings row, or with no settings table at all when given
@@ -230,6 +231,9 @@ EOF
   rule 'mylar curl -sk --max-time 10 -o /dev/null' 0 200
   # qBittorrent, already trusting only nginx as its reverse proxy.
   rule "${QBT_PREFERENCES}" 0 '{"web_ui_reverse_proxy_enabled": true, "web_ui_reverse_proxies_list": "192.0.2.5"}'
+  # ... and removing mylar's torrents with their files at the share limit.
+  rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "share_limit_action": "RemoveWithContent"}, "sonarr": {"name": "sonarr", "share_limit_action": "Default"}}'
+  rule 'exec qbittorrent curl -sk --fail -b \S+ \S+/api/v2/app/version$' 0 "v5.3.0"
   # Cleanuparr, set up, with its key saved, qBittorrent and every arr app
   # connected, and its queue cleaner on. Requests carry no --fail, so each
   # answer is the body, then the status curl's -w appends.
@@ -397,6 +401,7 @@ check "a wired stack is left alone" 0 out \
   "[Prowlarr] Indexer 'Internet Archive' already exists, skipping." \
   "[Prowlarr] Indexers present in every enabled arr app." "[Mylar] Already has comics, skipping placeholder." \
   "[qBittorrent] Already trusts only nginx (192.0.2.5) as its reverse proxy, skipping." \
+  "[qBittorrent] The mylar category already acts at its share limit (RemoveWithContent), skipping." \
   "[Mylar] Download client addresses already match GLUETUN_SERVICES_IP, skipping." \
   "[LazyLibrarian] Download client addresses already match GLUETUN_SERVICES_IP, skipping." \
   "[LazyLibrarian] Audiobook types already include m4b m4a mp3 flac opus ogg aac, skipping." \
@@ -671,6 +676,125 @@ rm "${__bin}/sed"
 check "a failed address edit is reported" 1 out "[Mylar] WARNING: could not edit configs/mylar/config/mylar/config.ini (exit 4)."
 check "and Mylar is started again" 1 log "podman stop mylar" "podman start mylar"
 
+# The mylar category's share limit action (#550): set while still Default,
+# and only then.
+deployment
+containers qbittorrent
+# The read back after the edit finds the new action.
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "savePath": "/data/torrents/comics", "share_limit_action": "RemoveWithContent"}}'
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "savePath": "/data/torrents/comics", "share_limit_action": "Default"}}' 1
+run
+check "a Default mylar action becomes RemoveWithContent" 0 out \
+  "[qBittorrent] Removing mylar's torrents with their files at the share limit..." "[qBittorrent] Done."
+check "through editCategory, with the action alone" 0 log \
+  "--data-urlencode category=mylar --data-urlencode shareLimitAction=RemoveWithContent" \
+  "/api/v2/torrents/editCategory"
+refute "and not its save path" log "savePath="
+
+# An edit qBittorrent accepts but does not apply is reported.
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "savePath": "/data/torrents/comics", "share_limit_action": "Default"}}'
+run
+check "an edit that does not take is reported" 0 out \
+  "[qBittorrent] WARNING: qBittorrent accepted the edit but mylar's share limit action is still not RemoveWithContent."
+
+# A read back that fails after a successful edit is reported as unconfirmed.
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 22 ""
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "savePath": "/data/torrents/comics", "share_limit_action": "Default"}}' 1
+run
+check "a read back that fails after the edit is reported" 0 out \
+  "[qBittorrent] Removing mylar's torrents with their files at the share limit..." \
+  "[qBittorrent] WARNING: could not read its categories back, so mylar's share limit action is unconfirmed."
+
+# qBittorrent 5.2 reports the action but its editCategory would reset the
+# category's other settings, so nothing is sent.
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "savePath": "/data/torrents/comics", "download_path": "/data/incomplete", "ratio_limit": 1.5, "share_limit_action": "Default"}}'
+rule 'exec qbittorrent curl -sk --fail -b \S+ \S+/api/v2/app/version$' 0 "v5.2.4"
+run
+check "qBittorrent 5.2 is left alone" 0 out \
+  "[qBittorrent] v5.2.4 cannot set a category's share limit action through its API; mylar's stays Default until qBittorrent is 5.3 or later."
+refute "with no edit that would reset it" log "editCategory"
+
+# A version the check cannot parse is treated as too old.
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "share_limit_action": "Default"}}'
+rule 'exec qbittorrent curl -sk --fail -b \S+ \S+/api/v2/app/version$' 0 "v5.x.0"
+run
+check "an unparsable version is left alone" 0 out \
+  "[qBittorrent] v5.x.0 cannot set a category's share limit action through its API; mylar's stays Default until qBittorrent is 5.3 or later."
+refute "with no edit" log "editCategory"
+
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "share_limit_action": "Default"}}'
+rule 'exec qbittorrent curl -sk --fail -b \S+ \S+/api/v2/app/version$' 22 ""
+run
+check "an unreadable version is reported" 0 out \
+  "[qBittorrent] WARNING: could not read its version, so mylar's share limit action was not set."
+refute "and nothing is edited" log "editCategory"
+
+# Without nginx's address, the category is still set.
+deployment
+sed -i 's/^NGINX_SERVICES_IP=.*/NGINX_SERVICES_IP=/' "${__repo}/.env"
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "share_limit_action": "RemoveWithContent"}}'
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "share_limit_action": "Default"}}' 1
+run
+check "an empty nginx address skips only reverse proxy trust" 0 out \
+  "[qBittorrent] NGINX_SERVICES_IP is not set, skipping reverse proxy trust." \
+  "[qBittorrent] Removing mylar's torrents with their files at the share limit..."
+
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "share_limit_action": "Stop"}}'
+run
+check "an action set by hand is kept" 0 out "[qBittorrent] The mylar category already acts at its share limit (Stop), skipping."
+refute "and not changed" log "editCategory"
+
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 0 '{"sonarr": {"name": "sonarr"}}'
+run
+check "no mylar category is skipped" 0 out "[qBittorrent] No mylar category, skipping its share limit action."
+
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "savePath": "/data/torrents/comics"}}'
+run
+check "a qBittorrent without per category limits is left alone" 0 out \
+  "[qBittorrent] This qBittorrent sets no share limits per category, skipping mylar's."
+refute "with no edit" log "editCategory"
+
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 22 ""
+run
+check "unreadable categories are reported" 0 out \
+  "[qBittorrent] WARNING: could not read its categories, so the mylar share limit action was not checked."
+
+# An empty answer is no answer either.
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 0 ""
+run
+check "an empty category answer is reported" 0 out \
+  "[qBittorrent] WARNING: could not read its categories, so the mylar share limit action was not checked."
+refute "not taken for a set action" out "already acts at its share limit"
+
+deployment
+containers qbittorrent
+rule "${QBT_CATEGORIES}" 0 '{"mylar": {"name": "mylar", "share_limit_action": "Default"}}'
+rule 'exec qbittorrent curl .*/api/v2/torrents/editCategory$' 22 ""
+run
+check "a refused edit is reported" 0 out \
+  "[qBittorrent] WARNING: editCategory failed, so mylar's share limit action was not set."
+
 # Run C: no containers at all, and no LazyLibrarian config.
 deployment
 containers
@@ -722,7 +846,7 @@ rule 'mylar curl -sk --max-time 10 -o /dev/null' 28 000
 rule 'exec qbittorrent curl .*/api/v2/auth/login$' 7 ""
 run
 check "failures are reported and the rest carries on" 0 out \
-  "[qBittorrent] ...still waiting (30s/120s)" "[qBittorrent] Not reachable, skipping reverse proxy trust." \
+  "[qBittorrent] ...still waiting (30s/120s)" "[qBittorrent] Not reachable, skipping reverse proxy trust and mylar's share limit action." \
   "[Audiobookshelf] ...still waiting (30s/180s)" "[Audiobookshelf] Not reachable, skipping." \
   "[Calibre-Web] app.db not initialized yet after 180s, skipping." \
   "[Jellyfin] Not reachable, skipping." "[whisparr] Not reachable, skipping." \
@@ -868,9 +992,9 @@ check "a value make passes down comes before .env.example's" 0 out \
 deployment
 sed -i 's/^NGINX_SERVICES_IP=.*/NGINX_SERVICES_IP=/' "${__repo}/.env"
 put .env.example "NGINX_SERVICES_IP=198.51.100.7"
-containers
+containers qbittorrent
 NGINX_SERVICES_IP=192.0.2.7 run
-check "qBittorrent is skipped when nginx's address is empty" 0 out \
+check "reverse proxy trust is skipped when nginx's address is empty" 0 out \
   "[qBittorrent] NGINX_SERVICES_IP is not set, skipping reverse proxy trust."
 
 # A key in neither file stops the run with its name, before any output.
