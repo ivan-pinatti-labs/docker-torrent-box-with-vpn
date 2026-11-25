@@ -826,6 +826,8 @@
     "yourpassword",
     "zizmor",
     "zoneinfo",
-    "zricethezav"
+    "zricethezav",
+    "PYTHONPATH",
+    "sitecustomize"
   ]
 }

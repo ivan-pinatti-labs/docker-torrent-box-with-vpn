@@ -548,6 +548,37 @@ check "a failed write is reported" 1 out "[LazyLibrarian] WARNING: could not wri
 check "and LazyLibrarian is started again" 1 log "podman stop --time 60 lazylibrarian" "podman start lazylibrarian"
 check "and its file is left as it was" 1 configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
 
+# A write that fails after the new content is written (here, moving it over
+# the old file) leaves the original whole and no temporary file behind.
+deployment
+put configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
+mkdir -p "${__scratch}/fail-move"
+printf 'import os\n\ndef _fail(*_args, **_named):\n    raise OSError(28, "No space left on device")\n\nos.replace = _fail\n' >"${__scratch}/fail-move/sitecustomize.py"
+printf '#!/usr/bin/env bash\nPYTHONPATH=%q exec %q "$@"\n' "${__scratch}/fail-move" "$(command -v python3)" >"${__bin}/python3"
+chmod +x "${__bin}/python3"
+run
+rm "${__bin}/python3"
+check "a write that fails midway is reported" 1 out "[LazyLibrarian] WARNING: could not write its audiobook types (exit 1)."
+check "and the file is left whole" 1 configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
+if compgen -G "${__repo}/configs/lazylibrarian/config/.config.ini.*" >/dev/null; then
+  fail "no temporary file is left behind"
+fi
+
+# Only [GENERAL] is read: a key in another section before it is left alone,
+# and a file without [GENERAL] is not changed at all.
+deployment
+put configs/lazylibrarian/config/config.ini $'[SABNZBD]\naudiobook_type = mp3\n[GENERAL]\naudiobook_type = m4b\n'
+stopped lazylibrarian
+run
+check "only the [GENERAL] key changes" 0 configs/lazylibrarian/config/config.ini \
+  $'[SABNZBD]\naudiobook_type = mp3\n[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\n'
+deployment
+put configs/lazylibrarian/config/config.ini $'[SABNZBD]\naudiobook_type = mp3\n'
+run
+check "a key outside [GENERAL] is not taken for it" 0 out \
+  "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its audiobook types to LazyLibrarian."
+check "and the file is unchanged" 0 configs/lazylibrarian/config/config.ini $'[SABNZBD]\naudiobook_type = mp3\n'
+
 # A file the check cannot read fails the run instead of passing as complete.
 deployment
 put configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'

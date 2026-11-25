@@ -902,11 +902,12 @@ ensure_ini_client_addresses() {
 # writes its config back on shutdown.
 readonly LAZYLIBRARIAN_AUDIOBOOK_TYPES=(m4b m4a mp3 flac opus ogg aac)
 
-# Reads or rewrites config.ini's audiobook_type the way LazyLibrarian's
-# ConfigParser reads it: any case, `=` or `:`, spaces optional. `check`
-# prints the wanted types the file lacks, and `write` appends them to the
-# ones it has and prints the result, adding the key under [GENERAL] when it
-# is missing. Both exit 3 when there is neither a key nor a [GENERAL] section.
+# Reads or rewrites the audiobook_type of config.ini's [GENERAL] section, the
+# only one LazyLibrarian reads it from, the way its ConfigParser reads it:
+# any case, `=` or `:`, spaces optional. `check` prints the wanted types the
+# section lacks, and `write` appends them to the ones it has and prints the
+# result, adding the key to the section when it is missing. Both exit 3, and
+# change nothing, when the file has no [GENERAL] section.
 # Args: check|write ini type...
 lazylibrarian_audiobook_types() {
   python3 - "$@" <<'PYEOF'
@@ -918,10 +919,16 @@ import tempfile
 mode, path, wanted = sys.argv[1], sys.argv[2], sys.argv[3:]
 with open(path, encoding="utf-8") as handle:
     text = handle.read()
-key = re.search(r"^audiobook_type[ \t]*[=:][ \t]*(.*)$", text, re.IGNORECASE | re.MULTILINE)
 general = re.search(r"^\[GENERAL\][ \t]*$", text, re.IGNORECASE | re.MULTILINE)
-if not key and not general:
+if not general:
     sys.exit(3)
+# LazyLibrarian reads the key from [GENERAL] only, so the search ends at the
+# next section.
+following = re.search(r"^\[", text[general.end() :], re.MULTILINE)
+end = general.end() + following.start() if following else len(text)
+key = re.compile(r"^audiobook_type[ \t]*[=:][ \t]*(.*)$", re.IGNORECASE | re.MULTILINE).search(
+    text, general.end(), end
+)
 have = [t.strip().lower() for t in key.group(1).split(",") if t.strip()] if key else []
 missing = [t for t in wanted if t not in have]
 if mode == "check":
