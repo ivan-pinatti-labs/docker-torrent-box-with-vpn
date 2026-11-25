@@ -481,12 +481,12 @@ services, dashboards, and alert rules.
    audiobooks here (Mylar tracks comics). A deployment that ran it keeps its
    data: `configs/readarr/` and the files under `data/media` are not touched,
    and `make update` stops starting it. What an earlier `make wire_connections`
-   set up for it stays until removed by hand:
+   set up for it stays until removed by hand, except where noted:
 
    - qBittorrent: Tools > Options > WebUI, remove Readarr's address from
      "Bypass authentication for clients in whitelisted IP subnets" and switch
      that option off. It was the only entry the stack put there.
-   - Cleanuparr: delete its Readarr instance.
+   - Cleanuparr: `make wire_connections` deletes its Readarr instance.
    - Prowlarr: delete the Readarr application.
    - `.env`: the `READARR_*` settings are no longer read and can be deleted.
      Take `readarr` out of `VPN_ON` too; until then make ignores it with a

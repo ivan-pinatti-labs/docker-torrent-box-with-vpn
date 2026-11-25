@@ -258,7 +258,12 @@ in its own database, so `wire_cleanuparr` makes them through its API, at
 - **Arr apps**: one instance per enabled app (Sonarr, Radarr, Lidarr,
   Whisparr), over HTTPS by its service name, with the key its
   `config.xml` holds. Sonarr included: Prowlarr reaches it over plain HTTP,
-  but it serves HTTPS on `SONARR_HTTPS_PORT` like the others.
+  but it serves HTTPS on `SONARR_HTTPS_PORT` like the others. When an app's
+  profile is switched to `disabled`, the next run deletes the instance it
+  made for that app (by its name, `Sonarr` say); left in place, Cleanuparr
+  fails every health check trying to reach it. A Readarr instance from before
+  Readarr was retired (#545) is deleted the same way. Instances added in
+  Cleanuparr's UI under other names are left alone.
 - **Queue cleaner**: on, failed import strikes `3`, pattern mode `Include`,
   and these patterns:
 
