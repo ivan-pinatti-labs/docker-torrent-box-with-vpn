@@ -153,6 +153,8 @@ EOF
   done
   # Download client addresses where the .env above says.
   put configs/lazylibrarian/config/config.ini <<'EOF'
+[GENERAL]
+audiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac
 api_key = key-lazylibrarian
 [SABNZBD]
 sab_host = https://10.0.0.2
@@ -397,6 +399,7 @@ check "a wired stack is left alone" 0 out \
   "[qBittorrent] Already trusts only nginx (192.0.2.5) as its reverse proxy, skipping." \
   "[Mylar] Download client addresses already match GLUETUN_SERVICES_IP, skipping." \
   "[LazyLibrarian] Download client addresses already match GLUETUN_SERVICES_IP, skipping." \
+  "[LazyLibrarian] Audiobook types already include m4b m4a mp3 flac opus ogg aac, skipping." \
   "[Cleanuparr] qBittorrent already connected, skipping." "[Cleanuparr] Sonarr already connected, skipping." \
   "[Cleanuparr] Whisparr already connected, skipping." "[Cleanuparr] Done."
 check "a wired Cleanuparr still has its stored secrets tested" 0 log \
@@ -478,6 +481,45 @@ refute "an address that matches is not rewritten" out "[Mylar]   qbittorrent_hos
 check "running Mylar is stopped and started around the edit" 0 log "podman stop mylar" "podman start mylar"
 refute "stopped LazyLibrarian is not stopped" log "podman stop --time 60 lazylibrarian"
 refute "nor started" log "podman start lazylibrarian"
+
+# Audiobook types (#547): a list seeded before m4a and the others existed gets
+# them appended, kept in its own order and case folded; LazyLibrarian runs, so
+# it is stopped for the edit and started again.
+deployment
+put configs/lazylibrarian/config/config.ini <<'EOF'
+[GENERAL]
+audiobook_type = M4B, flac, mp3, wav
+api_key = key-lazylibrarian
+EOF
+run
+check "missing audiobook types are added" 0 out \
+  "[LazyLibrarian] Adding audiobook types: m4a opus ogg aac..." \
+  "[LazyLibrarian]   audiobook_type = m4b, flac, mp3, wav, m4a, opus, ogg, aac"
+check "and kept after the ones it had" 0 configs/lazylibrarian/config/config.ini \
+  "audiobook_type = m4b, flac, mp3, wav, m4a, opus, ogg, aac"
+check "running LazyLibrarian is stopped and started around the edit" 0 log \
+  "podman stop --time 60 lazylibrarian" "podman start lazylibrarian"
+
+# A file without the key, LazyLibrarian stopped: the key goes under
+# [GENERAL], and nothing is stopped or started.
+deployment
+put configs/lazylibrarian/config/config.ini <<'EOF'
+[GENERAL]
+api_key = key-lazylibrarian
+EOF
+stopped lazylibrarian
+run
+check "a missing key is added under [GENERAL]" 0 configs/lazylibrarian/config/config.ini \
+  $'[GENERAL]\naudiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac\napi_key'
+refute "a stopped LazyLibrarian is not stopped for it" log "podman stop --time 60 lazylibrarian"
+
+# A file with no [GENERAL] section yet is left to LazyLibrarian.
+deployment
+put configs/lazylibrarian/config/config.ini "api_key = key-lazylibrarian"
+run
+check "a file without [GENERAL] is left alone" 0 out \
+  "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its audiobook types to LazyLibrarian."
+refute "and gains no key" configs/lazylibrarian/config/config.ini "audiobook_type"
 
 # Run C: no containers at all, and no LazyLibrarian config.
 deployment

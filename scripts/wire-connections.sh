@@ -880,6 +880,58 @@ ensure_ini_client_addresses() {
   echo "[${display_name}] Updated."
 }
 
+# The audiobook file types LazyLibrarian accepts (#547). Before it snatches a
+# release it compares the torrent's file list with AUDIOBOOK_TYPE, and turns
+# down one whose files are all of a type the list lacks ("has no AudioBook
+# files (m4a)"), so that book stays Wanted. These are the formats audiobook
+# releases come in that Audiobookshelf, which reads data/media/audiobooks,
+# plays. config.ini is seeded once, so a deployment seeded before a type was
+# added gets it here: types the file lacks are appended to the ones it has,
+# in this order, and none is removed. A file without the key gets it under
+# [GENERAL], where LazyLibrarian keeps it. Like ensure_ini_client_addresses,
+# a running LazyLibrarian is stopped for the edit and started again, since it
+# writes its config back on shutdown.
+readonly LAZYLIBRARIAN_AUDIOBOOK_TYPES=(m4b m4a mp3 flac opus ogg aac)
+ensure_lazylibrarian_audiobook_types() {
+  local ini="$LAZYLIBRARIAN_INI"
+  [[ -f "$ini" ]] || return 0
+  local current="" has_key=false type missing=() wanted
+  if grep -q '^audiobook_type = ' "$ini"; then
+    has_key=true
+    current=$(sed -n 's/^audiobook_type = //p' "$ini" | head -n 1 | tr '[:upper:]' '[:lower:]')
+  elif ! grep -q '^\[GENERAL\]$' "$ini"; then
+    echo "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its audiobook types to LazyLibrarian."
+    return 0
+  fi
+  for type in "${LAZYLIBRARIAN_AUDIOBOOK_TYPES[@]}"; do
+    [[ ", ${current}, " == *", ${type}, "* ]] || missing+=("$type")
+  done
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    echo "[LazyLibrarian] Audiobook types already include ${LAZYLIBRARIAN_AUDIOBOOK_TYPES[*]}, skipping."
+    return 0
+  fi
+  wanted="$current"
+  for type in "${missing[@]}"; do
+    wanted="${wanted:+${wanted}, }${type}"
+  done
+
+  echo "[LazyLibrarian] Adding audiobook types: ${missing[*]}..."
+  local running=false
+  if podman container inspect -f '{{.State.Running}}' "$(cname lazylibrarian)" 2>/dev/null | grep -q '^true$'; then
+    running=true
+    stop_container lazylibrarian
+  fi
+  if [[ "$has_key" == true ]]; then
+    sed -i "s|^audiobook_type = .*|audiobook_type = ${wanted}|" "$ini"
+  else
+    sed -i "s|^\[GENERAL\]$|[GENERAL]\naudiobook_type = ${wanted}|" "$ini"
+  fi
+  if [[ "$running" == true ]]; then
+    podman start "$(cname lazylibrarian)" >/dev/null
+  fi
+  echo "[LazyLibrarian]   audiobook_type = ${wanted}"
+}
+
 # ---------------------------------------------------------------------------
 # Arr app host prerequisites
 #
@@ -2245,6 +2297,7 @@ ensure_ini_client_addresses mylar Mylar "$MYLAR_INI" \
   "sab_host=https://${GLUETUN_SERVICES_IP}:${SABNZBD_HTTPS_PORT}/sabnzbd" \
   "qbittorrent_host=https://${GLUETUN_SERVICES_IP}:${QBITTORRENT_HTTPS_PORT}" \
   "jd2_url=http://${GLUETUN_SERVICES_IP}:3128"
+ensure_lazylibrarian_audiobook_types
 ensure_ini_client_addresses lazylibrarian LazyLibrarian "$LAZYLIBRARIAN_INI" \
   "sab_host=https://${GLUETUN_SERVICES_IP}" "sab_port=${SABNZBD_HTTPS_PORT}" \
   "qbittorrent_host=https://${GLUETUN_SERVICES_IP}" "qbittorrent_port=${QBITTORRENT_HTTPS_PORT}"

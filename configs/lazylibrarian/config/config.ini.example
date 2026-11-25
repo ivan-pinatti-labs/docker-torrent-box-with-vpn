@@ -14,7 +14,7 @@ wishlist_genres = False
 ebook_dir = /data/media/ebooks
 audio_dir = /data/media/audiobooks
 download_dir = /data/downloads
-audiobook_type = m4b, flac, mp3
+audiobook_type = m4b, m4a, mp3, flac, opus, ogg, aac
 user_agent = Mozilla/5.0 (X11; Linux x86_64; rv:85.0) Gecko/20100101 Firefox/85.0
 
 [API]
