@@ -869,13 +869,22 @@ ensure_ini_client_addresses() {
     running=true
     stop_container "$service"
   fi
+  # A failed edit still restarts the app, then fails the step.
+  local status=0
   for pair in "${stale[@]}"; do
     key="${pair%%=*}" value="${pair#*=}"
-    sed -i "s|^${key} = .*|${key} = ${value}|" "$ini"
+    sed -i "s|^${key} = .*|${key} = ${value}|" "$ini" || {
+      status=$?
+      break
+    }
     echo "[${display_name}]   ${key} = ${value}"
   done
   if [[ "$running" == true ]]; then
     podman start "$(cname "$service")" >/dev/null
+  fi
+  if [[ "$status" -ne 0 ]]; then
+    echo "[${display_name}] WARNING: could not edit ${ini} (exit ${status})."
+    return 1
   fi
   echo "[${display_name}] Updated."
 }
@@ -892,44 +901,73 @@ ensure_ini_client_addresses() {
 # a running LazyLibrarian is stopped for the edit and started again, since it
 # writes its config back on shutdown.
 readonly LAZYLIBRARIAN_AUDIOBOOK_TYPES=(m4b m4a mp3 flac opus ogg aac)
+
+# Reads or rewrites config.ini's audiobook_type the way LazyLibrarian's
+# ConfigParser reads it: any case, `=` or `:`, spaces optional. `check`
+# prints the wanted types the file lacks, and `write` appends them to the
+# ones it has and prints the result, adding the key under [GENERAL] when it
+# is missing. Both exit 3 when there is neither a key nor a [GENERAL] section.
+# Args: check|write ini type...
+lazylibrarian_audiobook_types() {
+  python3 - "$@" <<'PYEOF'
+import re
+import sys
+
+mode, path, wanted = sys.argv[1], sys.argv[2], sys.argv[3:]
+with open(path, encoding="utf-8") as handle:
+    text = handle.read()
+key = re.search(r"^audiobook_type[ \t]*[=:][ \t]*(.*)$", text, re.IGNORECASE | re.MULTILINE)
+general = re.search(r"^\[GENERAL\][ \t]*$", text, re.IGNORECASE | re.MULTILINE)
+if not key and not general:
+    sys.exit(3)
+have = [t.strip().lower() for t in key.group(1).split(",") if t.strip()] if key else []
+missing = [t for t in wanted if t not in have]
+if mode == "check":
+    print(" ".join(missing))
+    sys.exit(0)
+line = "audiobook_type = " + ", ".join(have + missing)
+if key:
+    text = text[: key.start()] + line + text[key.end() :]
+else:
+    text = text[: general.end()] + "\n" + line + text[general.end() :]
+with open(path, "w", encoding="utf-8") as handle:
+    handle.write(text)
+print(line)
+PYEOF
+}
+
 ensure_lazylibrarian_audiobook_types() {
   local ini="$LAZYLIBRARIAN_INI"
   [[ -f "$ini" ]] || return 0
-  local current="" has_key=false type missing=() wanted
-  if grep -q '^audiobook_type = ' "$ini"; then
-    has_key=true
-    current=$(sed -n 's/^audiobook_type = //p' "$ini" | head -n 1 | tr '[:upper:]' '[:lower:]')
-  elif ! grep -q '^\[GENERAL\]$' "$ini"; then
+  local missing status=0
+  missing=$(lazylibrarian_audiobook_types check "$ini" "${LAZYLIBRARIAN_AUDIOBOOK_TYPES[@]}") || status=$?
+  if [[ "$status" -eq 3 ]]; then
     echo "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its audiobook types to LazyLibrarian."
     return 0
   fi
-  for type in "${LAZYLIBRARIAN_AUDIOBOOK_TYPES[@]}"; do
-    [[ ", ${current}, " == *", ${type}, "* ]] || missing+=("$type")
-  done
-  if [[ ${#missing[@]} -eq 0 ]]; then
+  if [[ -z "$missing" ]]; then
     echo "[LazyLibrarian] Audiobook types already include ${LAZYLIBRARIAN_AUDIOBOOK_TYPES[*]}, skipping."
     return 0
   fi
-  wanted="$current"
-  for type in "${missing[@]}"; do
-    wanted="${wanted:+${wanted}, }${type}"
-  done
 
-  echo "[LazyLibrarian] Adding audiobook types: ${missing[*]}..."
-  local running=false
+  echo "[LazyLibrarian] Adding audiobook types: ${missing}..."
+  local running=false line
   if podman container inspect -f '{{.State.Running}}' "$(cname lazylibrarian)" 2>/dev/null | grep -q '^true$'; then
     running=true
     stop_container lazylibrarian
   fi
-  if [[ "$has_key" == true ]]; then
-    sed -i "s|^audiobook_type = .*|audiobook_type = ${wanted}|" "$ini"
-  else
-    sed -i "s|^\[GENERAL\]$|[GENERAL]\naudiobook_type = ${wanted}|" "$ini"
-  fi
+  # Read again once it is stopped: LazyLibrarian rewrites the file on
+  # shutdown. A failed edit still restarts it, then fails the step.
+  status=0
+  line=$(lazylibrarian_audiobook_types write "$ini" "${LAZYLIBRARIAN_AUDIOBOOK_TYPES[@]}") || status=$?
   if [[ "$running" == true ]]; then
     podman start "$(cname lazylibrarian)" >/dev/null
   fi
-  echo "[LazyLibrarian]   audiobook_type = ${wanted}"
+  if [[ "$status" -ne 0 ]]; then
+    echo "[LazyLibrarian] WARNING: could not write its audiobook types (exit ${status})."
+    return 1
+  fi
+  echo "[LazyLibrarian]   ${line}"
 }
 
 # ---------------------------------------------------------------------------

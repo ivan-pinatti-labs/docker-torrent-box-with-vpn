@@ -521,6 +521,42 @@ check "a file without [GENERAL] is left alone" 0 out \
   "[LazyLibrarian] config.ini has no [GENERAL] section yet, leaving its audiobook types to LazyLibrarian."
 refute "and gains no key" configs/lazylibrarian/config/config.ini "audiobook_type"
 
+# Spelled the other ways LazyLibrarian's ConfigParser reads it: the key is
+# replaced, keeping its types, never added a second time.
+deployment
+put configs/lazylibrarian/config/config.ini <<'EOF'
+[GENERAL]
+Audiobook_Type=m4b, wav
+api_key = key-lazylibrarian
+EOF
+stopped lazylibrarian
+run
+check "a key written without spaces is replaced, keeping its types" 0 configs/lazylibrarian/config/config.ini \
+  $'[GENERAL]\naudiobook_type = m4b, wav, m4a, mp3, flac, opus, ogg, aac\napi_key'
+if [[ "$(grep -c -i '^audiobook_type' "${__repo}/configs/lazylibrarian/config/config.ini")" -ne 1 ]]; then
+  fail "the key is not added a second time"
+fi
+
+# A write that fails still starts LazyLibrarian again, then fails the run.
+deployment
+put configs/lazylibrarian/config/config.ini $'[GENERAL]\naudiobook_type = mp3\n'
+printf '#!/usr/bin/env bash\n[[ "${2:-}" == write ]] && exit 1\nexec %q "$@"\n' "$(command -v python3)" >"${__bin}/python3"
+chmod +x "${__bin}/python3"
+run
+rm "${__bin}/python3"
+check "a failed write is reported" 1 out "[LazyLibrarian] WARNING: could not write its audiobook types (exit 1)."
+check "and LazyLibrarian is started again" 1 log "podman stop --time 60 lazylibrarian" "podman start lazylibrarian"
+
+# The same for a download client address Mylar's file will not take.
+deployment
+put configs/mylar/config/mylar/config.ini $'api_key = key-mylar\n[SABnzbd]\nsab_host = https://172.28.0.10:8087/sabnzbd\n'
+printf '#!/usr/bin/env bash\n[[ "${*: -1}" == *mylar/config.ini ]] && exit 4\nexec %q "$@"\n' "$(command -v sed)" >"${__bin}/sed"
+chmod +x "${__bin}/sed"
+run
+rm "${__bin}/sed"
+check "a failed address edit is reported" 1 out "[Mylar] WARNING: could not edit configs/mylar/config/mylar/config.ini (exit 4)."
+check "and Mylar is started again" 1 log "podman stop mylar" "podman start mylar"
+
 # Run C: no containers at all, and no LazyLibrarian config.
 deployment
 containers
